@@ -1,0 +1,29 @@
+{
+  "id": "cheapdice",
+  "title": "Cheap Dice",
+  "description": "Custom combat macros, SocketLib handlers, and Sequencer/AutoAnimations triggers.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "12",
+    "verified": "12"
+  },
+  "relationships": {
+    "requires": [
+      {
+        "id": "socketlib",
+        "type": "module"
+      },
+      {
+        "id": "sequencer",
+        "type": "module"
+      },
+      {
+        "id": "autoanimations",
+        "type": "module"
+      }
+    ]
+  },
+  "scripts": [
+    "main.js"
+  ]
+}
