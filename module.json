@@ -25,5 +25,7 @@
   },
   "scripts": [
     "main.js"
-  ]
+  ],
+  "manifest": "https://raw.githubusercontent.com/couchpotatosensei/cheapdice/main/module.json",
+  "download": "https://github.com/couchpotatosensei/cheapdice/archive/refs/heads/main.zip"
 }
