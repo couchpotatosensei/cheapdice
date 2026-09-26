@@ -2,7 +2,7 @@
   "id": "cheapdice",
   "title": "Cheap Dice",
   "description": "Custom combat macros, SocketLib handlers, and Sequencer/AutoAnimations triggers.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "compatibility": {
     "minimum": "12",
     "verified": "12"
@@ -19,6 +19,10 @@
       },
       {
         "id": "autoanimations",
+        "type": "module"
+      }
+      {
+        "id": "Token Magic FX",
         "type": "module"
       }
     ]
