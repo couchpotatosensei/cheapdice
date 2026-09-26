@@ -38,6 +38,7 @@ if (game.settings) {
 Hooks.once("ready", () => {
   if (game.user.isGM) return;
 
+  // Prevent elevation shifts during movement
   const originalMoveMany = canvas.tokens.constructor.prototype.moveMany;
   canvas.tokens.constructor.prototype.moveMany = function(options = {}) {
     if (options.dz) options.dz = 0;
@@ -45,10 +46,11 @@ Hooks.once("ready", () => {
     return originalMoveMany.call(this, options);
   };
 
-  Hooks.on("renderTokenHUD", (app, html) => {
+  Hooks.on("renderTokenHUD", (app, html, data) => {
     const root = html instanceof HTMLElement ? html : (html[0] ?? html);
     if (!root) return;
 
+    // --- Cleanup: Elevation, Movement Palette, Locked Icon ---
     const elevationTargets = root.querySelectorAll(
       '.control-icon[data-action="elevation"], input[name="elevation"], .attribute.elevation, [data-action="elevation"]'
     );
@@ -69,6 +71,275 @@ Hooks.once("ready", () => {
       const wrapper = el.closest('.control-icon') || el;
       wrapper.remove();
     });
+
+    // --- Cleanup: Default Target, Combat, and Sort Icons ---
+    root.querySelector('.control-icon[data-action="target"]')?.remove();
+    root.querySelector('.control-icon[data-action="combat"]')?.remove();
+    root.querySelector('.control-icon[data-action="sort"]')?.remove();
+
+    // Verify token ownership
+    const token = canvas.tokens.get(data?._id ?? app.object?.id);
+    if (!token?.actor?.isOwner) return;
+
+    const colLeft = root.querySelector(".col.left");
+    const colRight = root.querySelector(".col.right");
+    const colMiddle = root.querySelector(".col.middle");
+    if (!colLeft || !colRight || !colMiddle) return;
+
+    // Helper: Shared Button Factory
+    const makeButton = (title, iconOrPath, onClick, imgSize = "28px") => {
+      const btn = document.createElement("div");
+      btn.className = "control-icon";
+      btn.title = title;
+      btn.style.display = "flex";
+      btn.style.alignItems = "center";
+      btn.style.justifyContent = "center";
+
+      const isImage = /\.(png|svg|webp|jpg|jpeg)$/i.test(iconOrPath);
+      if (isImage) {
+        btn.innerHTML = `<img src="${iconOrPath}" style="width: ${imgSize} !important; height: ${imgSize} !important; min-width: ${imgSize} !important; min-height: ${imgSize} !important; max-width: none !important; max-height: none !important; object-fit: contain; pointer-events: none; margin: 0; padding: 0;" />`;
+      } else {
+        btn.innerHTML = `<i class="${iconOrPath}" style="line-height: 1; margin: 0; padding: 0;"></i>`;
+      }
+
+      btn.addEventListener("click", onClick);
+      return btn;
+    };
+
+    // Helper: Hotbar Slot Runner
+    const runHotbarSlot = (slotIndex) => {
+      const macroId = game.user.hotbar[slotIndex];
+      const macro = game.macros.get(macroId);
+      if (macro) {
+        macro.execute({ actor: token.actor, token: token });
+      } else {
+        ui.notifications.info(`Hotbar slot ${slotIndex} is empty.`);
+      }
+    };
+
+    // --- Left Column: D20 Test ---
+    const d20Btn = makeButton(
+      "Roll D20",
+      "docs/assets/fvtt.png",
+      () => {
+        window.CustomRolls?.openD20Dialog();
+      },
+      "32px"
+    );
+    colLeft.appendChild(d20Btn);
+
+    // --- Left Column: Raise Hand Toggle ---
+    const isRaised = Boolean(token.handRaised);
+    const handBtn = makeButton(isRaised ? "Lower Hand" : "Raise Hand", "fas fa-hand-paper", () => {
+      token.handRaised = !token.handRaised;
+      if (token.handRaised) {
+        game.macros.getName("Raise Hand")?.execute({ actor: token.actor, token: token });
+      } else {
+        game.macros.getName("Lower Hand")?.execute({ actor: token.actor, token: token });
+      }
+      app.render();
+    });
+    if (isRaised) handBtn.classList.add("active");
+    colLeft.appendChild(handBtn);
+
+    // --- Left Column: Distance Measure Toggle ---
+    const measureBtn = makeButton("Measure Distance", "fas fa-ruler", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const currentlyRuler = ui.controls.tool?.name === "ruler";
+
+      if (currentlyRuler) {
+        canvas.controls.ruler?.reset();
+        const tokenSelectBtn = document.querySelector('#controls ol.sub-controls li[data-tool="select"]') 
+          || document.querySelector('#controls ol.main-controls li[data-control="token"]');
+        if (tokenSelectBtn) {
+          tokenSelectBtn.click();
+        } else {
+          ui.controls.render(true, { controls: "token", tool: "select" });
+        }
+        token.control({ releaseOthers: true });
+        measureBtn.classList.remove("active");
+      } else {
+        const rulerBtn = document.querySelector('#controls ol.main-controls li[data-control="controls"]')
+          || document.querySelector('#controls ol.sub-controls li[data-tool="ruler"]');
+        if (rulerBtn) {
+          rulerBtn.click();
+          const subRuler = document.querySelector('#controls ol.sub-controls li[data-tool="ruler"]');
+          if (subRuler) subRuler.click();
+        } else {
+          ui.controls.render(true, { controls: "controls", tool: "ruler" });
+        }
+        measureBtn.classList.add("active");
+      }
+    });
+
+    if (ui.controls.tool?.name === "ruler") {
+      measureBtn.classList.add("active");
+    }
+    colLeft.appendChild(measureBtn);
+
+    // --- Left Column: Utility Flyout (Hotbar Slots 1, 2, 3) ---
+    const leftFlyoutWrapper = document.createElement("div");
+    leftFlyoutWrapper.className = "control-icon left-flyout-parent";
+    leftFlyoutWrapper.title = "Quick Menu";
+    leftFlyoutWrapper.innerHTML = '<i class="fas fa-ellipsis"></i>';
+    leftFlyoutWrapper.style.position = "relative";
+
+    const leftFlyout = document.createElement("div");
+    leftFlyout.style.cssText = `
+      display: none;
+      position: absolute;
+      right: 50px;
+      top: 0;
+      flex-direction: row;
+      gap: 5px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid #7a7971;
+      border-radius: 5px;
+      padding: 4px;
+      z-index: 100;
+      white-space: nowrap;
+    `;
+
+    leftFlyoutWrapper.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = leftFlyout.style.display === "flex";
+      leftFlyout.style.display = isOpen ? "none" : "flex";
+    });
+
+    leftFlyout.appendChild(makeButton("Hotbar Slot 1", "fas fa-dice-one", () => runHotbarSlot(1)));
+    leftFlyout.appendChild(makeButton("Hotbar Slot 2", "fas fa-dice-two", () => runHotbarSlot(2)));
+    leftFlyout.appendChild(makeButton("Hotbar Slot 3", "fas fa-dice-three", () => runHotbarSlot(3)));
+
+    leftFlyoutWrapper.appendChild(leftFlyout);
+    colLeft.appendChild(leftFlyoutWrapper);
+
+    // --- Right Column: Attacks & Quick Slots ---
+    const actionBtn = makeButton(
+      "Attacks",
+      "icons/logo-scifi.png",
+      () => {
+        window.CustomRolls?.openActionDialog();
+      },
+      "32px"
+    );
+    colRight.appendChild(actionBtn);
+
+    // --- Right Column: Hotbar Page 5 (Slots 48, 49, 50) ---
+    colRight.appendChild(makeButton("Slot 1", "fas fa-square-1", () => runHotbarSlot(48)));
+    colRight.appendChild(makeButton("Slot 2", "fas fa-square-2", () => runHotbarSlot(49)));
+    colRight.appendChild(makeButton("Slot 3", "fas fa-square-3", () => runHotbarSlot(50)));
+
+    // --- Middle: Spell Save DC Display ---
+    const actorSystem = token.actor.system;
+    const hasSpellcasting = Boolean(actorSystem.attributes?.spellcasting);
+    const rawDC = actorSystem.attributes?.spell?.dc ?? actorSystem.attributes?.spelldc;
+    const spellDC = (hasSpellcasting && rawDC && rawDC > 0) ? rawDC : "S.DC";
+
+    const dcBadge = document.createElement("div");
+    dcBadge.className = "attribute spell-dc";
+    dcBadge.title = "Spell Save DC";
+    dcBadge.style.cssText = `
+      position: absolute;
+      top: -35px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid #7a7971;
+      border-radius: 4px;
+      color: #fff;
+      padding: 2px 6px;
+      font-size: 20px;
+      font-weight: bold;
+      pointer-events: none;
+      white-space: nowrap;
+    `;
+    dcBadge.innerHTML = `<i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i>${spellDC}`;
+    colMiddle.appendChild(dcBadge);
+
+    // --- Middle: Quick HP Buttons (-10, -5, -1, +1, +5, +10) ---
+    const allInputs = Array.from(colMiddle.querySelectorAll('.attribute input'));
+    const bottomInput = allInputs[allInputs.length - 1];
+    const hpContainer = bottomInput?.closest('.attribute');
+
+    if (hpContainer) {
+      const btnRow = document.createElement("div");
+      btnRow.className = "quick-hp-row";
+      btnRow.style.cssText = `
+        position: absolute;
+        bottom: -42px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 3px;
+        z-index: 100;
+        pointer-events: auto;
+      `;
+
+      const createHpBtn = (delta, label) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = label;
+        btn.title = `${delta > 0 ? "Heal" : "Damage"} ${Math.abs(delta)}`;
+        btn.style.cssText = `
+          width: 36px;
+          height: 28px;
+          line-height: 26px;
+          font-size: 15px;
+          font-weight: bold;
+          padding: 0;
+          margin: 0;
+          cursor: pointer;
+          background: rgba(0, 0, 0, 0.85);
+          color: #fff;
+          border: 1px solid #7a7971;
+          border-radius: 3px;
+        `;
+
+        const applyChange = async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const actor = token.actor;
+          if (!actor) return;
+
+          const currentHp = Number(actor.system.attributes?.hp?.value ?? 0);
+          const maxHp = Number(actor.system.attributes?.hp?.max ?? 0);
+          const newHp = Math.clamp(currentHp + delta, 0, maxHp);
+
+          await actor.update({ "system.attributes.hp.value": newHp });
+          if (token.document.isLinked === false) {
+            await token.document.update({ "actorData.system.attributes.hp.value": newHp });
+          }
+          if (bottomInput) bottomInput.value = newHp;
+        };
+
+        btn.addEventListener("mousedown", (e) => e.stopPropagation());
+        btn.addEventListener("mouseup", applyChange);
+        return btn;
+      };
+
+      btnRow.appendChild(createHpBtn(-10, "-10"));
+      btnRow.appendChild(createHpBtn(-5, "-5"));
+      btnRow.appendChild(createHpBtn(-1, "-1"));
+      btnRow.appendChild(createHpBtn(1, "+1"));
+      btnRow.appendChild(createHpBtn(5, "+5"));
+      btnRow.appendChild(createHpBtn(10, "+10"));
+      hpContainer.appendChild(btnRow);
+    }
+
+    // --- Right Column: Fix Status Effects Palette Background ---
+    const statusPalette = root.querySelector(".status-effects");
+    if (statusPalette) {
+      statusPalette.style.background = "rgba(0, 0, 0, 0.85)";
+      statusPalette.style.border = "1px solid #7a7971";
+      statusPalette.style.borderRadius = "5px";
+      statusPalette.style.height = "auto";
+      statusPalette.style.maxHeight = "400px";
+      statusPalette.style.overflowY = "auto";
+      statusPalette.style.padding = "6px";
+    }
   });
 });
 
