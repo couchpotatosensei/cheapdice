@@ -20,9 +20,9 @@
       {
         "id": "autoanimations",
         "type": "module"
-      }
+      },
       {
-        "id": "Token Magic FX",
+        "id": "tokenmagic",
         "type": "module"
       }
     ]
