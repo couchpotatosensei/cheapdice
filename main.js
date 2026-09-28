@@ -719,6 +719,7 @@ Hooks.once("ready", () => {
 // PART 2: SOCKETLIB REGISTRATION & EXECUTION HANDLERS
 // =============================================================================
 function initSockets() {
+  if (!game.settings.get("cheapdice", "featureSocketHandlers")) return;
   const socket = socketlib.registerSystem("dnd5e");
   globalThis.attackSocket = socket;
 
@@ -3004,6 +3005,7 @@ if (window.socketlib) {
 
 // --- Automated Animations & Sequencer Trigger ---
 async function triggerSequencerAnimation(actor, config, rollUser = null, autoTargetedToken = null) {
+  if (!game.settings.get("cheapdice", "featureAnimations")) return;
   const aa = globalThis.AutomatedAnimations || globalThis.AutoAnimations;
   const token = actor.getActiveTokens()[0];
   if (!token) return;
@@ -3174,6 +3176,8 @@ window.CustomRolls.setProfileData = async function (actor, category, data) {
 
 // --- 3.1 D20 Test Client-Side Dialog Launcher ---
 window.CustomRolls.openD20Dialog = function () {
+  if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -3605,6 +3609,8 @@ window.CustomRolls.openD20Dialog = function () {
 // VERSION 2: D20 TEST MINI CHARACTER SHEET LAUNCHER (REFINED & COMPACT)
 // =========================================================================
 window.CustomRolls.openD20DialogV2 = function () {
+  if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -4175,6 +4181,8 @@ Click a numbered modifier badge to execute a roll.</div>
 
 // --- 3.2 Weapon Attack Client-Side Dialog Launcher ---
 window.CustomRolls.openAttackDialog = function () {
+  if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -4347,6 +4355,8 @@ window.CustomRolls.openAttackDialog = function () {
 
 // --- 3.3 Spell Attack Client-Side Dialog Launcher ---
 window.CustomRolls.openSpellDialog = async function () {
+  if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -4772,6 +4782,8 @@ window.CustomRolls.openSpellDialog = async function () {
 
 // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
 window.CustomRolls.openActionDialog = function (initialMode = "weapon") {
+  if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -5239,6 +5251,8 @@ window.CustomRolls.openActionDialog = function (initialMode = "weapon") {
 
 // --- 4.1 D20 Preset Modifier Editor Launcher ---
 window.CustomRolls.openD20PresetEditor = function () {
+  if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -5695,6 +5709,8 @@ window.CustomRolls.openD20PresetEditor = function () {
 // VERSION 2: D20 PRESET MODIFIER EDITOR (DISTINCT V2 DIALOG THEME)
 // =========================================================================
 window.CustomRolls.openD20PresetEditorV2 = function () {
+  if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -6168,6 +6184,8 @@ window.CustomRolls.openD20PresetEditorV2 = function () {
 
 // --- 4.2 Unified Action Generator (Weapons & Spells) ---
 window.CustomRolls.openActionGenerator = async function () {
+  if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
   const actor = token?.actor;
   if (!actor) {
@@ -7070,6 +7088,8 @@ window.CustomRolls.openActionGenerator = async function () {
 
 // --- 4.3 Unified Action Editor & Manager (Weapons & Spells) ---
 window.CustomRolls.openActionEditor = function (initialCategory = "weapons") {
+  if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
   const actor = token?.actor;
   if (!actor) {
