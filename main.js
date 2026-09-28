@@ -3002,11 +3002,13 @@ function initSockets() {
   });
 }
 
-if (window.socketlib) {
-  initSockets();
-} else {
-  Hooks.once("socketlib.ready", initSockets);
-}
+Hooks.once("setup", () => {
+  if (window.socketlib) {
+    initSockets();
+  } else {
+    Hooks.once("socketlib.ready", initSockets);
+  }
+});
 
 
 // --- Automated Animations & Sequencer Trigger ---
