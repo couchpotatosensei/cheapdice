@@ -258,89 +258,14 @@ Hooks.on("renderTokenHUD", (app, html, data) => {
     colRight.querySelectorAll('[data-palette="movementActions"], [data-action="togglePalette"][data-palette="movementActions"]').forEach(el => el.remove());
     colRight.querySelectorAll('.control-icon[data-action="target"], [data-action="target"]').forEach(el => el.remove());
 
-    // Hide NPC Names: Restore / Ensure Token HUD Button
-    if (token.actor && !token.actor.hasPlayerOwner) {
-      const baseActor = token.actor.isToken ? (token.actor.token?.baseActor ?? token.actor) : token.actor;
-
-      let isNameHidden = true;
-      let replacementName = "Unknown Creature";
-
-      if (globalThis.HideNPCNames?.getReplacementInfo) {
-        const info = globalThis.HideNPCNames.getReplacementInfo(token.actor, token.actor.name);
-        isNameHidden = Boolean(info?.shouldReplace);
-        if (info?.replacementName) replacementName = info.replacementName;
-      } else if (game.hnn?.getReplacementInfo) {
-        const info = game.hnn.getReplacementInfo(token.actor, token.actor.name);
-        isNameHidden = Boolean(info?.shouldReplace);
-        if (info?.replacementName) replacementName = info.replacementName;
-      } else {
-        const override = baseActor.getFlag?.("hide-npc-names", "nameHiddenOverride");
-        if (override !== undefined) {
-          isNameHidden = Boolean(override);
-        } else {
-          const disp = token.document.disposition ?? baseActor.prototypeToken?.disposition ?? 0;
-          isNameHidden = disp <= 0;
-        }
+    // Hide NPC Names: Let module manage its own button and logic if installed and active.
+    // If the module is active and inserted its button into the HUD, make sure it is visible.
+    const hnnModuleActive = Boolean(game.modules.get("hide-npc-names")?.active);
+    if (hnnModuleActive) {
+      const existingHnnBtn = root.querySelector('[data-action="toggleActorHidden"], .hide-npc-name-btn, [data-action="hide-npc-names"]');
+      if (existingHnnBtn) {
+        existingHnnBtn.style.display = "flex";
       }
-
-      let hideBtn = root.querySelector('[data-action="toggleActorHidden"], .hide-npc-name-btn');
-      if (!hideBtn) {
-        hideBtn = document.createElement("div");
-        hideBtn.className = "control-icon hide-npc-name-btn";
-        hideBtn.dataset.action = "toggleActorHidden";
-        if (colLeft) {
-          colLeft.appendChild(hideBtn);
-        } else {
-          colRight.prepend(hideBtn);
-        }
-      }
-
-      hideBtn.style.display = "flex";
-      hideBtn.style.alignItems = "center";
-      hideBtn.style.justifyContent = "center";
-      hideBtn.style.padding = "0";
-      hideBtn.style.margin = "0";
-      hideBtn.style.boxSizing = "border-box";
-      hideBtn.title = isNameHidden
-        ? `Hide NPC Names: Name Hidden (Click to Reveal)`
-        : `Hide NPC Names: Name Revealed (Click to Hide)`;
-
-      hideBtn.innerHTML = isNameHidden
-        ? `<i class="fas fa-mask" style="font-size: 18px; line-height: 1; margin: 0; padding: 0; display: block; text-align: center;"></i>`
-        : `<span style="position: relative; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; margin: 0; padding: 0;">
-            <i class="fas fa-mask" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 18px; line-height: 1; opacity: 0.5; margin: 0; padding: 0;"></i>
-            <i class="fas fa-slash" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 18px; line-height: 1; color: #e74c3c; margin: 0; padding: 0;"></i>
-          </span>`;
-
-      hideBtn.onclick = async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (typeof app.options?.actions?.["toggleActorHidden"] === "function") {
-          try {
-            await app.options.actions["toggleActorHidden"]();
-            app.render();
-            return;
-          } catch (err) {
-            console.warn("HNN action invocation error:", err);
-          }
-        }
-
-        if (globalThis.HideNPCNames?.toggleActorHidden) {
-          await globalThis.HideNPCNames.toggleActorHidden(token.actor);
-        } else {
-          const currentOverride = baseActor.getFlag?.("hide-npc-names", "nameHiddenOverride");
-          const nextState = currentOverride !== undefined ? !currentOverride : !isNameHidden;
-          await baseActor.setFlag("hide-npc-names", "nameHiddenOverride", nextState);
-          if (token.actor && token.actor !== baseActor && token.actor.setFlag) {
-            await token.actor.setFlag("hide-npc-names", "nameHiddenOverride", nextState);
-          }
-          if (baseActor.getActiveTokens) {
-            baseActor.getActiveTokens().forEach(t => t.refresh?.());
-          }
-        }
-        app.render();
-      };
     }
 
     // AC Toggle Button
