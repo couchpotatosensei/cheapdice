@@ -12,8 +12,9 @@
 
 import { registerSettings } from "./scripts/settings.js";
 
-registerSettings();
-
+Hooks.once("init", () => {
+  registerSettings();
+});
 
 CONFIG.Token.movement.defaultSpeed = 14;
 
