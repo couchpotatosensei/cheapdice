@@ -10,13 +10,6 @@
 // PART 1: SYSTEM DEFAULTS, SPEED & ELEVATION CONTROLS
 // =============================================================================
 
-import { registerSettings } from "./scripts/settings.js";
-
-Hooks.once("init", () => {
-  registerSettings();
-});
-
-
 CONFIG.Token.movement.defaultSpeed = 14;
 
 // Persistent Profile Storage Registration
@@ -57,6 +50,7 @@ function getGlobalShowAC() {
 // 1. Add Master Toggle button to Token Controls toolbar for Foundry v14 AppV2
 Hooks.on("renderSceneControls", (controls, html) => {
   if (!game.user.isGM) return;
+  if (!game.settings.get("cheapdice", "featureTokenAc")) return;
 
   const root = html instanceof HTMLElement ? html : (html[0] ?? document.getElementById("scene-controls"));
   if (!root) return;
@@ -64,7 +58,7 @@ Hooks.on("renderSceneControls", (controls, html) => {
   const activeLayer = root.querySelector('#scene-controls-layers button[data-control="tokens"][aria-pressed="true"]');
   if (!activeLayer) return;
 
-  const toolsMenu = root.querySelector('#scene-controls-tools[data-application-part="tools"]') 
+  const toolsMenu = root.querySelector('#scene-controls-tools[data-application-part="tools"]')
     || root.querySelector("#scene-controls-tools");
   if (!toolsMenu) return;
 
@@ -101,10 +95,15 @@ Hooks.on("renderSceneControls", (controls, html) => {
 });
 
 
-
 // 2. Draw AC badge above the token on the canvas (Optimized for Forge / Canvas Performance)
 function renderTokenAcBadge(token) {
   if (!token?.actor || !token.bars) return;
+
+  if (!game.settings.get("cheapdice", "featureTokenAc")) {
+    const existing = token.bars.getChildByName("acBadgeContainer");
+    if (existing) existing.destroy({ children: true });
+    return;
+  }
 
   const masterEnabled = getGlobalShowAC();
   let acContainer = token.bars.getChildByName("acBadgeContainer");
@@ -172,6 +171,7 @@ function renderTokenAcBadge(token) {
 
 // 3. Token HUD adjustments
 Hooks.on("renderTokenHUD", (app, html, data) => {
+  if (!game.settings.get("cheapdice", "featureTokenHud")) return;
   const root = html instanceof HTMLElement ? html : (html[0] ?? html);
   if (!root) return;
 
@@ -276,7 +276,7 @@ Hooks.on("renderTokenHUD", (app, html, data) => {
     }
 
     // AC Toggle Button
-    if (!colRight.querySelector(".ac-toggle-btn")) {
+    if (game.settings.get("cheapdice", "featureTokenAc") && !colRight.querySelector(".ac-toggle-btn")) {
       const isAcVisible = Boolean(token.document.getFlag("world", "showAC"));
 
       const acToggleBtn = document.createElement("div");
@@ -336,8 +336,8 @@ Hooks.on("renderTokenHUD", (app, html, data) => {
       // Disposition Switcher
       const dispositionConfig = {
         [-1]: { label: "Hostile", icon: "fa-solid fa-face-angry", color: "#e74c3c" },
-        [0]:  { label: "Neutral", icon: "fa-solid fa-face-meh",   color: "#f1c40f" },
-        [1]:  { label: "Friendly", icon: "fa-solid fa-face-smile", color: "#2ecc71" }
+        [0]: { label: "Neutral", icon: "fa-solid fa-face-meh", color: "#f1c40f" },
+        [1]: { label: "Friendly", icon: "fa-solid fa-face-smile", color: "#2ecc71" }
       };
 
       const currentDisp = token.document.disposition in dispositionConfig ? token.document.disposition : 0;
@@ -483,7 +483,7 @@ Hooks.on("renderTokenHUD", (app, html, data) => {
 
     if (currentlyRuler) {
       canvas.controls.ruler?.reset();
-      const tokenSelectBtn = document.querySelector('#controls ol.sub-controls li[data-tool="select"]') 
+      const tokenSelectBtn = document.querySelector('#controls ol.sub-controls li[data-tool="select"]')
         || document.querySelector('#controls ol.main-controls li[data-control="token"]');
       if (tokenSelectBtn) {
         tokenSelectBtn.click();
@@ -687,9 +687,9 @@ Hooks.once("ready", () => {
 
   canvas.tokens?.placeables.forEach(t => renderTokenAcBadge(t));
 
-  if (!game.user.isGM) {
+  if (!game.user.isGM && game.settings.get("cheapdice", "featureElevationControl")) {
     const originalMoveMany = canvas.tokens.constructor.prototype.moveMany;
-    canvas.tokens.constructor.prototype.moveMany = function(options = {}) {
+    canvas.tokens.constructor.prototype.moveMany = function (options = {}) {
       if (options.dz) options.dz = 0;
       if (!options.dx && !options.dy && !options.dz) return false;
       return originalMoveMany.call(this, options);
@@ -811,434 +811,470 @@ function initSockets() {
   };
 
   // --- 2.2 Attack Execution Handler ---
-socket.register("runAttackRoll", async (config, actorId, userId) => {  
-  const actor = game.actors.get(actorId);
-  if (!actor) {
-    return ui.notifications.warn("Actor not found for attack execution.");
-  }
-
-  const {
-    abilityScore, damageType,
-    weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
-    HAS_HALFLING_LUCKY, HALFLING_LUCKY_REROLL_THRESHOLD, GWF_REROLL_THRESHOLD,
-    superAdv, additionalDamageComponents, chatCardTitle
-  } = config;
-
-  const isProficient = config.isProficient !== undefined ? (String(config.isProficient) === "true" || config.isProficient === true) : true;
-  const isLucky = String(HAS_HALFLING_LUCKY) === "true" || HAS_HALFLING_LUCKY === true;
-  const luckyThreshold = Number(HALFLING_LUCKY_REROLL_THRESHOLD) || 1;
-  const gwfThreshold = Number(GWF_REROLL_THRESHOLD) || 0;
-  const isSuperAdv = String(superAdv) === "true" || superAdv === true;
-
-  const damageDiceCount = Number(config.damageDiceCount) ?? 0;
-  const rawDie = String(config.damageDieSize || "6").replace(/^d/i, "");
-  const cleanDieSize = `d${rawDie}`;
-  const maxDieValue = Number(rawDie) || 0;
-
-  const abilityMod = actor.system.abilities[abilityScore]?.mod || 0;
-  const prof = isProficient ? (actor.system.attributes.prof || 0) : 0;
-  const totalAttackModifier = abilityMod + prof + weaponModifier + attackCircumstanceModifier;
-  const actorName = actor.name;
-  const speaker = ChatMessage.getSpeaker({ actor });
-
-  function parseDamageFormula(formula) {
-    if (!formula || typeof formula !== 'string') return 0;
-    const diceMatches = formula.matchAll(/(\d*)d(\d+)/gi);
-    let totalMaxDamage = 0;
-    for (const match of diceMatches) {
-      const count = parseInt(match[1]) || 1;
-      const max = parseInt(match[2]);
-      if (max > 0) totalMaxDamage += count * max;
-    }
-    return totalMaxDamage;
-  }
-
-  // Evaluates an individual d20 and performs a Halfling Lucky reroll if threshold is met
-  async function _rollSingleD20() {
-    let roll = await new Roll("1d20").evaluate();
-    let val = roll.total;
-    let rerollSummary = null;
-
-    if (isLucky && val <= luckyThreshold) {
-      let reroll = await new Roll("1d20").evaluate();
-      rerollSummary = { original: val, final: reroll.total };
-      val = reroll.total;
-      roll = reroll;
+  socket.register("runAttackRoll", async (config, actorId, userId) => {
+    const actor = game.actors.get(actorId);
+    if (!actor) {
+      return ui.notifications.warn("Actor not found for attack execution.");
     }
 
-    return { val, roll, rerollSummary };
-  }
+    const {
+      abilityScore, damageType,
+      weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
+      HAS_HALFLING_LUCKY, HALFLING_LUCKY_REROLL_THRESHOLD, GWF_REROLL_THRESHOLD,
+      superAdv, additionalDamageComponents, chatCardTitle
+    } = config;
 
-  async function _rollAttackAndCheckCrit() {
-    async function _rollD20AttackSlot() {
-      let roll = await new Roll(`1d20 + ${totalAttackModifier}`).evaluate();
-      let d20Term = roll.terms.find(t => t.faces === 20) || roll.dice[0];
-      let val = Number(d20Term?.results?.[0]?.result ?? roll.total);
+    const isProficient = config.isProficient !== undefined ? (String(config.isProficient) === "true" || config.isProficient === true) : true;
+    const isLucky = String(HAS_HALFLING_LUCKY) === "true" || HAS_HALFLING_LUCKY === true;
+    const luckyThreshold = Number(HALFLING_LUCKY_REROLL_THRESHOLD) || 1;
+    const gwfThreshold = Number(GWF_REROLL_THRESHOLD) || 0;
+    const isSuperAdv = String(superAdv) === "true" || superAdv === true;
+
+    const damageDiceCount = Number(config.damageDiceCount) ?? 0;
+    const rawDie = String(config.damageDieSize || "6").replace(/^d/i, "");
+    const cleanDieSize = `d${rawDie}`;
+    const maxDieValue = Number(rawDie) || 0;
+
+    const abilityMod = actor.system.abilities[abilityScore]?.mod || 0;
+    const prof = isProficient ? (actor.system.attributes.prof || 0) : 0;
+    const totalAttackModifier = abilityMod + prof + weaponModifier + attackCircumstanceModifier;
+    const actorName = actor.name;
+    const speaker = ChatMessage.getSpeaker({ actor });
+
+    const rollUser = game.users.get(userId) || game.user;
+    const token = actor.getActiveTokens()[0];
+    let autoTargetedToken = null;
+    let targetIds = Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
+
+    if (targetIds.length === 0 && token) {
+      const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
+      if (!isHostileNpc) {
+        const hostiles = canvas.tokens.placeables.filter(t =>
+          t.id !== token.id &&
+          t.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE &&
+          t.visible
+        );
+        if (hostiles.length > 0) {
+          let nearestHostile = null;
+          let minDistance = Infinity;
+          for (const h of hostiles) {
+            const dist = Math.hypot(h.center.x - token.center.x, h.center.y - token.center.y);
+            if (dist < minDistance) {
+              minDistance = dist;
+              nearestHostile = h;
+            }
+          }
+          if (nearestHostile) {
+            autoTargetedToken = nearestHostile;
+            targetIds = [nearestHostile.id];
+            try {
+              nearestHostile.setTarget(true, { user: rollUser, releaseOthers: false });
+            } catch (e) {
+              console.warn("[CustomRolls] Could not set canvas target for user:", e);
+            }
+          }
+        }
+      }
+    }
+
+    function parseDamageFormula(formula) {
+      if (!formula || typeof formula !== 'string') return 0;
+      const diceMatches = formula.matchAll(/(\d*)d(\d+)/gi);
+      let totalMaxDamage = 0;
+      for (const match of diceMatches) {
+        const count = parseInt(match[1]) || 1;
+        const max = parseInt(match[2]);
+        if (max > 0) totalMaxDamage += count * max;
+      }
+      return totalMaxDamage;
+    }
+
+    // Evaluates an individual d20 and performs a Halfling Lucky reroll if threshold is met
+    async function _rollSingleD20() {
+      let roll = await new Roll("1d20").evaluate();
+      let val = roll.total;
       let rerollSummary = null;
 
       if (isLucky && val <= luckyThreshold) {
-        let reroll = await new Roll(`1d20 + ${totalAttackModifier}`).evaluate();
-        let rerolledTerm = reroll.terms.find(t => t.faces === 20) || reroll.dice[0];
-        let newVal = Number(rerolledTerm?.results?.[0]?.result ?? reroll.total);
-        rerollSummary = { original: val, final: newVal };
-        val = newVal;
+        let reroll = await new Roll("1d20").evaluate();
+        rerollSummary = { original: val, final: reroll.total };
+        val = reroll.total;
         roll = reroll;
       }
 
-      let html = await roll.render();
-      if (val >= CRIT_THRESHOLD) html = html.replace('dice-total', 'dice-total critical');
-      else if (val === 1) html = html.replace('dice-total', 'dice-total fumble');
-
-      return { roll, html, val, rerollSummary };
+      return { val, roll, rerollSummary };
     }
 
-    const slot1 = await _rollD20AttackSlot();
+    async function _rollAttackAndCheckCrit() {
+      async function _rollD20AttackSlot() {
+        let roll = await new Roll(`1d20 + ${totalAttackModifier}`).evaluate();
+        let d20Term = roll.terms.find(t => t.faces === 20) || roll.dice[0];
+        let val = Number(d20Term?.results?.[0]?.result ?? roll.total);
+        let rerollSummary = null;
 
-    let slot2;
-    let droppedCandidate = null;
-    let extraRolls = [];
+        if (isLucky && val <= luckyThreshold) {
+          let reroll = await new Roll(`1d20 + ${totalAttackModifier}`).evaluate();
+          let rerolledTerm = reroll.terms.find(t => t.faces === 20) || reroll.dice[0];
+          let newVal = Number(rerolledTerm?.results?.[0]?.result ?? reroll.total);
+          rerollSummary = { original: val, final: newVal };
+          val = newVal;
+          roll = reroll;
+        }
 
-    if (isSuperAdv) {
-      const candidateA = await _rollD20AttackSlot();
-      const candidateB = await _rollD20AttackSlot();
-      extraRolls.push(candidateA.roll, candidateB.roll);
+        let html = await roll.render();
+        if (val >= CRIT_THRESHOLD) html = html.replace('dice-total', 'dice-total critical');
+        else if (val === 1) html = html.replace('dice-total', 'dice-total fumble');
 
-      if (candidateA.val >= candidateB.val) {
-        slot2 = candidateA;
-        droppedCandidate = candidateB;
-      } else {
-        slot2 = candidateB;
-        droppedCandidate = candidateA;
+        return { roll, html, val, rerollSummary };
       }
-    } else {
-      slot2 = await _rollD20AttackSlot();
-      extraRolls.push(slot2.roll);
-    }
 
-    let rerollSummary2 = slot2.rerollSummary;
-    if (isSuperAdv && droppedCandidate) {
-      const superAdvHtml = `<div style="padding: 2px 4px; margin: 3px 0 0; border: 1px solid #7289DA; border-radius: 3px; background-color: #f0f4ff; font-size: 0.75em; text-align: center;">
+      const slot1 = await _rollD20AttackSlot();
+
+      let slot2;
+      let droppedCandidate = null;
+      let extraRolls = [];
+
+      if (isSuperAdv) {
+        const candidateA = await _rollD20AttackSlot();
+        const candidateB = await _rollD20AttackSlot();
+        extraRolls.push(candidateA.roll, candidateB.roll);
+
+        if (candidateA.val >= candidateB.val) {
+          slot2 = candidateA;
+          droppedCandidate = candidateB;
+        } else {
+          slot2 = candidateB;
+          droppedCandidate = candidateA;
+        }
+      } else {
+        slot2 = await _rollD20AttackSlot();
+        extraRolls.push(slot2.roll);
+      }
+
+      let rerollSummary2 = slot2.rerollSummary;
+      if (isSuperAdv && droppedCandidate) {
+        const superAdvHtml = `<div style="padding: 2px 4px; margin: 3px 0 0; border: 1px solid #7289DA; border-radius: 3px; background-color: #f0f4ff; font-size: 0.75em; text-align: center;">
         <span style="font-weight: bold; color: #4b5d88;">Super Adv (Kept d20: ${slot2.val} | Dropped: ${droppedCandidate.val})</span>
       </div>`;
-      slot2.html += superAdvHtml;
-    }
-
-    const isCritical = slot1.val >= CRIT_THRESHOLD || slot2.val >= CRIT_THRESHOLD;
-
-    return {
-      attackRoll1: slot1.roll,
-      rollHtml1: slot1.html,
-      rerollSummary1: slot1.rerollSummary,
-      attackRoll2: slot2.roll,
-      rollHtml2: slot2.html,
-      rerollSummary2,
-      extraRolls,
-      isCritical
-    };
-  }
-
-  async function _rollDamageDice() {
-    if (damageDiceCount <= 0) {
-      return { finalCombinedDieResult: 0, allDieRolls: [], rerollSummary: [] };
-    }
-    const damageDieFormula = `1${cleanDieSize}`;
-    const allDieRolls = [];
-    const finalDieResults = [];
-    const rerollSummary = [];
-
-    for (let i = 0; i < damageDiceCount; i++) {
-      let initialRoll = await new Roll(damageDieFormula).evaluate();
-      let initialResult = Number(initialRoll.total);
-      allDieRolls.push(initialRoll);
-
-      if (gwfThreshold > 0 && initialResult <= gwfThreshold) {
-        let reroll = await new Roll(damageDieFormula).evaluate();
-        allDieRolls.push(reroll);
-        finalDieResults.push(Number(reroll.total));
-        rerollSummary.push({ original: initialResult, reroll: Number(reroll.total) });
-      } else {
-        finalDieResults.push(initialResult);
-      }
-    }
-    const finalCombinedDieResult = finalDieResults.reduce((a, b) => a + b, 0);
-    return { finalCombinedDieResult, allDieRolls, rerollSummary };
-  }
-
-  async function _rollAdditionalDamage(selectedDamageComponents, isCritical) {
-    const results = [];
-    let additionalDamageTotal = 0;
-    let critOnlyDamageTotal = 0;
-    const allAdditionalDamageRolls = [];
-
-    for (const component of selectedDamageComponents) {
-      if (component.onlyCrit && !isCritical) continue;
-      const formula = component.formula;
-      const label = component.label;
-      const isCrit = component.isCrit;
-      const compDmgType = component.damageType;
-
-      let total = 0;
-      let html = "";
-
-      if (component.onlyCrit && isCrit && /[dD]/.test(formula)) {
-        total = parseDamageFormula(formula);
-        html = `<div class="dice-roll"><div class="dice-result"><h4 class="dice-formula" style="display: none;">${formula}</h4><div class="dice-tooltip"></div><h4 class="dice-total critical">${total}</h4></div></div>`;
-      } else {
-        let additionalDamageRoll = await new Roll(formula).evaluate();
-        total = additionalDamageRoll.total;
-        html = await additionalDamageRoll.render();
-        allAdditionalDamageRolls.push(additionalDamageRoll);
-        html = html.replace(`<h4 class="dice-formula">${formula}</h4>`, `<h4 class="dice-formula" style="display: none;">${formula}</h4>`);
+        slot2.html += superAdvHtml;
       }
 
-      results.push({ formula, label, total, html, isCrit, onlyCrit: component.onlyCrit, damageType: compDmgType });
+      const isCritical = slot1.val >= CRIT_THRESHOLD || slot2.val >= CRIT_THRESHOLD;
 
-      if (component.onlyCrit) {
-        critOnlyDamageTotal += total;
-      } else {
-        additionalDamageTotal += total;
-      }
+      return {
+        attackRoll1: slot1.roll,
+        rollHtml1: slot1.html,
+        rerollSummary1: slot1.rerollSummary,
+        attackRoll2: slot2.roll,
+        rollHtml2: slot2.html,
+        rerollSummary2,
+        extraRolls,
+        isCritical
+      };
     }
-    return { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults: results, allAdditionalDamageRolls };
-  }
 
-  function _generateDamageDetailsHTML(flavorText, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary) {
-    let html = `<p style="text-align: center; font-weight: bold; margin: 5px 0;">${flavorText}</p>`;
-    if (rerollSummary.length > 0) {
-      html += `<div style="padding: 5px; margin: 5px 0; border: 1px solid #7289DA; border-radius: 4px; background-color: #e6eaff; font-size: 0.85em;">
+    async function _rollDamageDice() {
+      if (damageDiceCount <= 0) {
+        return { finalCombinedDieResult: 0, allDieRolls: [], rerollSummary: [] };
+      }
+      const damageDieFormula = `1${cleanDieSize}`;
+      const allDieRolls = [];
+      const finalDieResults = [];
+      const rerollSummary = [];
+
+      for (let i = 0; i < damageDiceCount; i++) {
+        let initialRoll = await new Roll(damageDieFormula).evaluate();
+        let initialResult = Number(initialRoll.total);
+        allDieRolls.push(initialRoll);
+
+        if (gwfThreshold > 0 && initialResult <= gwfThreshold) {
+          let reroll = await new Roll(damageDieFormula).evaluate();
+          allDieRolls.push(reroll);
+          finalDieResults.push(Number(reroll.total));
+          rerollSummary.push({ original: initialResult, reroll: Number(reroll.total) });
+        } else {
+          finalDieResults.push(initialResult);
+        }
+      }
+      const finalCombinedDieResult = finalDieResults.reduce((a, b) => a + b, 0);
+      return { finalCombinedDieResult, allDieRolls, rerollSummary };
+    }
+
+    async function _rollAdditionalDamage(selectedDamageComponents, isCritical) {
+      const results = [];
+      let additionalDamageTotal = 0;
+      let critOnlyDamageTotal = 0;
+      const allAdditionalDamageRolls = [];
+
+      for (const component of selectedDamageComponents) {
+        if (component.onlyCrit && !isCritical) continue;
+        const formula = component.formula;
+        const label = component.label;
+        const isCrit = component.isCrit;
+        const compDmgType = component.damageType;
+
+        let total = 0;
+        let html = "";
+
+        if (component.onlyCrit && isCrit && /[dD]/.test(formula)) {
+          total = parseDamageFormula(formula);
+          html = `<div class="dice-roll"><div class="dice-result"><h4 class="dice-formula" style="display: none;">${formula}</h4><div class="dice-tooltip"></div><h4 class="dice-total critical">${total}</h4></div></div>`;
+        } else {
+          let additionalDamageRoll = await new Roll(formula).evaluate();
+          total = additionalDamageRoll.total;
+          html = await additionalDamageRoll.render();
+          allAdditionalDamageRolls.push(additionalDamageRoll);
+          html = html.replace(`<h4 class="dice-formula">${formula}</h4>`, `<h4 class="dice-formula" style="display: none;">${formula}</h4>`);
+        }
+
+        results.push({ formula, label, total, html, isCrit, onlyCrit: component.onlyCrit, damageType: compDmgType });
+
+        if (component.onlyCrit) {
+          critOnlyDamageTotal += total;
+        } else {
+          additionalDamageTotal += total;
+        }
+      }
+      return { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults: results, allAdditionalDamageRolls };
+    }
+
+    function _generateDamageDetailsHTML(flavorText, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary) {
+      let html = `<p style="text-align: center; font-weight: bold; margin: 5px 0;">${flavorText}</p>`;
+      if (rerollSummary.length > 0) {
+        html += `<div style="padding: 5px; margin: 5px 0; border: 1px solid #7289DA; border-radius: 4px; background-color: #e6eaff; font-size: 0.85em;">
                 <p style="margin: 0 0 5px; font-weight: 600; color: #7289DA;">Rerolls:</p>
                 <ul style="margin: 0; padding-left: 15px;">`;
-      rerollSummary.forEach(s => {
-        html += `<li style="list-style-type: none; margin-bottom: 3px; border-bottom: 1px solid #c7d2e4;">
+        rerollSummary.forEach(s => {
+          html += `<li style="list-style-type: none; margin-bottom: 3px; border-bottom: 1px solid #c7d2e4;">
                   <span style="font-weight: bold; color: #dc3545;">Original ${s.original}</span>
                   <span style="color: #6c757d;">&rarr;</span>
                   <span style="font-weight: bold; color: #28a745;">New ${s.reroll}</span>
                 </li>`;
-      });
-      html += `</ul></div>`;
-    }
-    html += `
+        });
+        html += `</ul></div>`;
+      }
+      html += `
       <div style="display: flex; justify-content: center; text-align: center; font-size: 0.9em; margin-top: 5px;">
         <div style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; background-color: #f8f9fa;">
           <p style="margin: 0; font-weight: 600; font-size: 0.9em;">Results (${damageDiceCount}${cleanDieSize})</p>
           <span style="font-weight: bold; font-size: 1.5em;">${finalCombinedDieResult}</span>
         </div>
       </div>`;
-    const totalDamageMods = damageBonus + flatBonus;
-    const sign = totalDamageMods >= 0 ? '+' : '';
-    html += `<p style="text-align: center; font-weight: 500; font-size: 0.9em; margin: 5px 0 0;">Damage Mods = ${sign}${totalDamageMods}</p>`;
-    return html;
-  }
+      const totalDamageMods = damageBonus + flatBonus;
+      const sign = totalDamageMods >= 0 ? '+' : '';
+      html += `<p style="text-align: center; font-weight: 500; font-size: 0.9em; margin: 5px 0 0;">Damage Mods = ${sign}${totalDamageMods}</p>`;
+      return html;
+    }
 
-  function _getHalflingRerollHTML(rerollSummary) {
-    if (!rerollSummary) return '';
-    return `<div style="padding: 5px; margin: 5px 0 0; border: 1px solid #17a2b8; border-radius: 4px; background-color: #e0f7fa; font-size: 0.8em; text-align: center;">
+    function _getHalflingRerollHTML(rerollSummary) {
+      if (!rerollSummary) return '';
+      return `<div style="padding: 5px; margin: 5px 0 0; border: 1px solid #17a2b8; border-radius: 4px; background-color: #e0f7fa; font-size: 0.8em; text-align: center;">
               <p style="margin: 0; font-weight: 600; color: #17a2b8;">Halfling Lucky Reroll</p>
               <span style="color: #dc3545;">Rolled ${rerollSummary.original}</span> &rarr; <span style="font-weight: bold; color: #007bff;">Rerolled ${rerollSummary.final}</span>
             </div>`;
-  }
-
-  const { attackRoll1, rollHtml1, rerollSummary1, attackRoll2, rollHtml2, rerollSummary2, extraRolls, isCritical } = await _rollAttackAndCheckCrit();
-  const { finalCombinedDieResult, allDieRolls, rerollSummary } = await _rollDamageDice();
-  const activeComponents = (additionalDamageComponents || []).filter(c => c.isActive);
-  const { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults, allAdditionalDamageRolls } = await _rollAdditionalDamage(activeComponents, isCritical);
-
-  let critAdditionalDamageComponent = 0;
-  for (const result of additionalDamageResults) {
-    if (!result.onlyCrit && result.isCrit && /[dD]/.test(result.formula)) {
-      critAdditionalDamageComponent += parseDamageFormula(result.formula);
     }
-  }
 
-  let resolvedExtraCrit = 0;
-  const rawCritBonus = String(config.extraCriticalBonus || "").trim();
-  if (rawCritBonus !== "" && isCritical) {
-    if (/[dD]/.test(rawCritBonus)) {
-      resolvedExtraCrit = parseDamageFormula(rawCritBonus);
-    } else {
-      resolvedExtraCrit = Number(rawCritBonus) || 0;
+    const { attackRoll1, rollHtml1, rerollSummary1, attackRoll2, rollHtml2, rerollSummary2, extraRolls, isCritical } = await _rollAttackAndCheckCrit();
+    const { finalCombinedDieResult, allDieRolls, rerollSummary } = await _rollDamageDice();
+    const activeComponents = (additionalDamageComponents || []).filter(c => c.isActive);
+    const { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults, allAdditionalDamageRolls } = await _rollAdditionalDamage(activeComponents, isCritical);
+
+    let critAdditionalDamageComponent = 0;
+    for (const result of additionalDamageResults) {
+      if (!result.onlyCrit && result.isCrit && /[dD]/.test(result.formula)) {
+        critAdditionalDamageComponent += parseDamageFormula(result.formula);
+      }
     }
-  }
-  const extraCritLabel = (config.extraCriticalLabel || "Extra Crit").trim();
-  const extraCritType = (config.extraCriticalType || damageType).trim();
 
-  const damageBonus = abilityMod + weaponModifier;
-  const flatBonus = damageModifier;
-  const maximizedWeaponDice = damageDiceCount * maxDieValue;
-  const totalMaxDiceCrit = maximizedWeaponDice + critAdditionalDamageComponent;
-  const finalGWFTotal = finalCombinedDieResult + damageBonus + flatBonus + additionalDamageTotal;
-  const allCriticalTotal = totalMaxDiceCrit + resolvedExtraCrit + critOnlyDamageTotal;
-  const criticalTotal = finalGWFTotal + totalMaxDiceCrit + resolvedExtraCrit + critOnlyDamageTotal;
+    let resolvedExtraCrit = 0;
+    const rawCritBonus = String(config.extraCriticalBonus || "").trim();
+    if (rawCritBonus !== "" && isCritical) {
+      if (/[dD]/.test(rawCritBonus)) {
+        resolvedExtraCrit = parseDamageFormula(rawCritBonus);
+      } else {
+        resolvedExtraCrit = Number(rawCritBonus) || 0;
+      }
+    }
+    const extraCritLabel = (config.extraCriticalLabel || "Extra Crit").trim();
+    const extraCritType = (config.extraCriticalType || damageType).trim();
 
-  const finalRolls = [attackRoll1, ...extraRolls, ...allDieRolls, ...allAdditionalDamageRolls];
-  const baseDamageFormulaSummary = `${damageDiceCount}${cleanDieSize}`;
-  const baseDamageFlavor = `${damageType.charAt(0).toUpperCase() + damageType.slice(1)} Damage (${baseDamageFormulaSummary})`;
-  const normalDamageHTML = _generateDamageDetailsHTML(baseDamageFlavor, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary);
+    const damageBonus = abilityMod + weaponModifier;
+    const flatBonus = damageModifier;
+    const maximizedWeaponDice = damageDiceCount * maxDieValue;
+    const totalMaxDiceCrit = maximizedWeaponDice + critAdditionalDamageComponent;
+    const finalGWFTotal = finalCombinedDieResult + damageBonus + flatBonus + additionalDamageTotal;
+    const allCriticalTotal = totalMaxDiceCrit + resolvedExtraCrit + critOnlyDamageTotal;
+    const criticalTotal = finalGWFTotal + totalMaxDiceCrit + resolvedExtraCrit + critOnlyDamageTotal;
 
-  let additionalDamageSectionHTML = '';
-  let critAdditionalDiceList = '';
-  if (additionalDamageResults.length > 0) {
-    additionalDamageSectionHTML = `
+    const finalRolls = [attackRoll1, ...extraRolls, ...allDieRolls, ...allAdditionalDamageRolls];
+    const baseDamageFormulaSummary = `${damageDiceCount}${cleanDieSize}`;
+    const baseDamageFlavor = `${damageType.charAt(0).toUpperCase() + damageType.slice(1)} Damage (${baseDamageFormulaSummary})`;
+    const normalDamageHTML = _generateDamageDetailsHTML(baseDamageFlavor, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary);
+
+    let additionalDamageSectionHTML = '';
+    let critAdditionalDiceList = '';
+    if (additionalDamageResults.length > 0) {
+      additionalDamageSectionHTML = `
       <hr style="margin: 5px 0 3px; border-top: 1px solid #7289DA;">
       <p style="font-weight: 600; font-size: 0.9em; color: #7289DA; text-align: center; margin-bottom: 3px;">ADDITIONAL DAMAGE</p>`;
-    for (const result of additionalDamageResults) {
-      const isDice = /[dD]/.test(result.formula);
-      const maxVal = isDice ? parseDamageFormula(result.formula) : result.total;
+      for (const result of additionalDamageResults) {
+        const isDice = /[dD]/.test(result.formula);
+        const maxVal = isDice ? parseDamageFormula(result.formula) : result.total;
 
-      if (result.onlyCrit) {
-        const maxTag = (result.isCrit && isDice) ? " Max" : "";
-        critAdditionalDiceList += `<li style="list-style-type: disc;">${result.label} (${result.formula}${maxTag}): <span style="font-weight: bold;">+${result.total}</span></li>`;
-      } else if (isCritical && result.isCrit && isDice) {
-        critAdditionalDiceList += `<li style="list-style-type: disc;">${result.label} (${result.formula} Max): <span style="font-weight: bold;">+${maxVal}</span></li>`;
-      }
-      const componentDamageType = result.damageType.toUpperCase() === 'BPS' ? 'BPS' : (result.damageType.charAt(0).toUpperCase() + result.damageType.slice(1));
-      additionalDamageSectionHTML += `
+        if (result.onlyCrit) {
+          const maxTag = (result.isCrit && isDice) ? " Max" : "";
+          critAdditionalDiceList += `<li style="list-style-type: disc;">${result.label} (${result.formula}${maxTag}): <span style="font-weight: bold;">+${result.total}</span></li>`;
+        } else if (isCritical && result.isCrit && isDice) {
+          critAdditionalDiceList += `<li style="list-style-type: disc;">${result.label} (${result.formula} Max): <span style="font-weight: bold;">+${maxVal}</span></li>`;
+        }
+        const componentDamageType = result.damageType.toUpperCase() === 'BPS' ? 'BPS' : (result.damageType.charAt(0).toUpperCase() + result.damageType.slice(1));
+        additionalDamageSectionHTML += `
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 5px;">
           <span style="font-weight: 500; font-size: 0.85em;">${result.label} (${componentDamageType}):</span>
           <div style="width: 50%; flex-shrink: 0; text-align: right; transform: scale(.9);">${result.html}</div>
         </div>`;
+      }
+      additionalDamageSectionHTML += `<hr style="margin: 3px 0 5px; border-top: 1px solid #ddd;">`;
+    } else {
+      additionalDamageSectionHTML = `<hr style="margin: 5px 0 5px; border-top: 1px solid #ddd;">`;
     }
-    additionalDamageSectionHTML += `<hr style="margin: 3px 0 5px; border-top: 1px solid #ddd;">`;
-  } else {
-    additionalDamageSectionHTML = `<hr style="margin: 5px 0 5px; border-top: 1px solid #ddd;">`;
-  }
 
-  let criticalBonusHTML = '';
-  if (isCritical) {
-    const flatBonusLabel = resolvedExtraCrit > 0 
-      ? `<li style="list-style-type: disc;">${extraCritLabel} (${rawCritBonus}): <span style="font-weight: bold;">+${resolvedExtraCrit}</span></li>` 
-      : '';
-    criticalBonusHTML = `
+    let criticalBonusHTML = '';
+    if (isCritical) {
+      const flatBonusLabel = resolvedExtraCrit > 0
+        ? `<li style="list-style-type: disc;">${extraCritLabel} (${rawCritBonus}): <span style="font-weight: bold;">+${resolvedExtraCrit}</span></li>`
+        : '';
+      criticalBonusHTML = `
       <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Critical Bonus: +${allCriticalTotal}</strong></p>
       <ul style="margin: 0 0 5px; padding-left: 15px; list-style-type: disc; font-size: 0.9em; line-height: 1.4;">
         <li style="list-style-type: disc;">Weapon Dice (${damageDiceCount}${cleanDieSize} Max): <span style="font-weight: bold;">+${maximizedWeaponDice}</span></li>
         ${critAdditionalDiceList}
         ${flatBonusLabel}
       </ul>`;
-  }
+    }
 
-  let totalBlocks = `<p style="margin: 0; flex: 1; ${isCritical ? 'border-right: 1px solid #ddd;' : ''} padding: 0 5px;">Damage Total: <span style="font-size: 1.2em; font-weight: bold;">${finalGWFTotal}</span></p>`;
-  if (isCritical) {
-    totalBlocks += `<p style="margin: 0; flex: 1; padding: 0 5px;">Critical Total: <span style="font-size: 1.2em; font-weight: bold; color: #18520b;">${criticalTotal}</span></p>`;
-  }
+    let totalBlocks = `<p style="margin: 0; flex: 1; ${isCritical ? 'border-right: 1px solid #ddd;' : ''} padding: 0 5px;">Damage Total: <span style="font-size: 1.2em; font-weight: bold;">${finalGWFTotal}</span></p>`;
+    if (isCritical) {
+      totalBlocks += `<p style="margin: 0; flex: 1; padding: 0 5px;">Critical Total: <span style="font-size: 1.2em; font-weight: bold; color: #18520b;">${criticalTotal}</span></p>`;
+    }
 
-  const finalSummaryHTML = `
+    const finalSummaryHTML = `
     ${additionalDamageSectionHTML}
     <div style="display: flex; justify-content: space-around; text-align: center; font-weight: bold; font-size: 1em;">
       ${totalBlocks}
     </div>
     <hr style="margin: 5px 0 0; border-top: 2px solid #343a40;">`;
 
-  const reroll1Html = _getHalflingRerollHTML(rerollSummary1);
-  const reroll2Html = _getHalflingRerollHTML(rerollSummary2);
+    const reroll1Html = _getHalflingRerollHTML(rerollSummary1);
+    const reroll2Html = _getHalflingRerollHTML(rerollSummary2);
 
-  const abilityModSign = abilityMod >= 0 ? '+' : '';
-  const weaponModSign = weaponModifier >= 0 ? '+' : '';
-  const flatModSign = damageModifier >= 0 ? '+' : '';
-  const baseDamageTypeDisplay = damageType.toUpperCase() === 'BPS' ? 'BPS' : (damageType.charAt(0).toUpperCase() + damageType.slice(1));
+    const abilityModSign = abilityMod >= 0 ? '+' : '';
+    const weaponModSign = weaponModifier >= 0 ? '+' : '';
+    const flatModSign = damageModifier >= 0 ? '+' : '';
+    const baseDamageTypeDisplay = damageType.toUpperCase() === 'BPS' ? 'BPS' : (damageType.charAt(0).toUpperCase() + damageType.slice(1));
 
-  let damageDiceSummary = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
+    let damageDiceSummary = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
     <li style="list-style-type: disc;">Ability Mod (${abilityScore.toUpperCase()}): <strong>${abilityModSign}${abilityMod}</strong></li>
     <li style="list-style-type: disc;">Weapon Damage: <strong>${damageDiceCount}${cleanDieSize} (${baseDamageTypeDisplay})</strong></li>
     ${weaponModifier !== 0 ? `<li style="list-style-type: disc;">Weapon Modifier: <strong>${weaponModSign}${weaponModifier}</strong></li>` : ''}
     ${damageModifier !== 0 ? `<li style="list-style-type: disc;">Other Damage Mod: <strong>${flatModSign}${damageModifier}</strong></li>` : ''}`;
-  additionalDamageResults.forEach(c => {
-    if (c.onlyCrit) return;
-    const disp = c.damageType.toUpperCase() === 'BPS' ? 'BPS' : (c.damageType.charAt(0).toUpperCase() + c.damageType.slice(1));
-    damageDiceSummary += `<li style="list-style-type: disc;">${c.label}: <strong>${c.formula} (${disp})</strong></li>`;
-  });
-  damageDiceSummary += `</ul>`;
+    additionalDamageResults.forEach(c => {
+      if (c.onlyCrit) return;
+      const disp = c.damageType.toUpperCase() === 'BPS' ? 'BPS' : (c.damageType.charAt(0).toUpperCase() + c.damageType.slice(1));
+      damageDiceSummary += `<li style="list-style-type: disc;">${c.label}: <strong>${c.formula} (${disp})</strong></li>`;
+    });
+    damageDiceSummary += `</ul>`;
 
-  const attackCircumstanceModSign = attackCircumstanceModifier >= 0 ? '+' : '';
-  const weaponModifierAttackSign = weaponModifier >= 0 ? '+' : '';
-  const attackModifiersList = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
+    const attackCircumstanceModSign = attackCircumstanceModifier >= 0 ? '+' : '';
+    const weaponModifierAttackSign = weaponModifier >= 0 ? '+' : '';
+    const attackModifiersList = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
     <li style="list-style-type: disc;">Ability Mod (${abilityScore.toUpperCase()}): <strong>${abilityMod}</strong></li>
     <li style="list-style-type: disc;">Proficiency Bonus (PB): <strong>${prof}</strong></li>
     ${weaponModifier !== 0 ? `<li style="list-style-type: disc;">Weapon Modifier: <strong>${weaponModifierAttackSign}${weaponModifier}</strong></li>` : ''}
     ${attackCircumstanceModifier !== 0 ? `<li style="list-style-type: disc;">Other Mod: <strong>${attackCircumstanceModSign}${attackCircumstanceModifier}</strong></li>` : ''}
   </ul>`;
 
-  let diceMap = {};
-  let flatTotal = damageBonus + flatBonus;
-  let otherParts = [];
-  diceMap[rawDie] = damageDiceCount;
+    let diceMap = {};
+    let flatTotal = damageBonus + flatBonus;
+    let otherParts = [];
+    diceMap[rawDie] = damageDiceCount;
 
-  additionalDamageResults.forEach(c => {
-    if (c.onlyCrit) return;
-    let parts = c.formula.split('+').map(p => p.trim());
-    parts.forEach(p => {
-      let diceMatch = p.match(/^(\d*)[dD](\d+)$/);
-      if (diceMatch) {
-        let count = parseInt(diceMatch[1]) || 1;
-        let size = diceMatch[2];
-        diceMap[size] = (diceMap[size] || 0) + count;
-      } else if (!isNaN(Number(p)) && p !== "") {
-        flatTotal += Number(p);
-      } else {
-        otherParts.push(p);
-      }
+    additionalDamageResults.forEach(c => {
+      if (c.onlyCrit) return;
+      let parts = c.formula.split('+').map(p => p.trim());
+      parts.forEach(p => {
+        let diceMatch = p.match(/^(\d*)[dD](\d+)$/);
+        if (diceMatch) {
+          let count = parseInt(diceMatch[1]) || 1;
+          let size = diceMatch[2];
+          diceMap[size] = (diceMap[size] || 0) + count;
+        } else if (!isNaN(Number(p)) && p !== "") {
+          flatTotal += Number(p);
+        } else {
+          otherParts.push(p);
+        }
+      });
     });
-  });
 
-  let combinedDamageFormulas = [];
-  Object.keys(diceMap).sort((a, b) => Number(b) - Number(a)).forEach(size => {
-    if (diceMap[size] > 0) combinedDamageFormulas.push(diceMap[size] + 'd' + size);
-  });
-  combinedDamageFormulas.push(...otherParts);
-  if (flatTotal !== 0) combinedDamageFormulas.push(flatTotal);
-  const finalDamageString = combinedDamageFormulas.join(" + ").replace(/\+ -/g, "- ");
+    let combinedDamageFormulas = [];
+    Object.keys(diceMap).sort((a, b) => Number(b) - Number(a)).forEach(size => {
+      if (diceMap[size] > 0) combinedDamageFormulas.push(diceMap[size] + 'd' + size);
+    });
+    combinedDamageFormulas.push(...otherParts);
+    if (flatTotal !== 0) combinedDamageFormulas.push(flatTotal);
+    const finalDamageString = combinedDamageFormulas.join(" + ").replace(/\+ -/g, "- ");
 
-  const normalDamageByType = {};
-  const critDamageByType = {};
-  const addDmg = (obj, t, amt) => {
-    const typeKey = (t || "slashing").toLowerCase();
-    obj[typeKey] = (obj[typeKey] || 0) + amt;
-  };
+    const normalDamageByType = {};
+    const critDamageByType = {};
+    const addDmg = (obj, t, amt) => {
+      const typeKey = (t || "slashing").toLowerCase();
+      obj[typeKey] = (obj[typeKey] || 0) + amt;
+    };
 
-  addDmg(normalDamageByType, damageType, finalCombinedDieResult + damageBonus + flatBonus);
-  addDmg(critDamageByType, damageType, finalCombinedDieResult + damageBonus + flatBonus + maximizedWeaponDice);
+    addDmg(normalDamageByType, damageType, finalCombinedDieResult + damageBonus + flatBonus);
+    addDmg(critDamageByType, damageType, finalCombinedDieResult + damageBonus + flatBonus + maximizedWeaponDice);
 
-  if (resolvedExtraCrit > 0) {
-    addDmg(critDamageByType, extraCritType, resolvedExtraCrit);
-  }
-
-  for (const result of additionalDamageResults) {
-    if (!result.onlyCrit) addDmg(normalDamageByType, result.damageType, result.total);
-    let critBonus = 0;
-    if (result.isCrit && /[dD]/.test(result.formula)) {
-      critBonus = parseDamageFormula(result.formula);
+    if (resolvedExtraCrit > 0) {
+      addDmg(critDamageByType, extraCritType, resolvedExtraCrit);
     }
-    if (result.onlyCrit) {
-      addDmg(critDamageByType, result.damageType, result.total);
-    } else {
-      addDmg(critDamageByType, result.damageType, result.total + critBonus);
-    }
-  }
 
-  let normalBreakdownList = '';
-  for (const [t, amt] of Object.entries(normalDamageByType)) {
-    if (amt > 0) {
-      const displayType = t.toUpperCase() === 'BPS' ? 'BPS' : (t.charAt(0).toUpperCase() + t.slice(1));
-      normalBreakdownList += `<li style="list-style-type: disc;">${displayType}: <strong>${amt}</strong></li>`;
+    for (const result of additionalDamageResults) {
+      if (!result.onlyCrit) addDmg(normalDamageByType, result.damageType, result.total);
+      let critBonus = 0;
+      if (result.isCrit && /[dD]/.test(result.formula)) {
+        critBonus = parseDamageFormula(result.formula);
+      }
+      if (result.onlyCrit) {
+        addDmg(critDamageByType, result.damageType, result.total);
+      } else {
+        addDmg(critDamageByType, result.damageType, result.total + critBonus);
+      }
     }
-  }
 
-  let critBreakdownList = '';
-  for (const [t, amt] of Object.entries(critDamageByType)) {
-    if (amt > 0) {
-      const displayType = t.toUpperCase() === 'BPS' ? 'BPS' : (t.charAt(0).toUpperCase() + t.slice(1));
-      critBreakdownList += `<li style="list-style-type: disc;">${displayType}: <strong>${amt}</strong></li>`;
+    let normalBreakdownList = '';
+    for (const [t, amt] of Object.entries(normalDamageByType)) {
+      if (amt > 0) {
+        const displayType = t.toUpperCase() === 'BPS' ? 'BPS' : (t.charAt(0).toUpperCase() + t.slice(1));
+        normalBreakdownList += `<li style="list-style-type: disc;">${displayType}: <strong>${amt}</strong></li>`;
+      }
     }
-  }
 
-  const typeBreakdownHTML = `
+    let critBreakdownList = '';
+    for (const [t, amt] of Object.entries(critDamageByType)) {
+      if (amt > 0) {
+        const displayType = t.toUpperCase() === 'BPS' ? 'BPS' : (t.charAt(0).toUpperCase() + t.slice(1));
+        critBreakdownList += `<li style="list-style-type: disc;">${displayType}: <strong>${amt}</strong></li>`;
+      }
+    }
+
+    const typeBreakdownHTML = `
     <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Non-Crit Dmg Breakdown:</strong></p>
     <ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.9em; line-height: 1.4;">${normalBreakdownList}</ul>
     ${isCritical ? `
     <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Critical Dmg Breakdown:</strong></p>
     <ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.9em; line-height: 1.4;">${critBreakdownList}</ul>` : ''}`;
 
-  const contentSummary = `
+    const contentSummary = `
     <details style="padding: 0 5px;">
       <summary style="font-weight: 600; font-size: 1em; text-decoration: underline; margin: 5px 0; cursor: pointer;">
         <strong>Attack/Damage Breakdown</strong>
@@ -1253,7 +1289,7 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       </div>
     </details>`;
 
-  const chatContent = `
+    const chatContent = `
     <p><strong>${actorName}: ${chatCardTitle}</strong></p>
     <hr>
     <div style="display: flex; justify-content: space-around; align-items: flex-start; gap: 10px;">
@@ -1273,38 +1309,36 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
     ${finalSummaryHTML}
     ${contentSummary}`;
 
-  const targetIds = Array.from(game.user.targets).map(t => t.id);
-
-  await ChatMessage.create({
-    user: userId,
-    speaker: speaker,
-    content: chatContent,
-    rolls: finalRolls,
-    sound: CONFIG.sounds.dice,
-    flags: {
-      "autoanimations": {
-        item: {
-          name: chatCardTitle || config.macroName
-        },
-        targets: targetIds
+    await ChatMessage.create({
+      user: userId,
+      speaker: speaker,
+      content: chatContent,
+      rolls: finalRolls,
+      sound: CONFIG.sounds.dice,
+      flags: {
+        "autoanimations": {
+          item: {
+            name: chatCardTitle || config.macroName
+          },
+          targets: targetIds
+        }
       }
-    }
-  });
+    });
 
-  triggerSequencerAnimation(actor, config);
-});
+    triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
+  });
 
 
 
   // --- 2.3 Spell Execution Handler ---
   socket.register("runSpellAttackRoll", async (config, actorId, userId) => {
-  const actor = game.actors.get(actorId);
-  if (!actor) return ui.notifications.warn("Actor not found for spell execution.");
+    const actor = game.actors.get(actorId);
+    if (!actor) return ui.notifications.warn("Actor not found for spell execution.");
 
-  console.log("[CustomRolls] Starting runSpellAttackRoll for:", config.spellName, "Method:", config.resolutionMethod);
+    console.log("[CustomRolls] Starting runSpellAttackRoll for:", config.spellName, "Method:", config.resolutionMethod);
 
 
-    
+
 
 
 
@@ -1363,6 +1397,43 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
 
     const actorName = actor.name;
     const speaker = ChatMessage.getSpeaker({ actor });
+
+    const rollUser = game.users.get(userId) || game.user;
+    const token = actor.getActiveTokens()[0];
+    let autoTargetedToken = null;
+    let targetIds = Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
+
+    // If not self/point/healing and no targets, auto-target nearest hostile for player / non-hostile tokens
+    if (targetIds.length === 0 && token && !isHealingType && targetType !== "self" && targetType !== "point") {
+      const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
+      if (!isHostileNpc) {
+        const hostiles = canvas.tokens.placeables.filter(t =>
+          t.id !== token.id &&
+          t.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE &&
+          t.visible
+        );
+        if (hostiles.length > 0) {
+          let nearestHostile = null;
+          let minDistance = Infinity;
+          for (const h of hostiles) {
+            const dist = Math.hypot(h.center.x - token.center.x, h.center.y - token.center.y);
+            if (dist < minDistance) {
+              minDistance = dist;
+              nearestHostile = h;
+            }
+          }
+          if (nearestHostile) {
+            autoTargetedToken = nearestHostile;
+            targetIds = [nearestHostile.id];
+            try {
+              nearestHostile.setTarget(true, { user: rollUser, releaseOthers: false });
+            } catch (e) {
+              console.warn("[CustomRolls] Could not set canvas target for user:", e);
+            }
+          }
+        }
+      }
+    }
 
     function parseMaxDiceDamage(formula) {
       if (!formula || typeof formula !== 'string') return 0;
@@ -1500,8 +1571,6 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
         </div>
       `;
 
-      const targetIds = Array.from(game.user.targets).map(t => t.id);
-
       await ChatMessage.create({
         user: userId,
         speaker: speaker,
@@ -1516,7 +1585,7 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
         }
       });
 
-      triggerSequencerAnimation(actor, config);
+      triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
       return;
     }
 
@@ -1625,19 +1694,19 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
         flags: {
           "autoanimations": {
             item: { name: spellName || config.macroName },
-            targets: Array.from(game.user.targets).map(t => t.id)
+            targets: targetIds
           }
         }
       });
 
-      triggerSequencerAnimation(actor, config);
+      triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
       return;
     }
 
     // --- Attack Roll Branch (Fire Bolt, Scorching Ray, etc.) ---
     if (resolutionMethod === "attack") {
-      const numAttacks = isMultiAttack 
-        ? (Number(effectiveAttacks) || Number(attackCount) || 1) 
+      const numAttacks = isMultiAttack
+        ? (Number(effectiveAttacks) || Number(attackCount) || 1)
         : 1;
 
       const attackFormula = `1d20 + ${totalAttackMod}`;
@@ -1791,12 +1860,12 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
         flags: {
           "autoanimations": {
             item: { name: spellName || config.macroName },
-            targets: Array.from(game.user.targets).map(t => t.id)
+            targets: targetIds
           }
         }
       });
 
-      triggerSequencerAnimation(actor, config);
+      triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
       return;
     }
 
@@ -1953,12 +2022,12 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       flags: {
         "autoanimations": {
           item: { name: spellName || config.macroName },
-          targets: Array.from(game.user.targets).map(t => t.id)
+          targets: targetIds
         }
       }
     });
 
-    triggerSequencerAnimation(actor, config);
+    triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
   });
 
 
@@ -2047,7 +2116,7 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       const conMod = getNumericValue(actor.system.abilities?.con?.mod, 0);
       const conSaveObj = actor.system.abilities?.con?.save;
       const rawSave = getNumericValue(conSaveObj, null);
-      
+
       let conSaveTotal = conMod;
       if (rawSave !== null) {
         conSaveTotal = rawSave;
@@ -2060,10 +2129,10 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       label = "Concentration Check";
       sublabel = `CON Save (${baseMod >= 0 ? '+' : ''}${baseMod})`;
     } else if (rollType === "skill") {
-      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2") 
-        || actor.getFlag("world", "d20ProfilesV2") 
-        || window.CustomRolls.getProfileData?.(actor, "d20Profiles") 
-        || actor.getFlag("world", "d20Profiles") 
+      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2")
+        || actor.getFlag("world", "d20ProfilesV2")
+        || window.CustomRolls.getProfileData?.(actor, "d20Profiles")
+        || actor.getFlag("world", "d20Profiles")
         || {};
 
       if (key && key.startsWith("custom_")) {
@@ -2091,10 +2160,10 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
         sublabel = `${(skill?.ability || "dex").toUpperCase()} Base`;
       }
     } else if (rollType === "tool") {
-      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2") 
-        || actor.getFlag("world", "d20ProfilesV2") 
-        || window.CustomRolls.getProfileData?.(actor, "d20Profiles") 
-        || actor.getFlag("world", "d20Profiles") 
+      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2")
+        || actor.getFlag("world", "d20ProfilesV2")
+        || window.CustomRolls.getProfileData?.(actor, "d20Profiles")
+        || actor.getFlag("world", "d20Profiles")
         || {};
 
       if (key && key.startsWith("custom_")) {
@@ -2128,10 +2197,10 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       label = `${abilName} Saving Throw`;
       sublabel = "Ability Save";
     } else {
-      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2") 
-        || actor.getFlag("world", "d20ProfilesV2") 
-        || window.CustomRolls.getProfileData?.(actor, "d20Profiles") 
-        || actor.getFlag("world", "d20Profiles") 
+      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2")
+        || actor.getFlag("world", "d20ProfilesV2")
+        || window.CustomRolls.getProfileData?.(actor, "d20Profiles")
+        || actor.getFlag("world", "d20Profiles")
         || {};
 
       if (key && key.startsWith("custom_")) {
@@ -2934,41 +3003,64 @@ if (window.socketlib) {
 
 
 // --- Automated Animations & Sequencer Trigger ---
-async function triggerSequencerAnimation(actor, config) {
+async function triggerSequencerAnimation(actor, config, rollUser = null, autoTargetedToken = null) {
   const aa = globalThis.AutomatedAnimations || globalThis.AutoAnimations;
   const token = actor.getActiveTokens()[0];
   if (!token) return;
 
-  let targets = Array.from(game.user.targets);
+  const targetUser = rollUser || game.user;
+  let targets = Array.from(targetUser?.targets || game.user.targets);
 
-  // Auto-acquire nearest hostile if no target is active
-  if (targets.length === 0) {
-    const hostiles = canvas.tokens.placeables.filter(t => 
-      t.id !== token.id && 
-      t.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE && 
-      t.visible
-    );
-
-    if (hostiles.length > 0) {
-      let nearestHostile = null;
-      let minDistance = Infinity;
-
-      for (const h of hostiles) {
-        const dist = Math.hypot(h.center.x - token.center.x, h.center.y - token.center.y);
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestHostile = h;
-        }
-      }
-
-      if (nearestHostile) {
-        nearestHostile.setTarget(true, { user: game.user, releaseOthers: true });
-        targets = [nearestHostile];
-      }
-    } else {
-      return;
+  if (autoTargetedToken) {
+    if (!targets.some(t => t.id === autoTargetedToken.id)) {
+      targets.push(autoTargetedToken);
     }
   }
+
+  // Fallback: If no target and player owned / non-hostile, acquire nearest hostile
+  if (targets.length === 0) {
+    const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
+    if (!isHostileNpc) {
+      const hostiles = canvas.tokens.placeables.filter(t =>
+        t.id !== token.id &&
+        t.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE &&
+        t.visible
+      );
+
+      if (hostiles.length > 0) {
+        let nearestHostile = null;
+        let minDistance = Infinity;
+        for (const h of hostiles) {
+          const dist = Math.hypot(h.center.x - token.center.x, h.center.y - token.center.y);
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestHostile = h;
+          }
+        }
+        if (nearestHostile) {
+          targets = [nearestHostile];
+          autoTargetedToken = nearestHostile;
+          try {
+            nearestHostile.setTarget(true, { user: targetUser, releaseOthers: false });
+          } catch (e) {
+            console.warn("[CustomRolls] Could not set canvas target for user:", e);
+          }
+        }
+      }
+    }
+  }
+
+  if (targets.length === 0) return;
+
+  const cleanupAutoTarget = () => {
+    if (autoTargetedToken && targetUser) {
+      try {
+        autoTargetedToken.setTarget(false, { user: targetUser, releaseOthers: false });
+      } catch (e) {
+        console.warn("[CustomRolls] Error clearing auto target:", e);
+      }
+    }
+  };
 
   const isSpell = Boolean(config.spellName || config.baseLevel !== undefined || config.spellAbility);
   const rawName = String(config.spellName || config.macroName || config.chatCardTitle || (isSpell ? "Spell" : "Attack")).trim();
@@ -3007,17 +3099,21 @@ async function triggerSequencerAnimation(actor, config) {
 
   // If Fireball is cast without an active measured template, use Sequencer directly on the target token
   if (isFireball && globalThis.Sequence && targetToken) {
-    new Sequence()
-      .effect()
+    try {
+      await new Sequence()
+        .effect()
         .file("jb2a.fireball.beam.orange")
         .atLocation(token)
         .stretchTo(targetToken)
         .waitUntilFinished(-500)
-      .effect()
+        .effect()
         .file("jb2a.fireball.explosion.orange")
         .atLocation(targetToken)
         .scale(1.5)
-      .play();
+        .play();
+    } finally {
+      cleanupAutoTarget();
+    }
     return;
   }
 
@@ -3026,12 +3122,21 @@ async function triggerSequencerAnimation(actor, config) {
     const playFn = aa.PlayAnimation || aa.playAnimation;
     if (typeof playFn === "function") {
       try {
-        await playFn.call(aa, token, item, targets);
+        const animPromise = playFn.call(aa, token, item, targets);
+        if (animPromise && typeof animPromise.then === "function") {
+          await animPromise;
+        }
       } catch (err) {
         console.warn("[CustomRolls AA] AutoAnimations call failed:", err);
+      } finally {
+        cleanupAutoTarget();
       }
+      return;
     }
   }
+
+  // If no animation ran, clean up target
+  cleanupAutoTarget();
 }
 
 
@@ -3051,14 +3156,14 @@ window.CustomRolls = window.CustomRolls || {};
 
 
 // --- Persistent Profile Storage Helpers ---
-window.CustomRolls.getProfileData = function(actor, category) {
+window.CustomRolls.getProfileData = function (actor, category) {
   if (!actor) return null;
   const store = game.settings.get("world", "customRollProfiles") || {};
   const actorStore = store[actor.id] || store[actor.name] || {};
   return actorStore[category] || null;
 };
 
-window.CustomRolls.setProfileData = async function(actor, category, data) {
+window.CustomRolls.setProfileData = async function (actor, category, data) {
   if (!actor) return;
   const store = foundry.utils.deepClone(game.settings.get("world", "customRollProfiles") || {});
   if (!store[actor.id]) store[actor.id] = {};
@@ -3068,7 +3173,7 @@ window.CustomRolls.setProfileData = async function(actor, category, data) {
 };
 
 // --- 3.1 D20 Test Client-Side Dialog Launcher ---
-window.CustomRolls.openD20Dialog = function() {
+window.CustomRolls.openD20Dialog = function () {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -3499,7 +3604,7 @@ window.CustomRolls.openD20Dialog = function() {
 // =========================================================================
 // VERSION 2: D20 TEST MINI CHARACTER SHEET LAUNCHER (REFINED & COMPACT)
 // =========================================================================
-window.CustomRolls.openD20DialogV2 = function() {
+window.CustomRolls.openD20DialogV2 = function () {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -3829,8 +3934,8 @@ window.CustomRolls.openD20DialogV2 = function() {
               <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">TOOLS</label>
               <div id="tools-list-container-v2" style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 140px; overflow-y: auto;">
                 ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
-                  ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
-                  : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
+      ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
+      : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
               </div>
 
               <div id="other-tools-container-v2" style="margin-top: 2px;">
@@ -3925,11 +4030,11 @@ Click a numbered modifier badge to execute a roll.</div>
         if (!choiceKey) return null;
         if (storedProfiles[choiceKey]) return storedProfiles[choiceKey];
         if (type === "check") {
-          return storedProfiles[`check_${choiceKey}`] 
+          return storedProfiles[`check_${choiceKey}`]
             || (choiceKey.startsWith("check_") ? storedProfiles[choiceKey.replace("check_", "")] : null);
         }
         if (type === "save") {
-          return storedProfiles[`save_${choiceKey}`] 
+          return storedProfiles[`save_${choiceKey}`]
             || (choiceKey.startsWith("save_") ? storedProfiles[choiceKey.replace("save_", "")] : null);
         }
         return null;
@@ -4001,14 +4106,14 @@ Click a numbered modifier badge to execute a roll.</div>
         }
       };
 
-      html.find('.ability-card, .save-row, .sheet-entry-row').on('click', function(e) {
+      html.find('.ability-card, .save-row, .sheet-entry-row').on('click', function (e) {
         if ($(e.target).closest('.roll-btn-v2').length) return;
         const type = $(this).data('type');
         const key = $(this).data('key');
         setInfo(type, key);
       });
 
-      html.find('#other-tools-select-v2').on('change input', function() {
+      html.find('#other-tools-select-v2').on('change input', function () {
         const key = $(this).val();
         if (key) {
           setInfo('tool', key);
@@ -4048,7 +4153,7 @@ Click a numbered modifier badge to execute a roll.</div>
         }, actor.id, game.user.id);
       };
 
-      html.find('.roll-btn-v2').on('click', function(e) {
+      html.find('.roll-btn-v2').on('click', function (e) {
         e.stopPropagation();
         const type = $(this).data('type');
         const key = $(this).data('key');
@@ -4056,7 +4161,7 @@ Click a numbered modifier badge to execute a roll.</div>
         executeRoll(type, key);
       });
 
-      html.find('#roll-other-tool-btn-v2').on('click', function(e) {
+      html.find('#roll-other-tool-btn-v2').on('click', function (e) {
         e.stopPropagation();
         const key = html.find('#other-tools-select-v2').val();
         if (!key) return ui.notifications.warn("Please select a tool first.");
@@ -4069,7 +4174,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
 
 // --- 3.2 Weapon Attack Client-Side Dialog Launcher ---
-window.CustomRolls.openAttackDialog = function() {
+window.CustomRolls.openAttackDialog = function () {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -4216,7 +4321,7 @@ window.CustomRolls.openAttackDialog = function() {
           }
 
           if (config.additionalDamageComponents) {
-            html.find(".extra-dmg-toggle").each(function() {
+            html.find(".extra-dmg-toggle").each(function () {
               const idx = $(this).data("index");
               if (config.additionalDamageComponents[idx]) {
                 config.additionalDamageComponents[idx].isActive = $(this).is(":checked");
@@ -4241,7 +4346,7 @@ window.CustomRolls.openAttackDialog = function() {
 };
 
 // --- 3.3 Spell Attack Client-Side Dialog Launcher ---
-window.CustomRolls.openSpellDialog = async function() {
+window.CustomRolls.openSpellDialog = async function () {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -4624,7 +4729,7 @@ window.CustomRolls.openSpellDialog = async function() {
 
       if (config.damageMode === "choice" && !["heal", "temp_hp", "max_hp"].includes(config.resolutionMethod)) {
         const choiceOptions = [
-          "acid", "cold", "fire", "force", "lightning", 
+          "acid", "cold", "fire", "force", "lightning",
           "necrotic", "poison", "psychic", "radiant", "thunder"
         ].map(t => `<option value="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('');
 
@@ -4666,7 +4771,7 @@ window.CustomRolls.openSpellDialog = async function() {
 };
 
 // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
-window.CustomRolls.openActionDialog = function(initialMode = "weapon") {
+window.CustomRolls.openActionDialog = function (initialMode = "weapon") {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -4994,7 +5099,7 @@ window.CustomRolls.openActionDialog = function(initialMode = "weapon") {
             }
 
             if (config.additionalDamageComponents) {
-              html.find(".extra-dmg-toggle").each(function() {
+              html.find(".extra-dmg-toggle").each(function () {
                 const idx = $(this).data("index");
                 if (config.additionalDamageComponents[idx]) {
                   config.additionalDamageComponents[idx].isActive = $(this).is(":checked");
@@ -5028,7 +5133,7 @@ window.CustomRolls.openActionDialog = function(initialMode = "weapon") {
 
             if (config.damageMode === "choice" && !["heal", "temp_hp", "max_hp"].includes(config.resolutionMethod)) {
               const choiceOptions = [
-                "acid", "cold", "fire", "force", "lightning", 
+                "acid", "cold", "fire", "force", "lightning",
                 "necrotic", "poison", "psychic", "radiant", "thunder"
               ].map(t => `<option value="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('');
 
@@ -5048,8 +5153,6 @@ window.CustomRolls.openActionDialog = function(initialMode = "weapon") {
               if (!choiceConfirmed) return;
             }
 
-            triggerSequencerAnimation(actor, config);
-
             await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
           }
         }
@@ -5066,7 +5169,7 @@ window.CustomRolls.openActionDialog = function(initialMode = "weapon") {
       const execBtn = html.find(".dialog-button.execute");
 
       function updateCardStyles() {
-        html.find(".weapon-card").each(function() {
+        html.find(".weapon-card").each(function () {
           const k = $(this).data("key");
           const isSel = k === selectedWeaponKey;
           $(this).css({
@@ -5074,7 +5177,7 @@ window.CustomRolls.openActionDialog = function(initialMode = "weapon") {
             "background-color": isSel ? "#f0f4ff" : "#fff"
           });
         });
-        html.find(".spell-card").each(function() {
+        html.find(".spell-card").each(function () {
           const k = $(this).data("key");
           const isSel = k === selectedSpellKey;
           $(this).css({
@@ -5107,23 +5210,23 @@ window.CustomRolls.openActionDialog = function(initialMode = "weapon") {
       btnSpell.on("click", () => setTab("spell"));
       setTab(currentMode);
 
-      html.find(".weapon-card").on("click", function() {
+      html.find(".weapon-card").on("click", function () {
         selectedWeaponKey = $(this).data("key");
         updateCardStyles();
         html.find("#weapon-options-container").html(getSelectedWeaponOptionsHtml());
       });
 
-      html.find(".spell-card").on("click", function() {
+      html.find(".spell-card").on("click", function () {
         selectedSpellKey = $(this).data("key");
         updateCardStyles();
         const sp = spellConfigs[selectedSpellKey];
         html.find("#spell-options-container").html(sp ? getUpcastOptionsHtml(sp) : "");
       });
     }
-  }, { 
-    width: 440, 
-    height: "auto", 
-    resizable: true 
+  }, {
+    width: 440,
+    height: "auto",
+    resizable: true
   }).render(true);
 };
 
@@ -5135,7 +5238,7 @@ window.CustomRolls.openActionDialog = function(initialMode = "weapon") {
 // =============================================================================
 
 // --- 4.1 D20 Preset Modifier Editor Launcher ---
-window.CustomRolls.openD20PresetEditor = function() {
+window.CustomRolls.openD20PresetEditor = function () {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -5167,69 +5270,77 @@ window.CustomRolls.openD20PresetEditor = function() {
   };
 
   const STANDARD_OPTIONS = [
-    { optgroup: "Skills", options: [
-      { key: "acr", label: "Acrobatics (DEX)" },
-      { key: "ani", label: "Animal Handling (WIS)" },
-      { key: "arc", label: "Arcana (INT)" },
-      { key: "ath", label: "Athletics (STR)" },
-      { key: "dec", label: "Deception (CHA)" },
-      { key: "his", label: "History (INT)" },
-      { key: "ins", label: "Insight (WIS)" },
-      { key: "itm", label: "Intimidation (CHA)" },
-      { key: "inv", label: "Investigation (INT)" },
-      { key: "med", label: "Medicine (WIS)" },
-      { key: "nat", label: "Nature (INT)" },
-      { key: "prc", label: "Perception (WIS)" },
-      { key: "prf", label: "Performance (CHA)" },
-      { key: "per", label: "Persuasion (CHA)" },
-      { key: "rel", label: "Religion (INT)" },
-      { key: "slt", label: "Sleight of Hand (DEX)" },
-      { key: "ste", label: "Stealth (DEX)" },
-      { key: "sur", label: "Survival (WIS)" }
-    ]},
-    { optgroup: "Ability Checks", options: [
-      { key: "check_str", label: "Strength Check (STR)" },
-      { key: "check_dex", label: "Dexterity Check (DEX)" },
-      { key: "check_con", label: "Constitution Check (CON)" },
-      { key: "check_int", label: "Intelligence Check (INT)" },
-      { key: "check_wis", label: "Wisdom Check (WIS)" },
-      { key: "check_cha", label: "Charisma Check (CHA)" }
-    ]},
-    { optgroup: "Common Tools", options: [
-      { key: "alchemist", label: "Alchemist Supplies" },
-      { key: "brewer", label: "Brewer's Supplies" },
-      { key: "calligrapher", label: "Calligrapher's Supplies" },
-      { key: "carpenter", label: "Carpenter's Tools" },
-      { key: "cartographer", label: "Cartographer's Tools" },
-      { key: "cobbler", label: "Cobbler's Tools" },
-      { key: "cook", label: "Cook's Utensils" },
-      { key: "disguise", label: "Disguise Kit" },
-      { key: "forgery", label: "Forgery Kit" },
-      { key: "gaming", label: "Gaming Set" },
-      { key: "glassblower", label: "Glassblower's Tools" },
-      { key: "herbalism", label: "Herbalism Kit" },
-      { key: "jeweler", label: "Jeweler's Tools" },
-      { key: "leatherworker", label: "Leatherworker's Tools" },
-      { key: "mason", label: "Mason's Tools" },
-      { key: "musical", label: "Musical Instrument" },
-      { key: "navigator", label: "Navigator's Tools" },
-      { key: "painter", label: "Painter's Supplies" },
-      { key: "poisoner", label: "Poisoner's Kit" },
-      { key: "potter", label: "Potter's Tools" },
-      { key: "smith", label: "Smith's Tools" },
-      { key: "thieves", label: "Thieves' Tools" },
-      { key: "tinker", label: "Tinker's Tools" },
-      { key: "weaver", label: "Weaver's Tools" },
-      { key: "woodcarver", label: "Woodcarver's Tools" }
-    ]},
-    { optgroup: "Saving Throws", options: [
-      { key: "save_str", label: "Strength Save" },
-      { key: "save_dex", label: "Dexterity Save" },
-      { key: "save_con", label: "Constitution Save" },
-      { key: "save_int", label: "Intelligence Save" },
-      { key: "save_wis", label: "Wisdom Save" },
-      { key: "save_cha", label: "Charisma Save" }
-    ]}
+    {
+      optgroup: "Skills", options: [
+        { key: "acr", label: "Acrobatics (DEX)" },
+        { key: "ani", label: "Animal Handling (WIS)" },
+        { key: "arc", label: "Arcana (INT)" },
+        { key: "ath", label: "Athletics (STR)" },
+        { key: "dec", label: "Deception (CHA)" },
+        { key: "his", label: "History (INT)" },
+        { key: "ins", label: "Insight (WIS)" },
+        { key: "itm", label: "Intimidation (CHA)" },
+        { key: "inv", label: "Investigation (INT)" },
+        { key: "med", label: "Medicine (WIS)" },
+        { key: "nat", label: "Nature (INT)" },
+        { key: "prc", label: "Perception (WIS)" },
+        { key: "prf", label: "Performance (CHA)" },
+        { key: "per", label: "Persuasion (CHA)" },
+        { key: "rel", label: "Religion (INT)" },
+        { key: "slt", label: "Sleight of Hand (DEX)" },
+        { key: "ste", label: "Stealth (DEX)" },
+        { key: "sur", label: "Survival (WIS)" }
+      ]
+    },
+    {
+      optgroup: "Ability Checks", options: [
+        { key: "check_str", label: "Strength Check (STR)" },
+        { key: "check_dex", label: "Dexterity Check (DEX)" },
+        { key: "check_con", label: "Constitution Check (CON)" },
+        { key: "check_int", label: "Intelligence Check (INT)" },
+        { key: "check_wis", label: "Wisdom Check (WIS)" },
+        { key: "check_cha", label: "Charisma Check (CHA)" }
+      ]
+    },
+    {
+      optgroup: "Common Tools", options: [
+        { key: "alchemist", label: "Alchemist Supplies" },
+        { key: "brewer", label: "Brewer's Supplies" },
+        { key: "calligrapher", label: "Calligrapher's Supplies" },
+        { key: "carpenter", label: "Carpenter's Tools" },
+        { key: "cartographer", label: "Cartographer's Tools" },
+        { key: "cobbler", label: "Cobbler's Tools" },
+        { key: "cook", label: "Cook's Utensils" },
+        { key: "disguise", label: "Disguise Kit" },
+        { key: "forgery", label: "Forgery Kit" },
+        { key: "gaming", label: "Gaming Set" },
+        { key: "glassblower", label: "Glassblower's Tools" },
+        { key: "herbalism", label: "Herbalism Kit" },
+        { key: "jeweler", label: "Jeweler's Tools" },
+        { key: "leatherworker", label: "Leatherworker's Tools" },
+        { key: "mason", label: "Mason's Tools" },
+        { key: "musical", label: "Musical Instrument" },
+        { key: "navigator", label: "Navigator's Tools" },
+        { key: "painter", label: "Painter's Supplies" },
+        { key: "poisoner", label: "Poisoner's Kit" },
+        { key: "potter", label: "Potter's Tools" },
+        { key: "smith", label: "Smith's Tools" },
+        { key: "thieves", label: "Thieves' Tools" },
+        { key: "tinker", label: "Tinker's Tools" },
+        { key: "weaver", label: "Weaver's Tools" },
+        { key: "woodcarver", label: "Woodcarver's Tools" }
+      ]
+    },
+    {
+      optgroup: "Saving Throws", options: [
+        { key: "save_str", label: "Strength Save" },
+        { key: "save_dex", label: "Dexterity Save" },
+        { key: "save_con", label: "Constitution Save" },
+        { key: "save_int", label: "Intelligence Save" },
+        { key: "save_wis", label: "Wisdom Save" },
+        { key: "save_cha", label: "Charisma Save" }
+      ]
+    }
   ];
 
   const getLabelForKey = (key) => {
@@ -5382,8 +5493,8 @@ window.CustomRolls.openD20PresetEditor = function() {
       save: {
         icon: '<i class="fas fa-save"></i>',
         label: "Save Profiles",
-        callback: () => { 
-          performSave = true; 
+        callback: () => {
+          performSave = true;
         }
       },
       cancel: { label: "Cancel" }
@@ -5583,7 +5694,7 @@ window.CustomRolls.openD20PresetEditor = function() {
 // =========================================================================
 // VERSION 2: D20 PRESET MODIFIER EDITOR (DISTINCT V2 DIALOG THEME)
 // =========================================================================
-window.CustomRolls.openD20PresetEditorV2 = function() {
+window.CustomRolls.openD20PresetEditorV2 = function () {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
   if (!token) {
@@ -5615,69 +5726,77 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
   };
 
   const STANDARD_OPTIONS = [
-    { optgroup: "Skills", options: [
-      { key: "acr", label: "Acrobatics (DEX)" },
-      { key: "ani", label: "Animal Handling (WIS)" },
-      { key: "arc", label: "Arcana (INT)" },
-      { key: "ath", label: "Athletics (STR)" },
-      { key: "dec", label: "Deception (CHA)" },
-      { key: "his", label: "History (INT)" },
-      { key: "ins", label: "Insight (WIS)" },
-      { key: "itm", label: "Intimidation (CHA)" },
-      { key: "inv", label: "Investigation (INT)" },
-      { key: "med", label: "Medicine (WIS)" },
-      { key: "nat", label: "Nature (INT)" },
-      { key: "prc", label: "Perception (WIS)" },
-      { key: "prf", label: "Performance (CHA)" },
-      { key: "per", label: "Persuasion (CHA)" },
-      { key: "rel", label: "Religion (INT)" },
-      { key: "slt", label: "Sleight of Hand (DEX)" },
-      { key: "ste", label: "Stealth (DEX)" },
-      { key: "sur", label: "Survival (WIS)" }
-    ]},
-    { optgroup: "Ability Checks", options: [
-      { key: "check_str", label: "Strength Check (STR)" },
-      { key: "check_dex", label: "Dexterity Check (DEX)" },
-      { key: "check_con", label: "Constitution Check (CON)" },
-      { key: "check_int", label: "Intelligence Check (INT)" },
-      { key: "check_wis", label: "Wisdom Check (WIS)" },
-      { key: "check_cha", label: "Charisma Check (CHA)" }
-    ]},
-    { optgroup: "Common Tools", options: [
-      { key: "alchemist", label: "Alchemist Supplies" },
-      { key: "brewer", label: "Brewer's Supplies" },
-      { key: "calligrapher", label: "Calligrapher's Supplies" },
-      { key: "carpenter", label: "Carpenter's Tools" },
-      { key: "cartographer", label: "Cartographer's Tools" },
-      { key: "cobbler", label: "Cobbler's Tools" },
-      { key: "cook", label: "Cook's Utensils" },
-      { key: "disguise", label: "Disguise Kit" },
-      { key: "forgery", label: "Forgery Kit" },
-      { key: "gaming", label: "Gaming Set" },
-      { key: "glassblower", label: "Glassblower's Tools" },
-      { key: "herbalism", label: "Herbalism Kit" },
-      { key: "jeweler", label: "Jeweler's Tools" },
-      { key: "leatherworker", label: "Leatherworker's Tools" },
-      { key: "mason", label: "Mason's Tools" },
-      { key: "musical", label: "Musical Instrument" },
-      { key: "navigator", label: "Navigator's Tools" },
-      { key: "painter", label: "Painter's Supplies" },
-      { key: "poisoner", label: "Poisoner's Kit" },
-      { key: "potter", label: "Potter's Tools" },
-      { key: "smith", label: "Smith's Tools" },
-      { key: "thieves", label: "Thieves' Tools" },
-      { key: "tinker", label: "Tinker's Tools" },
-      { key: "weaver", label: "Weaver's Tools" },
-      { key: "woodcarver", label: "Woodcarver's Tools" }
-    ]},
-    { optgroup: "Saving Throws", options: [
-      { key: "save_str", label: "Strength Save" },
-      { key: "save_dex", label: "Dexterity Save" },
-      { key: "save_con", label: "Constitution Save" },
-      { key: "save_int", label: "Intelligence Save" },
-      { key: "save_wis", label: "Wisdom Save" },
-      { key: "save_cha", label: "Charisma Save" }
-    ]}
+    {
+      optgroup: "Skills", options: [
+        { key: "acr", label: "Acrobatics (DEX)" },
+        { key: "ani", label: "Animal Handling (WIS)" },
+        { key: "arc", label: "Arcana (INT)" },
+        { key: "ath", label: "Athletics (STR)" },
+        { key: "dec", label: "Deception (CHA)" },
+        { key: "his", label: "History (INT)" },
+        { key: "ins", label: "Insight (WIS)" },
+        { key: "itm", label: "Intimidation (CHA)" },
+        { key: "inv", label: "Investigation (INT)" },
+        { key: "med", label: "Medicine (WIS)" },
+        { key: "nat", label: "Nature (INT)" },
+        { key: "prc", label: "Perception (WIS)" },
+        { key: "prf", label: "Performance (CHA)" },
+        { key: "per", label: "Persuasion (CHA)" },
+        { key: "rel", label: "Religion (INT)" },
+        { key: "slt", label: "Sleight of Hand (DEX)" },
+        { key: "ste", label: "Stealth (DEX)" },
+        { key: "sur", label: "Survival (WIS)" }
+      ]
+    },
+    {
+      optgroup: "Ability Checks", options: [
+        { key: "check_str", label: "Strength Check (STR)" },
+        { key: "check_dex", label: "Dexterity Check (DEX)" },
+        { key: "check_con", label: "Constitution Check (CON)" },
+        { key: "check_int", label: "Intelligence Check (INT)" },
+        { key: "check_wis", label: "Wisdom Check (WIS)" },
+        { key: "check_cha", label: "Charisma Check (CHA)" }
+      ]
+    },
+    {
+      optgroup: "Common Tools", options: [
+        { key: "alchemist", label: "Alchemist Supplies" },
+        { key: "brewer", label: "Brewer's Supplies" },
+        { key: "calligrapher", label: "Calligrapher's Supplies" },
+        { key: "carpenter", label: "Carpenter's Tools" },
+        { key: "cartographer", label: "Cartographer's Tools" },
+        { key: "cobbler", label: "Cobbler's Tools" },
+        { key: "cook", label: "Cook's Utensils" },
+        { key: "disguise", label: "Disguise Kit" },
+        { key: "forgery", label: "Forgery Kit" },
+        { key: "gaming", label: "Gaming Set" },
+        { key: "glassblower", label: "Glassblower's Tools" },
+        { key: "herbalism", label: "Herbalism Kit" },
+        { key: "jeweler", label: "Jeweler's Tools" },
+        { key: "leatherworker", label: "Leatherworker's Tools" },
+        { key: "mason", label: "Mason's Tools" },
+        { key: "musical", label: "Musical Instrument" },
+        { key: "navigator", label: "Navigator's Tools" },
+        { key: "painter", label: "Painter's Supplies" },
+        { key: "poisoner", label: "Poisoner's Kit" },
+        { key: "potter", label: "Potter's Tools" },
+        { key: "smith", label: "Smith's Tools" },
+        { key: "thieves", label: "Thieves' Tools" },
+        { key: "tinker", label: "Tinker's Tools" },
+        { key: "weaver", label: "Weaver's Tools" },
+        { key: "woodcarver", label: "Woodcarver's Tools" }
+      ]
+    },
+    {
+      optgroup: "Saving Throws", options: [
+        { key: "save_str", label: "Strength Save" },
+        { key: "save_dex", label: "Dexterity Save" },
+        { key: "save_con", label: "Constitution Save" },
+        { key: "save_int", label: "Intelligence Save" },
+        { key: "save_wis", label: "Wisdom Save" },
+        { key: "save_cha", label: "Charisma Save" }
+      ]
+    }
   ];
 
   const getLabelForKey = (key) => {
@@ -6048,7 +6167,7 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
 
 
 // --- 4.2 Unified Action Generator (Weapons & Spells) ---
-window.CustomRolls.openActionGenerator = async function() {
+window.CustomRolls.openActionGenerator = async function () {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
   const actor = token?.actor;
   if (!actor) {
@@ -6072,7 +6191,7 @@ window.CustomRolls.openActionGenerator = async function() {
   ];
 
   function generateDamageTypeOptions(selectedValue = "slashing") {
-    return DAMAGE_TYPES.map(t => 
+    return DAMAGE_TYPES.map(t =>
       `<option value="${t.value}" ${t.value === selectedValue ? 'selected' : ''}>${t.label}</option>`
     ).join('');
   }
@@ -6088,14 +6207,14 @@ window.CustomRolls.openActionGenerator = async function() {
     let damageComponentHTML = '';
     for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
       const defaultLabel = `Extra Damage ${i}`;
-      const placeholderLabel = i === 1 ? 'Sneak Attack, etc.' : 
-                               i === 2 ? "Hunter's Mark / Hex" : 
-                               i === 3 ? 'Divine Smite, etc.' : 
-                               `Component ${i}`;
+      const placeholderLabel = i === 1 ? 'Sneak Attack, etc.' :
+        i === 2 ? "Hunter's Mark / Hex" :
+          i === 3 ? 'Divine Smite, etc.' :
+            `Component ${i}`;
 
       const defaultCritChecked = i === 1 || i === 3 ? 'checked' : '';
       const defaultType = i === 3 ? 'radiant' : 'slashing';
-      
+
       damageComponentHTML += `
         <div class="damage-component-block" style="border: 1px solid #7289DA; padding: 8px; margin-bottom: 10px; border-radius: 4px; background: #f7f9ff;">
           <h4 style="margin: 0 0 6px 0; border-bottom: 1px dashed #7289DA; padding-bottom: 3px; font-size: 0.9em; color: #2c3e50;">Component ${i}</h4>
@@ -6327,7 +6446,7 @@ window.CustomRolls.openActionGenerator = async function() {
             };
 
             const currentAttacks = foundry.utils.deepClone(
-              window.CustomRolls.getProfileData(actor, "attackConfigs") || 
+              window.CustomRolls.getProfileData(actor, "attackConfigs") ||
               actor.getFlag("world", "attackConfigs") || {}
             );
             currentAttacks[macroName] = configData;
@@ -6343,11 +6462,11 @@ window.CustomRolls.openActionGenerator = async function() {
       default: "save",
       render: (html) => {
         setTimeout(() => html.closest('.app.dialog').css({ height: "auto" }), 10);
-        
+
         // Tab switching
         const tabs = html.find('.tab-button');
         const contents = html.find('.tab-content');
-        tabs.on('click', function(e) {
+        tabs.on('click', function (e) {
           e.preventDefault();
           const targetTab = $(this).data('tab');
           tabs.css('background', '#eee').removeClass('active');
@@ -6357,7 +6476,7 @@ window.CustomRolls.openActionGenerator = async function() {
         });
 
         // Autofill when a weapon is picked from the sheet
-        html.find('#sheetWeaponSelect').on('change', function() {
+        html.find('#sheetWeaponSelect').on('change', function () {
           const weaponId = $(this).val();
           if (!weaponId) return;
 
@@ -6419,13 +6538,13 @@ window.CustomRolls.openActionGenerator = async function() {
   }
 
   // --- Spell Generator Sub-Form ---
-function openSpellGeneratorDialog() {
-  const actorSpells = (actor.itemTypes?.spell || []).sort((a, b) => a.name.localeCompare(b.name));
-  const spellOptionsHtml = actorSpells.length > 0
-    ? `<option value="">-- Select a spell to autofill fields --</option>` + actorSpells.map(s => `<option value="${s.id}">${s.name} (Lvl ${s.system.level ?? 0})</option>`).join('')
-    : `<option value="">-- No spells found on sheet --</option>`;
+  function openSpellGeneratorDialog() {
+    const actorSpells = (actor.itemTypes?.spell || []).sort((a, b) => a.name.localeCompare(b.name));
+    const spellOptionsHtml = actorSpells.length > 0
+      ? `<option value="">-- Select a spell to autofill fields --</option>` + actorSpells.map(s => `<option value="${s.id}">${s.name} (Lvl ${s.system.level ?? 0})</option>`).join('')
+      : `<option value="">-- No spells found on sheet --</option>`;
 
-  const content = `
+    const content = `
     <form style="padding: 5px; font-family: inherit;">
       <div class="form-group" style="margin-bottom: 8px; background: rgba(114, 137, 218, 0.08); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 4px; padding: 6px;">
         <label style="font-weight: bold; display: block; font-size: 0.8em; color: #4b5d88; margin-bottom: 2px;">
@@ -6697,231 +6816,231 @@ function openSpellGeneratorDialog() {
     </form>
   `;
 
-  new Dialog({
-    title: `Generate Spell: ${actor.name}`,
-    content: content,
-    buttons: {
-      save: {
-        icon: '<i class="fas fa-save"></i>',
-        label: "Save Spell",
-        callback: async (html) => {
-          const getVal = (name) => html.find(`[name="${name}"]`).val();
-          const getCheck = (name) => html.find(`[name="${name}"]`).is(':checked');
+    new Dialog({
+      title: `Generate Spell: ${actor.name}`,
+      content: content,
+      buttons: {
+        save: {
+          icon: '<i class="fas fa-save"></i>',
+          label: "Save Spell",
+          callback: async (html) => {
+            const getVal = (name) => html.find(`[name="${name}"]`).val();
+            const getCheck = (name) => html.find(`[name="${name}"]`).is(':checked');
 
-          const spellName = getVal("spellName")?.trim() || "New Spell";
-          const spellData = {
-            itemId: getVal("itemId") || null,
-            spellName,
-            spellAbility: getVal("spellAbility"),
-            baseLevel: Number(getVal("baseLevel")) || 0,
-            resolutionMethod: getVal("resolutionMethod") || "attack",
-            saveAbility: getVal("saveAbility") || "dex",
-            saveSuccess: getVal("saveSuccess") || "half",
-            isMultiAttack: getCheck("isMultiAttack"),
-            attackCount: Number(getVal("attackCount")) || 1,
-            upcastAttacks: Number(getVal("upcastAttacks")) || 0,
-            cantripAttackScaling: getCheck("cantripAttackScaling"),
-            projectileCount: Number(getVal("projectileCount")) || 3,
-            upcastProjectiles: Number(getVal("upcastProjectiles")) || 1,
-            addAbilityModToValue: getCheck("addAbilityModToValue"),
-            castingTime: getVal("castingTime")?.trim() || "1 Action",
-            range: getVal("range")?.trim() || "Touch",
-            duration: getVal("duration")?.trim() || "Instantaneous",
-            concentration: getCheck("concentration"),
-            targetType: getVal("targetType") || "creature",
-            areaShape: getVal("areaShape") || "cone",
-            areaSize: getVal("areaSize")?.trim() || "",
-            summary: getVal("summary")?.trim() || "",
-            damageDiceCount: Number(getVal("damageDiceCount")) || 0,
-            damageDieSize: getVal("damageDieSize"),
-            extraDiceFormula: getVal("extraDiceFormula")?.trim() || "",
-            upcastDiceFormula: getVal("upcastDiceFormula")?.trim() || "",
-            damageMode: getVal("damageMode"),
-            damageType: getVal("damageType") || "fire",
-            flatDamageBonus: Number(getVal("flatDamageBonus")) || 0,
-            explodeCondition: getVal("explodeCondition")?.trim() || "",
-            chaosJump: getCheck("chaosJump"),
-            attackModifier: Number(getVal("attackModifier")) || 0,
-            isCantripScale: getCheck("isCantripScale"),
-            superAdv: getCheck("superAdv"),
-            components: {
-              v: getCheck("comp_v"),
-              s: getCheck("comp_s"),
-              m: getCheck("comp_m"),
-              costly: getCheck("comp_costly"),
-              description: getVal("comp_desc")?.trim() || ""
-            }
-          };
+            const spellName = getVal("spellName")?.trim() || "New Spell";
+            const spellData = {
+              itemId: getVal("itemId") || null,
+              spellName,
+              spellAbility: getVal("spellAbility"),
+              baseLevel: Number(getVal("baseLevel")) || 0,
+              resolutionMethod: getVal("resolutionMethod") || "attack",
+              saveAbility: getVal("saveAbility") || "dex",
+              saveSuccess: getVal("saveSuccess") || "half",
+              isMultiAttack: getCheck("isMultiAttack"),
+              attackCount: Number(getVal("attackCount")) || 1,
+              upcastAttacks: Number(getVal("upcastAttacks")) || 0,
+              cantripAttackScaling: getCheck("cantripAttackScaling"),
+              projectileCount: Number(getVal("projectileCount")) || 3,
+              upcastProjectiles: Number(getVal("upcastProjectiles")) || 1,
+              addAbilityModToValue: getCheck("addAbilityModToValue"),
+              castingTime: getVal("castingTime")?.trim() || "1 Action",
+              range: getVal("range")?.trim() || "Touch",
+              duration: getVal("duration")?.trim() || "Instantaneous",
+              concentration: getCheck("concentration"),
+              targetType: getVal("targetType") || "creature",
+              areaShape: getVal("areaShape") || "cone",
+              areaSize: getVal("areaSize")?.trim() || "",
+              summary: getVal("summary")?.trim() || "",
+              damageDiceCount: Number(getVal("damageDiceCount")) || 0,
+              damageDieSize: getVal("damageDieSize"),
+              extraDiceFormula: getVal("extraDiceFormula")?.trim() || "",
+              upcastDiceFormula: getVal("upcastDiceFormula")?.trim() || "",
+              damageMode: getVal("damageMode"),
+              damageType: getVal("damageType") || "fire",
+              flatDamageBonus: Number(getVal("flatDamageBonus")) || 0,
+              explodeCondition: getVal("explodeCondition")?.trim() || "",
+              chaosJump: getCheck("chaosJump"),
+              attackModifier: Number(getVal("attackModifier")) || 0,
+              isCantripScale: getCheck("isCantripScale"),
+              superAdv: getCheck("superAdv"),
+              components: {
+                v: getCheck("comp_v"),
+                s: getCheck("comp_s"),
+                m: getCheck("comp_m"),
+                costly: getCheck("comp_costly"),
+                description: getVal("comp_desc")?.trim() || ""
+              }
+            };
 
-          const currentSpells = foundry.utils.deepClone(
-            window.CustomRolls.getProfileData(actor, "spellConfigs") || 
-            actor.getFlag("world", "spellConfigs") || {}
-          );
-          currentSpells[spellName] = spellData;
+            const currentSpells = foundry.utils.deepClone(
+              window.CustomRolls.getProfileData(actor, "spellConfigs") ||
+              actor.getFlag("world", "spellConfigs") || {}
+            );
+            currentSpells[spellName] = spellData;
 
-          await window.CustomRolls.setProfileData(actor, "spellConfigs", currentSpells);
-          await actor.unsetFlag("world", "spellConfigs");
-          await actor.setFlag("world", "spellConfigs", currentSpells);
-          ui.notifications.info(`Spell "${spellName}" saved to Persistent Storage.`);
-        }
+            await window.CustomRolls.setProfileData(actor, "spellConfigs", currentSpells);
+            await actor.unsetFlag("world", "spellConfigs");
+            await actor.setFlag("world", "spellConfigs", currentSpells);
+            ui.notifications.info(`Spell "${spellName}" saved to Persistent Storage.`);
+          }
+        },
+        cancel: { label: "Cancel" }
       },
-      cancel: { label: "Cancel" }
-    },
-    default: "save",
-    render: (html) => {
-      const resSelect = html.find('#resMethodSelect');
-      const saveGroup = html.find('#saveOptionsGroup');
-      const autoGroup = html.find('#autoOptionsGroup');
-      const healGroup = html.find('#healOptionsGroup');
-      const multiGroup = html.find('#multiAttackOptionsGroup');
-      const isMultiCheck = html.find('#isMultiAttackCheck');
-      const multiDetails = html.find('#multiAttackDetails');
-      const targetTypeSelect = html.find('#targetTypeSelect');
-      const areaGroup = html.find('#areaDetailsGroup');
-      const damageModeSelect = html.find('#damageModeSelect');
-      const fixedGroup = html.find('#fixedDamageTypeGroup');
-      const compMCheck = html.find('#comp_m_check');
-      const materialDetailsGroup = html.find('#materialDetailsGroup');
+      default: "save",
+      render: (html) => {
+        const resSelect = html.find('#resMethodSelect');
+        const saveGroup = html.find('#saveOptionsGroup');
+        const autoGroup = html.find('#autoOptionsGroup');
+        const healGroup = html.find('#healOptionsGroup');
+        const multiGroup = html.find('#multiAttackOptionsGroup');
+        const isMultiCheck = html.find('#isMultiAttackCheck');
+        const multiDetails = html.find('#multiAttackDetails');
+        const targetTypeSelect = html.find('#targetTypeSelect');
+        const areaGroup = html.find('#areaDetailsGroup');
+        const damageModeSelect = html.find('#damageModeSelect');
+        const fixedGroup = html.find('#fixedDamageTypeGroup');
+        const compMCheck = html.find('#comp_m_check');
+        const materialDetailsGroup = html.find('#materialDetailsGroup');
 
-      function updateLayout() {
-        const val = resSelect.val();
-        saveGroup.toggle(val === 'save');
-        autoGroup.toggle(val === 'auto');
-        healGroup.toggle(['heal', 'temp_hp', 'max_hp'].includes(val));
-        multiGroup.toggle(val === 'attack');
-        areaGroup.toggle(targetTypeSelect.val() === 'area');
-        fixedGroup.toggle(damageModeSelect.val() === 'static');
-        materialDetailsGroup.toggle(compMCheck.is(':checked'));
-      }
-
-      compMCheck.on('change', () => {
-        materialDetailsGroup.toggle(compMCheck.is(':checked'));
-      });
-
-      isMultiCheck.on('change', () => {
-        multiDetails.toggle(isMultiCheck.is(':checked'));
-      });
-
-      targetTypeSelect.on('change', () => {
-        areaGroup.toggle(targetTypeSelect.val() === 'area');
-      });
-
-      damageModeSelect.on('change', () => {
-        fixedGroup.toggle(damageModeSelect.val() === 'static');
-      });
-
-      resSelect.on('change', updateLayout);
-
-      // Autofill handler from Character Sheet selection
-      html.find('#sheetSpellSelect').on('change', function() {
-        const spellId = $(this).val();
-        if (!spellId) return;
-
-        const item = actor.items.get(spellId);
-        if (!item) return;
-
-        const sys = item.system || {};
-
-        // Spell Name & Level
-        html.find('input[name="spellName"]').val(item.name);
-        html.find('select[name="baseLevel"]').val(String(sys.level ?? 0));
-
-        // Spellcasting Ability
-        const sheetSpellAbil = sys.ability || actor.system.attributes?.spellcasting || "int";
-        html.find('select[name="spellAbility"]').val(sheetSpellAbil);
-
-        // Casting Time, Range, Duration, Concentration
-        const act = sys.activation;
-        const castStr = act?.cost ? `${act.cost} ${act.type || 'Action'}` : "1 Action";
-        html.find('input[name="castingTime"]').val(castStr);
-
-        const rng = sys.range;
-        const rangeStr = rng?.value ? `${rng.value} ${rng.units || 'ft'}` : (rng?.units || "Touch");
-        html.find('input[name="range"]').val(rangeStr);
-
-        const dur = sys.duration;
-        const durStr = dur?.value ? `${dur.value} ${dur.units || ''}` : (dur?.units || "Instantaneous");
-        html.find('input[name="duration"]').val(durStr);
-
-        const isConc = Boolean(sys.properties?.has?.("concentration") || sys.components?.concentration);
-        html.find('input[name="concentration"]').prop('checked', isConc);
-
-        // Components Autofill
-        const comps = sys.properties || sys.components || {};
-        const hasV = Boolean(comps.has ? comps.has("vocal") : comps.vocal);
-        const hasS = Boolean(comps.has ? comps.has("somatic") : comps.somatic);
-        const hasM = Boolean(comps.has ? comps.has("material") : comps.material);
-        const isCostly = Boolean(sys.materials?.cost || sys.materials?.consumed);
-        const matDesc = sys.materials?.value || "";
-
-        html.find('input[name="comp_v"]').prop('checked', hasV);
-        html.find('input[name="comp_s"]').prop('checked', hasS);
-        html.find('input[name="comp_m"]').prop('checked', hasM);
-        html.find('input[name="comp_costly"]').prop('checked', isCostly);
-        html.find('input[name="comp_desc"]').val(matDesc);
-
-        // Target Type & Area
-        const targetUnits = sys.target?.units;
-        const targetType = sys.target?.type;
-        if (["cone", "cube", "line", "sphere", "cylinder", "radius"].includes(targetType) || ["cone", "cube", "line", "sphere"].includes(targetUnits)) {
-          targetTypeSelect.val("area");
-          html.find('select[name="areaShape"]').val(targetType === "cylinder" || targetType === "radius" ? "sphere" : (targetType || "cone"));
-          html.find('input[name="areaSize"]').val(sys.target?.value ? `${sys.target.value} ft` : "");
-        } else if (targetType === "self" || rangeStr.toLowerCase() === "self") {
-          targetTypeSelect.val("self");
-        } else {
-          targetTypeSelect.val("creature");
+        function updateLayout() {
+          const val = resSelect.val();
+          saveGroup.toggle(val === 'save');
+          autoGroup.toggle(val === 'auto');
+          healGroup.toggle(['heal', 'temp_hp', 'max_hp'].includes(val));
+          multiGroup.toggle(val === 'attack');
+          areaGroup.toggle(targetTypeSelect.val() === 'area');
+          fixedGroup.toggle(damageModeSelect.val() === 'static');
+          materialDetailsGroup.toggle(compMCheck.is(':checked'));
         }
 
-        // Summary (Stripped HTML)
-        const rawDesc = sys.description?.value || "";
-        const cleanSummary = rawDesc.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
-        html.find('input[name="summary"]').val(cleanSummary);
+        compMCheck.on('change', () => {
+          materialDetailsGroup.toggle(compMCheck.is(':checked'));
+        });
 
-        // Resolution Method & Damage
-        const actionType = sys.actionType;
-        if (actionType === "save") {
-          resSelect.val("save");
-          html.find('select[name="saveAbility"]').val(sys.save?.ability || "dex");
-          html.find('select[name="saveSuccess"]').val(sys.save?.scaling === "half" ? "half" : "none");
-        } else if (actionType === "heal") {
-          resSelect.val("heal");
-        } else if (actionType === "rsak" || actionType === "msak") {
-          resSelect.val("attack");
-        } else if (actionType === "util" || !actionType) {
-          resSelect.val("other");
-        }
+        isMultiCheck.on('change', () => {
+          multiDetails.toggle(isMultiCheck.is(':checked'));
+        });
 
-        // Damage Parts
-        const parts = sys.damage?.parts || [];
-        if (parts.length > 0) {
-          const firstPart = parts[0];
-          const formula = firstPart[0] || "";
-          const dmgType = (firstPart[1] || "fire").toLowerCase();
+        targetTypeSelect.on('change', () => {
+          areaGroup.toggle(targetTypeSelect.val() === 'area');
+        });
 
-          const diceMatch = formula.match(/(\d*)d(\d+)/i);
-          if (diceMatch) {
-            html.find('input[name="damageDiceCount"]').val(parseInt(diceMatch[1]) || 1);
-            html.find('select[name="damageDieSize"]').val(`d${diceMatch[2]}`);
+        damageModeSelect.on('change', () => {
+          fixedGroup.toggle(damageModeSelect.val() === 'static');
+        });
+
+        resSelect.on('change', updateLayout);
+
+        // Autofill handler from Character Sheet selection
+        html.find('#sheetSpellSelect').on('change', function () {
+          const spellId = $(this).val();
+          if (!spellId) return;
+
+          const item = actor.items.get(spellId);
+          if (!item) return;
+
+          const sys = item.system || {};
+
+          // Spell Name & Level
+          html.find('input[name="spellName"]').val(item.name);
+          html.find('select[name="baseLevel"]').val(String(sys.level ?? 0));
+
+          // Spellcasting Ability
+          const sheetSpellAbil = sys.ability || actor.system.attributes?.spellcasting || "int";
+          html.find('select[name="spellAbility"]').val(sheetSpellAbil);
+
+          // Casting Time, Range, Duration, Concentration
+          const act = sys.activation;
+          const castStr = act?.cost ? `${act.cost} ${act.type || 'Action'}` : "1 Action";
+          html.find('input[name="castingTime"]').val(castStr);
+
+          const rng = sys.range;
+          const rangeStr = rng?.value ? `${rng.value} ${rng.units || 'ft'}` : (rng?.units || "Touch");
+          html.find('input[name="range"]').val(rangeStr);
+
+          const dur = sys.duration;
+          const durStr = dur?.value ? `${dur.value} ${dur.units || ''}` : (dur?.units || "Instantaneous");
+          html.find('input[name="duration"]').val(durStr);
+
+          const isConc = Boolean(sys.properties?.has?.("concentration") || sys.components?.concentration);
+          html.find('input[name="concentration"]').prop('checked', isConc);
+
+          // Components Autofill
+          const comps = sys.properties || sys.components || {};
+          const hasV = Boolean(comps.has ? comps.has("vocal") : comps.vocal);
+          const hasS = Boolean(comps.has ? comps.has("somatic") : comps.somatic);
+          const hasM = Boolean(comps.has ? comps.has("material") : comps.material);
+          const isCostly = Boolean(sys.materials?.cost || sys.materials?.consumed);
+          const matDesc = sys.materials?.value || "";
+
+          html.find('input[name="comp_v"]').prop('checked', hasV);
+          html.find('input[name="comp_s"]').prop('checked', hasS);
+          html.find('input[name="comp_m"]').prop('checked', hasM);
+          html.find('input[name="comp_costly"]').prop('checked', isCostly);
+          html.find('input[name="comp_desc"]').val(matDesc);
+
+          // Target Type & Area
+          const targetUnits = sys.target?.units;
+          const targetType = sys.target?.type;
+          if (["cone", "cube", "line", "sphere", "cylinder", "radius"].includes(targetType) || ["cone", "cube", "line", "sphere"].includes(targetUnits)) {
+            targetTypeSelect.val("area");
+            html.find('select[name="areaShape"]').val(targetType === "cylinder" || targetType === "radius" ? "sphere" : (targetType || "cone"));
+            html.find('input[name="areaSize"]').val(sys.target?.value ? `${sys.target.value} ft` : "");
+          } else if (targetType === "self" || rangeStr.toLowerCase() === "self") {
+            targetTypeSelect.val("self");
+          } else {
+            targetTypeSelect.val("creature");
           }
 
-          html.find('select[name="damageType"]').val(dmgType);
-        }
+          // Summary (Stripped HTML)
+          const rawDesc = sys.description?.value || "";
+          const cleanSummary = rawDesc.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+          html.find('input[name="summary"]').val(cleanSummary);
 
-        // Cantrip scaling checkbox
-        if (Number(sys.level) === 0 && sys.scaling?.mode === "cantrip") {
-          html.find('input[name="isCantripScale"]').prop('checked', true);
-        }
+          // Resolution Method & Damage
+          const actionType = sys.actionType;
+          if (actionType === "save") {
+            resSelect.val("save");
+            html.find('select[name="saveAbility"]').val(sys.save?.ability || "dex");
+            html.find('select[name="saveSuccess"]').val(sys.save?.scaling === "half" ? "half" : "none");
+          } else if (actionType === "heal") {
+            resSelect.val("heal");
+          } else if (actionType === "rsak" || actionType === "msak") {
+            resSelect.val("attack");
+          } else if (actionType === "util" || !actionType) {
+            resSelect.val("other");
+          }
 
-        updateLayout();
-      });
-    }
-  }, { 
-    width: 440, 
-    height: "auto", 
-    resizable: true 
-  }).render(true);
-}
+          // Damage Parts
+          const parts = sys.damage?.parts || [];
+          if (parts.length > 0) {
+            const firstPart = parts[0];
+            const formula = firstPart[0] || "";
+            const dmgType = (firstPart[1] || "fire").toLowerCase();
+
+            const diceMatch = formula.match(/(\d*)d(\d+)/i);
+            if (diceMatch) {
+              html.find('input[name="damageDiceCount"]').val(parseInt(diceMatch[1]) || 1);
+              html.find('select[name="damageDieSize"]').val(`d${diceMatch[2]}`);
+            }
+
+            html.find('select[name="damageType"]').val(dmgType);
+          }
+
+          // Cantrip scaling checkbox
+          if (Number(sys.level) === 0 && sys.scaling?.mode === "cantrip") {
+            html.find('input[name="isCantripScale"]').prop('checked', true);
+          }
+
+          updateLayout();
+        });
+      }
+    }, {
+      width: 440,
+      height: "auto",
+      resizable: true
+    }).render(true);
+  }
 
   // --- Initial Choice Prompt ---
   new Dialog({
@@ -6950,7 +7069,7 @@ function openSpellGeneratorDialog() {
 };
 
 // --- 4.3 Unified Action Editor & Manager (Weapons & Spells) ---
-window.CustomRolls.openActionEditor = function(initialCategory = "weapons") {
+window.CustomRolls.openActionEditor = function (initialCategory = "weapons") {
   const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
   const actor = token?.actor;
   if (!actor) {
@@ -6976,7 +7095,7 @@ window.CustomRolls.openActionEditor = function(initialCategory = "weapons") {
   ];
 
   function generateDamageTypeOptions(selectedValue = "slashing") {
-    return DAMAGE_TYPES.map(t => 
+    return DAMAGE_TYPES.map(t =>
       `<option value="${t.value}" ${t.value === selectedValue ? 'selected' : ''}>${t.label}</option>`
     ).join('');
   }
@@ -6986,11 +7105,11 @@ window.CustomRolls.openActionEditor = function(initialCategory = "weapons") {
     const flagKey = isWeapons ? "attackConfigs" : "spellConfigs";
 
     const weaponConfigs = foundry.utils.deepClone(
-      window.CustomRolls.getProfileData(actor, "attackConfigs") || 
+      window.CustomRolls.getProfileData(actor, "attackConfigs") ||
       actor.getFlag("world", "attackConfigs") || {}
     );
     const spellConfigs = foundry.utils.deepClone(
-      window.CustomRolls.getProfileData(actor, "spellConfigs") || 
+      window.CustomRolls.getProfileData(actor, "spellConfigs") ||
       actor.getFlag("world", "spellConfigs") || {}
     );
 
@@ -7006,7 +7125,7 @@ window.CustomRolls.openActionEditor = function(initialCategory = "weapons") {
       await actor.setFlag("world", flagKey, newData);
     }
 
-    const selectOptions = keys.length > 0 
+    const selectOptions = keys.length > 0
       ? keys.map(k => `<option value="${k}">${k}</option>`).join("")
       : `<option value="">-- No configured ${isWeapons ? 'weapons' : 'spells'} --</option>`;
 
@@ -7171,7 +7290,7 @@ window.CustomRolls.openActionEditor = function(initialCategory = "weapons") {
                     }
 
                     if (targetData.additionalDamageComponents) {
-                      promptModal.find(".qm-extra-toggle").each(function() {
+                      promptModal.find(".qm-extra-toggle").each(function () {
                         const idx = $(this).data("index");
                         if (targetData.additionalDamageComponents[idx]) {
                           targetData.additionalDamageComponents[idx].isActive = $(this).is(":checked");
@@ -7207,15 +7326,15 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                       ui.notifications.info(`Updated existing macro: "${finalMacroName}".`);
                     } else {
                       await Macro.create({
-                      name: finalMacroName,
-                      type: "script",
-                      img: activeCategory === "weapons" ? "icons/skills/melee/strike-sword-blood-red.webp" : "icons/magic/symbols/runes-star-pentagon-orange.webp",
-                      command: scriptCommand,
-                      ownership: {
-                        default: 0,
-                        [game.user.id]: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER
-                      }
-                    });
+                        name: finalMacroName,
+                        type: "script",
+                        img: activeCategory === "weapons" ? "icons/skills/melee/strike-sword-blood-red.webp" : "icons/magic/symbols/runes-star-pentagon-orange.webp",
+                        command: scriptCommand,
+                        ownership: {
+                          default: 0,
+                          [game.user.id]: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER
+                        }
+                      });
                       ui.notifications.info(`Created Quick Macro: "${finalMacroName}".`);
                     }
                   }
@@ -7268,7 +7387,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
   // --- Weapon Detail Form (Full Generator UI) ---
   function openWeaponEditorDetail(name) {
     const attacks = foundry.utils.deepClone(
-      window.CustomRolls.getProfileData(actor, "attackConfigs") || 
+      window.CustomRolls.getProfileData(actor, "attackConfigs") ||
       actor.getFlag("world", "attackConfigs") || {}
     );
     const item = attacks[name] || {};
@@ -7281,15 +7400,15 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
       const formulaVal = comp.formula ?? "";
       const defaultLabel = `Extra Damage ${i}`;
       const labelVal = comp.label ?? defaultLabel;
-      const placeholderLabel = i === 1 ? 'Sneak Attack, etc.' : 
-                               i === 2 ? "Hunter's Mark / Hex" : 
-                               i === 3 ? 'Divine Smite, etc.' : 
-                               `Component ${i}`;
+      const placeholderLabel = i === 1 ? 'Sneak Attack, etc.' :
+        i === 2 ? "Hunter's Mark / Hex" :
+          i === 3 ? 'Divine Smite, etc.' :
+            `Component ${i}`;
 
       const isCritChecked = comp.isCrit !== undefined ? (comp.isCrit ? 'checked' : '') : (i === 1 || i === 3 ? 'checked' : '');
       const onlyCritChecked = comp.onlyCrit ? 'checked' : '';
       const typeVal = comp.damageType || (i === 3 ? 'radiant' : 'slashing');
-      
+
       damageComponentHTML += `
         <div class="damage-component-block" style="border: 1px solid #7289DA; padding: 8px; margin-bottom: 10px; border-radius: 4px; background: #f7f9ff;">
           <h4 style="margin: 0 0 6px 0; border-bottom: 1px dashed #7289DA; padding-bottom: 3px; font-size: 0.9em; color: #2c3e50;">Component ${i}</h4>
@@ -7524,7 +7643,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
       render: (html) => {
         const tabs = html.find('.tab-button');
         const contents = html.find('.tab-content');
-        tabs.on('click', function() {
+        tabs.on('click', function () {
           const targetTab = $(this).data('tab');
           tabs.css('background', '#eee').removeClass('active');
           $(this).css('background', '#fff').addClass('active');
@@ -7538,7 +7657,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
   // --- Spell Detail Form (Full Generator UI) ---
   function openSpellEditorDetail(name) {
     const spells = foundry.utils.deepClone(
-      window.CustomRolls.getProfileData(actor, "spellConfigs") || 
+      window.CustomRolls.getProfileData(actor, "spellConfigs") ||
       actor.getFlag("world", "spellConfigs") || {}
     );
     const s = spells[name] || {};
@@ -7889,12 +8008,12 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
           multiGroup.toggle(val === 'attack');
         });
       }
-    }, { 
-      width: 440, 
-      height: "auto", 
-      resizable: true 
+    }, {
+      width: 440,
+      height: "auto",
+      resizable: true
     }).render(true);
-};
+  };
 
   renderUnifiedManager();
-  };
+};
