@@ -34,6 +34,10 @@ if (game.settings) {
 }
 
 
+//                //
+// TOKEN HUD CODE // 
+//                //
+
 // Safe helper to read global AC setting without crashing if not yet registered
 function getGlobalShowAC() {
   try {
@@ -91,29 +95,26 @@ Hooks.on("renderSceneControls", (controls, html) => {
 
 
 
-// 2. Draw AC badge above the token on the canvas
+// 2. Draw AC badge above the token on the canvas (Optimized for Forge / Canvas Performance)
 function renderTokenAcBadge(token) {
   if (!token?.actor || !token.bars) return;
 
   const masterEnabled = getGlobalShowAC();
-  const tokenShowAC = Boolean(token.document.getFlag("world", "showAC"));
-  const shouldDisplay = masterEnabled && tokenShowAC;
-
   let acContainer = token.bars.getChildByName("acBadgeContainer");
-  if (!shouldDisplay) {
+
+  // Fast path: if master toggle is off, remove badge if present and exit immediately
+  if (!masterEnabled) {
     if (acContainer) acContainer.destroy({ children: true });
     return;
   }
 
-  if (!acContainer) {
-    acContainer = new PIXI.Container();
-    acContainer.name = "acBadgeContainer";
-    token.bars.addChild(acContainer);
-  } else {
-    acContainer.removeChildren();
+  const tokenShowAC = Boolean(token.document.getFlag("world", "showAC"));
+  if (!tokenShowAC) {
+    if (acContainer) acContainer.destroy({ children: true });
+    return;
   }
 
-  const acValue = token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--";
+  const acValue = String(token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--");
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
 
   const fontSize = 22;
@@ -124,25 +125,42 @@ function renderTokenAcBadge(token) {
   const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
   const yPos = -badgeHeight - 6 - visualTopOffset;
 
-  const bg = new PIXI.Graphics();
-  bg.beginFill(0x000000, 0.85);
-  bg.lineStyle(2, 0xd4af37, 1);
-  bg.drawRoundedRect(xPos, yPos, badgeWidth, badgeHeight, 6);
-  bg.endFill();
-  acContainer.addChild(bg);
+  if (!acContainer) {
+    acContainer = new PIXI.Container();
+    acContainer.name = "acBadgeContainer";
 
-  const style = new PIXI.TextStyle({
-    fontFamily: "Signika, sans-serif",
-    fontSize: fontSize,
-    fontWeight: "bold",
-    fill: "#ffffff",
-    align: "center"
-  });
+    const bg = new PIXI.Graphics();
+    bg.name = "acBadgeBg";
+    bg.beginFill(0x000000, 0.85);
+    bg.lineStyle(2, 0xd4af37, 1);
+    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, 6);
+    bg.endFill();
+    acContainer.addChild(bg);
 
-  const text = new PIXI.Text(String(acValue), style);
-  text.anchor.set(0.5, 0.5);
-  text.position.set(xPos + badgeWidth / 2, yPos + badgeHeight / 2);
-  acContainer.addChild(text);
+    const style = new PIXI.TextStyle({
+      fontFamily: "Signika, sans-serif",
+      fontSize: fontSize,
+      fontWeight: "bold",
+      fill: "#ffffff",
+      align: "center"
+    });
+
+    const text = new PIXI.Text(acValue, style);
+    text.name = "acBadgeText";
+    text.anchor.set(0.5, 0.5);
+    text.position.set(badgeWidth / 2, badgeHeight / 2);
+    acContainer.addChild(text);
+
+    token.bars.addChild(acContainer);
+  } else {
+    // In-place text update without reallocating Graphics/Text/Containers
+    const text = acContainer.getChildByName("acBadgeText");
+    if (text && text.text !== acValue) {
+      text.text = acValue;
+    }
+  }
+
+  acContainer.position.set(xPos, yPos);
 }
 
 // 3. Token HUD adjustments
@@ -230,12 +248,100 @@ Hooks.on("renderTokenHUD", (app, html, data) => {
     // GM Cleanup: Left Column (lock button, settings cog)
     if (colLeft) {
       colLeft.querySelectorAll('.control-icon[data-action="locked"], [data-action="locked"]').forEach(el => el.remove());
-      colLeft.querySelectorAll('.control-icon[data-action="config"], [data-action="config"]').forEach(el => el.remove());
+      // Hide the config cog instead of removing it from the DOM, so modules (like Hide NPC Names) that anchor to it don't crash
+      colLeft.querySelectorAll('.control-icon[data-action="config"], [data-action="config"]').forEach(el => {
+        el.style.display = "none";
+      });
     }
 
     // GM Cleanup: Right Column (movement palette, default target button)
     colRight.querySelectorAll('[data-palette="movementActions"], [data-action="togglePalette"][data-palette="movementActions"]').forEach(el => el.remove());
     colRight.querySelectorAll('.control-icon[data-action="target"], [data-action="target"]').forEach(el => el.remove());
+
+    // Hide NPC Names: Restore / Ensure Token HUD Button
+    if (token.actor && !token.actor.hasPlayerOwner) {
+      const baseActor = token.actor.isToken ? (token.actor.token?.baseActor ?? token.actor) : token.actor;
+
+      let isNameHidden = true;
+      let replacementName = "Unknown Creature";
+
+      if (globalThis.HideNPCNames?.getReplacementInfo) {
+        const info = globalThis.HideNPCNames.getReplacementInfo(token.actor, token.actor.name);
+        isNameHidden = Boolean(info?.shouldReplace);
+        if (info?.replacementName) replacementName = info.replacementName;
+      } else if (game.hnn?.getReplacementInfo) {
+        const info = game.hnn.getReplacementInfo(token.actor, token.actor.name);
+        isNameHidden = Boolean(info?.shouldReplace);
+        if (info?.replacementName) replacementName = info.replacementName;
+      } else {
+        const override = baseActor.getFlag?.("hide-npc-names", "nameHiddenOverride");
+        if (override !== undefined) {
+          isNameHidden = Boolean(override);
+        } else {
+          const disp = token.document.disposition ?? baseActor.prototypeToken?.disposition ?? 0;
+          isNameHidden = disp <= 0;
+        }
+      }
+
+      let hideBtn = root.querySelector('[data-action="toggleActorHidden"], .hide-npc-name-btn');
+      if (!hideBtn) {
+        hideBtn = document.createElement("div");
+        hideBtn.className = "control-icon hide-npc-name-btn";
+        hideBtn.dataset.action = "toggleActorHidden";
+        if (colLeft) {
+          colLeft.appendChild(hideBtn);
+        } else {
+          colRight.prepend(hideBtn);
+        }
+      }
+
+      hideBtn.style.display = "flex";
+      hideBtn.style.alignItems = "center";
+      hideBtn.style.justifyContent = "center";
+      hideBtn.style.padding = "0";
+      hideBtn.style.margin = "0";
+      hideBtn.style.boxSizing = "border-box";
+      hideBtn.title = isNameHidden
+        ? `Hide NPC Names: Name Hidden (Click to Reveal)`
+        : `Hide NPC Names: Name Revealed (Click to Hide)`;
+
+      hideBtn.innerHTML = isNameHidden
+        ? `<i class="fas fa-mask" style="font-size: 18px; line-height: 1; margin: 0; padding: 0; display: block; text-align: center;"></i>`
+        : `<span style="position: relative; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; margin: 0; padding: 0;">
+            <i class="fas fa-mask" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 18px; line-height: 1; opacity: 0.5; margin: 0; padding: 0;"></i>
+            <i class="fas fa-slash" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 18px; line-height: 1; color: #e74c3c; margin: 0; padding: 0;"></i>
+          </span>`;
+
+      hideBtn.onclick = async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (typeof app.options?.actions?.["toggleActorHidden"] === "function") {
+          try {
+            await app.options.actions["toggleActorHidden"]();
+            app.render();
+            return;
+          } catch (err) {
+            console.warn("HNN action invocation error:", err);
+          }
+        }
+
+        if (globalThis.HideNPCNames?.toggleActorHidden) {
+          await globalThis.HideNPCNames.toggleActorHidden(token.actor);
+        } else {
+          const currentOverride = baseActor.getFlag?.("hide-npc-names", "nameHiddenOverride");
+          const nextState = currentOverride !== undefined ? !currentOverride : !isNameHidden;
+          await baseActor.setFlag("hide-npc-names", "nameHiddenOverride", nextState);
+          if (token.actor && token.actor !== baseActor && token.actor.setFlag) {
+            await token.actor.setFlag("hide-npc-names", "nameHiddenOverride", nextState);
+          }
+          if (baseActor.getActiveTokens) {
+            baseActor.getActiveTokens().forEach(t => t.refresh?.());
+          }
+        }
+        app.render();
+      };
+    }
 
     // AC Toggle Button
     if (!colRight.querySelector(".ac-toggle-btn")) {
@@ -662,13 +768,17 @@ Hooks.once("ready", () => {
     renderTokenAcBadge(token);
   });
 
-  Hooks.on("refreshToken", (token) => {
-    renderTokenAcBadge(token);
-  });
-
-  Hooks.on("updateToken", (document) => {
+  // Only refresh when relevant token properties change (avoids running on every single drag/animation tick)
+  Hooks.on("updateToken", (document, change) => {
     const token = document.object;
     if (token) renderTokenAcBadge(token);
+  });
+
+  // Update AC badge immediately when armor, shield, or AC changes on the character sheet
+  Hooks.on("updateActor", (actor, change) => {
+    if (foundry.utils.hasProperty(change, "system.attributes.ac")) {
+      actor.getActiveTokens().forEach(token => renderTokenAcBadge(token));
+    }
   });
 });
 
@@ -1932,6 +2042,7 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       key,
       isReliableTalent,
       isHalflingLuck,
+      isSuperAdvantage,
       otherModString
     } = data;
 
@@ -1949,6 +2060,15 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
     }
 
     const pb = getNumericValue(actor.system.attributes?.prof, 2);
+
+    const ABILITIES = {
+      str: "Strength",
+      dex: "Dexterity",
+      con: "Constitution",
+      int: "Intelligence",
+      wis: "Wisdom",
+      cha: "Charisma"
+    };
 
     const TOOLS = {
       alchemist: { name: "Alchemist Supplies", ability: "int" },
@@ -1978,6 +2098,8 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       woodcarver: { name: "Woodcarver's Tools", ability: "dex" }
     };
 
+    let isProficient = false;
+
     if (rollType === "init") {
       const dexMod = getNumericValue(actor.system.abilities?.dex?.mod, 0);
       dexScore = getNumericValue(actor.system.abilities?.dex?.value, 10);
@@ -2006,16 +2128,26 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       label = "Concentration Check";
       sublabel = `CON Save (${baseMod >= 0 ? '+' : ''}${baseMod})`;
     } else if (rollType === "skill") {
+      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2") 
+        || actor.getFlag("world", "d20ProfilesV2") 
+        || window.CustomRolls.getProfileData?.(actor, "d20Profiles") 
+        || actor.getFlag("world", "d20Profiles") 
+        || {};
+
       if (key && key.startsWith("custom_")) {
-        const storedProfiles = actor.getFlag("world", "d20Profiles") || {};
-        const customObj = storedProfiles[key];
+        const customObj = storedD20Profiles[key];
         const abil = customObj?.ability || "int";
-        baseMod = getNumericValue(actor.system.abilities?.[abil]?.mod, 0);
+        const customProf = Boolean(customObj?.proficient);
+        if (customProf) isProficient = true;
+        const profBonus = customProf ? pb : 0;
+        baseMod = getNumericValue(actor.system.abilities?.[abil]?.mod, 0) + profBonus;
         label = `${customObj?.name || "Custom"} Check`;
-        sublabel = `${abil.toUpperCase()} Base`;
+        sublabel = `${abil.toUpperCase()} Base${profBonus ? ` + PB (+${profBonus})` : ""}`;
       } else {
         const skill = actor.system.skills?.[key];
         baseMod = getNumericValue(skill?.total, 0);
+        const profLevel = Number(skill?.value ?? skill?.proficient ?? 0);
+        if (profLevel > 0) isProficient = true;
         const skillNames = {
           acr: "Acrobatics", ani: "Animal Handling", arc: "Arcana", ath: "Athletics",
           dec: "Deception", his: "History", ins: "Insight", itm: "Intimidation",
@@ -2027,13 +2159,21 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
         sublabel = `${(skill?.ability || "dex").toUpperCase()} Base`;
       }
     } else if (rollType === "tool") {
+      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2") 
+        || actor.getFlag("world", "d20ProfilesV2") 
+        || window.CustomRolls.getProfileData?.(actor, "d20Profiles") 
+        || actor.getFlag("world", "d20Profiles") 
+        || {};
+
       if (key && key.startsWith("custom_")) {
-        const storedProfiles = actor.getFlag("world", "d20Profiles") || {};
-        const customObj = storedProfiles[key];
+        const customObj = storedD20Profiles[key];
         const abil = customObj?.ability || "dex";
-        baseMod = getNumericValue(actor.system.abilities?.[abil]?.mod, 0);
+        const customProf = Boolean(customObj?.proficient);
+        if (customProf) isProficient = true;
+        const profBonus = customProf ? pb : 0;
+        baseMod = getNumericValue(actor.system.abilities?.[abil]?.mod, 0) + profBonus;
         label = `${customObj?.name || "Custom"} Tool Check`;
-        sublabel = `${abil.toUpperCase()} Base`;
+        sublabel = `${abil.toUpperCase()} Base${profBonus ? ` + PB (+${profBonus})` : ""}`;
       } else {
         const tool = TOOLS[key];
         const abil = tool?.ability || "dex";
@@ -2041,35 +2181,48 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
         const toolItem = actor.items.find(i => i.type === "tool" && i.name.toLowerCase().includes((tool?.name || "").toLowerCase().split("'")[0]));
         const isProf = actor.system.tools?.[key]?.proficient || toolItem?.system?.proficient || 0;
         const profBonus = isProf ? pb * (isProf === 2 ? 2 : 1) : 0;
+        if (Number(isProf) > 0) isProficient = true;
 
         baseMod = abilMod + profBonus;
         label = `${tool?.name || "Tool"} Check`;
         sublabel = `${abil.toUpperCase()} Base${profBonus ? ` + PB (+${profBonus})` : ""}`;
       }
     } else if (rollType === "save") {
-      const saveObj = actor.system.abilities?.[key]?.save;
-      const modObj = actor.system.abilities?.[key]?.mod;
+      const abilKey = key.replace("save_", "");
+      const saveObj = actor.system.abilities?.[abilKey]?.save;
+      const modObj = actor.system.abilities?.[abilKey]?.mod;
       baseMod = getNumericValue(saveObj, getNumericValue(modObj, 0));
-      label = `${key.toUpperCase()} Saving Throw`;
+      const abilName = ABILITIES[abilKey] || abilKey.toUpperCase();
+      label = `${abilName} Saving Throw`;
       sublabel = "Ability Save";
     } else {
+      const storedD20Profiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2") 
+        || actor.getFlag("world", "d20ProfilesV2") 
+        || window.CustomRolls.getProfileData?.(actor, "d20Profiles") 
+        || actor.getFlag("world", "d20Profiles") 
+        || {};
+
       if (key && key.startsWith("custom_")) {
-        const storedProfiles = actor.getFlag("world", "d20Profiles") || {};
-        const customObj = storedProfiles[key];
+        const customObj = storedD20Profiles[key];
         const abil = customObj?.ability || "str";
-        baseMod = getNumericValue(actor.system.abilities?.[abil]?.mod, 0);
+        const customProf = Boolean(customObj?.proficient);
+        if (customProf) isProficient = true;
+        const profBonus = customProf ? pb : 0;
+        baseMod = getNumericValue(actor.system.abilities?.[abil]?.mod, 0) + profBonus;
         label = `${customObj?.name || "Custom"} Ability Check`;
-        sublabel = `${abil.toUpperCase()} Base`;
+        sublabel = `${abil.toUpperCase()} Base${profBonus ? ` + PB (+${profBonus})` : ""}`;
       } else {
-        baseMod = getNumericValue(actor.system.abilities?.[key]?.mod, 0);
-        label = `${key.toUpperCase()} Ability Check`;
+        const abilKey = key.replace("check_", "");
+        baseMod = getNumericValue(actor.system.abilities?.[abilKey]?.mod, 0);
+        const abilName = ABILITIES[abilKey] || abilKey.toUpperCase();
+        label = `${abilName} Ability Check`;
         sublabel = "Raw Ability";
       }
     }
 
     let dieFormula = "1d20";
     if (isHalflingLuck) dieFormula += "r1";
-    if (isReliableTalent && (rollType === "skill" || rollType === "tool")) dieFormula += "min10";
+    if (isReliableTalent && isProficient && (rollType === "skill" || rollType === "tool")) dieFormula += "min10";
 
     const cleanOther = (otherModString || "").trim();
     let formulaSuffix = `${baseMod >= 0 ? `+ ${baseMod}` : `- ${Math.abs(baseMod)}`}`;
@@ -2082,12 +2235,30 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
     const fullFormula = `${dieFormula} ${formulaSuffix}`;
     const roll1 = await new Roll(fullFormula).evaluate();
 
-    // 2. Roll ONLY the second d20 for Advantage / Disadvantage
-    const rollD20Second = await new Roll(dieFormula).evaluate();
+    // 2. Roll second d20 slot for Advantage / Disadvantage / Super Advantage
+    let roll2 = null;
+    let rollD20Second = null;
+    let droppedCandidate = null;
 
-    // 3. Construct Roll 2 reusing the non-d20 terms from Roll 1 so extra dice aren't re-rolled
+    if (isSuperAdvantage) {
+      const candidateA = await new Roll(dieFormula).evaluate();
+      const candidateB = await new Roll(dieFormula).evaluate();
+      const valA = candidateA.dice[0]?.total ?? candidateA.total;
+      const valB = candidateB.dice[0]?.total ?? candidateB.total;
+
+      if (valA >= valB) {
+        rollD20Second = candidateA;
+        droppedCandidate = candidateB;
+      } else {
+        rollD20Second = candidateB;
+        droppedCandidate = candidateA;
+      }
+    } else {
+      rollD20Second = await new Roll(dieFormula).evaluate();
+    }
+
     const terms2 = [rollD20Second.terms[0], ...roll1.terms.slice(1)];
-    const roll2 = Roll.fromTerms(terms2);
+    roll2 = Roll.fromTerms(terms2);
     roll2._total = roll2._evaluateTotal();
     roll2._evaluated = true;
 
@@ -2102,6 +2273,14 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
 
     if (d20_2 === 20) rHtml2 = rHtml2.replace('dice-total', 'dice-total critical');
     else if (d20_2 === 1) rHtml2 = rHtml2.replace('dice-total', 'dice-total fumble');
+
+    if (isSuperAdvantage && droppedCandidate) {
+      const droppedVal = droppedCandidate.dice[0]?.total ?? droppedCandidate.total;
+      const superAdvHtml = `<div style="padding: 2px 4px; margin: 3px 0 0; border: 1px solid #7289DA; border-radius: 3px; background-color: #f0f4ff; font-size: 0.75em; text-align: center;">
+        <span style="font-weight: bold; color: #4b5d88;">Super Adv (Kept d20: ${d20_2} | Dropped: ${droppedVal})</span>
+      </div>`;
+      rHtml2 += superAdvHtml;
+    }
 
     const finalTotal1 = rollType === "init" ? (roll1.total + tieBreaker) : roll1.total;
     const finalTotal2 = rollType === "init" ? (roll2.total + tieBreaker) : roll2.total;
@@ -2134,7 +2313,10 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       tags.push('<span style="background: rgba(43, 116, 137, 0.15); border: 1px solid rgba(43, 116, 137, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #235d6e;">Initiative</span>');
     }
 
-    if (isReliableTalent && (rollType === "skill" || rollType === "tool")) {
+    if (isSuperAdvantage) {
+      tags.push('<span style="background: rgba(40, 167, 69, 0.2); border: 1px solid rgba(40, 167, 69, 0.5); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #1e7e34;">Super Advantage</span>');
+    }
+    if (isReliableTalent && isProficient && (rollType === "skill" || rollType === "tool")) {
       tags.push('<span style="background: rgba(108, 117, 125, 0.15); border: 1px solid rgba(108, 117, 125, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #495057;">Reliable Talent</span>');
     }
     if (isHalflingLuck) {
@@ -2145,6 +2327,19 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;">${tags.join("")}</div>`
       : "";
 
+    const rollsRowHtml = `
+      <div style="display: flex; justify-content: space-around; gap: 8px; margin-bottom: 6px;">
+        <div style="flex: 1; text-align: center;">
+          <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">NORMAL ROLL</div>
+          <div style="transform: scale(0.96); margin: -2px 0;">${rHtml1}</div>
+        </div>
+        <div style="flex: 1; text-align: center;">
+          <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">${isSuperAdvantage ? "SUPER ADV" : "ADV / DIS"}</div>
+          <div style="transform: scale(0.96); margin: -2px 0;">${rHtml2}</div>
+        </div>
+      </div>
+    `;
+
     const cardContent = `
       <div style="font-family: inherit; color: #333;">
         <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #343a40; padding-bottom: 3px; margin-bottom: 6px;">
@@ -2154,16 +2349,7 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
 
         ${tagsBlock}
 
-        <div style="display: flex; justify-content: space-around; gap: 8px; margin-bottom: 6px;">
-          <div style="flex: 1; text-align: center;">
-            <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">NORMAL ROLL</div>
-            <div style="transform: scale(0.96); margin: -2px 0;">${rHtml1}</div>
-          </div>
-          <div style="flex: 1; text-align: center;">
-            <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">ADV / DIS</div>
-            <div style="transform: scale(0.96); margin: -2px 0;">${rHtml2}</div>
-          </div>
-        </div>
+        ${rollsRowHtml}
 
         <details style="margin-top: 6px; padding: 2px 4px;">
           <summary style="font-weight: 600; font-size: 0.82em; color: #666; cursor: pointer;">Modifier Breakdown</summary>
@@ -2178,11 +2364,14 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       </div>
     `;
 
+    const chatRolls = [roll1, roll2];
+    if (droppedCandidate) chatRolls.push(droppedCandidate);
+
     return await ChatMessage.create({
       user: userId,
       speaker: ChatMessage.getSpeaker({ actor }),
       content: cardContent,
-      rolls: [roll1, roll2],
+      rolls: chatRolls,
       sound: CONFIG.sounds.dice
     });
   });
@@ -3586,24 +3775,51 @@ window.CustomRolls.openD20DialogV2 = function() {
     `;
   }).join('');
 
-  // Custom Skills
+  // Separate Custom Tools vs Custom Skills/Checks
+  const customProfToolsHtml = [];
+  const customOtherToolsHtml = [];
   const customSkillsList = [];
+
   Object.entries(storedProfiles).forEach(([k, val]) => {
     if (k.startsWith("custom_")) {
       const abil = val.ability || "int";
-      const abilMod = getNumericValue(actor.system.abilities?.[abil]?.mod, 0);
+      const isProf = Boolean(val.proficient);
+      const profBonus = isProf ? pb : 0;
+      const totalBonus = getNumericValue(actor.system.abilities?.[abil]?.mod, 0) + profBonus;
       const cat = val.category || "skill";
-      customSkillsList.push(`
-        <div class="sheet-entry-row" data-key="${k}" data-type="${cat}" data-custom="true" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer; background: #fdfaf3;">
-          <span class="entry-label" style="font-size: 0.76em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            <i class="fas fa-diamond" style="color: #c5a059; font-size: 0.7em; margin-right: 4px; width: 10px; text-align: center;"></i>
-            ${val.name} <small style="color: #888; margin-left: 2px;">(${abil.toUpperCase()})</small>
-          </span>
-          <button type="button" class="roll-btn-v2" data-type="${cat}" data-key="${k}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
-            ${formatSign(abilMod)}
-          </button>
-        </div>
-      `);
+      const displayName = val.name || k.replace("custom_", "").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+      const profMarker = isProf ? getProfMarker(1) : `<i class="fas fa-diamond" style="color: #c5a059; font-size: 0.7em; margin-right: 4px; width: 10px; text-align: center;"></i>`;
+
+      if (cat === "tool") {
+        const toolRowHtml = `
+          <div class="sheet-entry-row" data-key="${k}" data-type="tool" data-custom="true" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer; background: #fdfaf3;">
+            <span class="entry-label" style="font-size: 0.76em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
+              ${profMarker}
+              ${displayName} <small style="color: #888; margin-left: 2px;">(${abil.toUpperCase()})</small>
+            </span>
+            <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" title="Roll ${displayName}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+              ${formatSign(totalBonus)}
+            </button>
+          </div>
+        `;
+        if (isProf) {
+          customProfToolsHtml.push(toolRowHtml);
+        } else {
+          customOtherToolsHtml.push(toolRowHtml);
+        }
+      } else {
+        customSkillsList.push(`
+          <div class="sheet-entry-row" data-key="${k}" data-type="${cat}" data-custom="true" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer; background: #fdfaf3;">
+            <span class="entry-label" style="font-size: 0.76em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
+              ${profMarker}
+              ${displayName} <small style="color: #888; margin-left: 2px;">(${abil.toUpperCase()})</small>
+            </span>
+            <button type="button" class="roll-btn-v2" data-type="${cat}" data-key="${k}" title="Roll ${displayName}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+              ${formatSign(totalBonus)}
+            </button>
+          </div>
+        `);
+      }
     }
   });
 
@@ -3677,21 +3893,25 @@ window.CustomRolls.openD20DialogV2 = function() {
             </div>
 
             <!-- Tools Section -->
-            <div style="margin-top: 2px;">
+            <div style="margin-top: 2px; display: flex; flex-direction: column;">
               <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">TOOLS</label>
-              <div style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 180px; overflow-y: auto;">
-                ${proficientToolsHtml.length > 0 ? proficientToolsHtml.join('') : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient tools.</span>'}
+              <div id="tools-list-container-v2" style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 140px; overflow-y: auto;">
+                ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
+                  ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
+                  : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
               </div>
 
-              <label style="font-weight: 700; font-size: 0.65em; color: #777; display: block; margin-bottom: 1px;">OTHER TOOLS</label>
-              <div style="display: flex; flex-direction: column; gap: 3px;">
-                <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box;">
-                  <option value="">-- Choose Tool --</option>
-                  ${nonProficientToolsHtml.join('')}
-                </select>
-                <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-                  Roll Selected Tool
-                </button>
+              <div id="other-tools-container-v2" style="margin-top: 2px;">
+                <label style="font-weight: 700; font-size: 0.65em; color: #777; display: block; margin-bottom: 1px;">OTHER TOOLS</label>
+                <div style="display: flex; flex-direction: column; gap: 3px;">
+                  <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box;">
+                    <option value="">-- Choose Tool --</option>
+                    ${nonProficientToolsHtml.join('')}
+                  </select>
+                  <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                    Roll Selected Tool
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -3735,6 +3955,10 @@ Click a numbered modifier badge to execute a roll.</div>
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 3px; border-top: 1px solid #e0e0e0; padding-top: 4px;">
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #1e7e34; font-weight: 600;">
+            <span>Super Advantage</span>
+            <input type="checkbox" id="super-advantage-v2" name="super-advantage-v2" style="margin: 0;">
+          </label>
           <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
             <span>Reliable Talent (Min 10)</span>
             <input type="checkbox" id="reliable-talent-v2" name="reliable-talent-v2" style="margin: 0;">
@@ -3763,9 +3987,25 @@ Click a numbered modifier badge to execute a roll.</div>
       const descBody = html.find('#desc-body-v2');
       const presetSection = html.find('#preset-modifiers-section-v2');
       const presetList = html.find('#preset-list-v2');
+      let currentActiveKey = null;
 
-      const updatePresets = (choiceKey) => {
-        const profileObj = storedProfiles[choiceKey];
+      const getProfileForChoice = (choiceKey, type) => {
+        if (!choiceKey) return null;
+        if (storedProfiles[choiceKey]) return storedProfiles[choiceKey];
+        if (type === "check") {
+          return storedProfiles[`check_${choiceKey}`] 
+            || (choiceKey.startsWith("check_") ? storedProfiles[choiceKey.replace("check_", "")] : null);
+        }
+        if (type === "save") {
+          return storedProfiles[`save_${choiceKey}`] 
+            || (choiceKey.startsWith("save_") ? storedProfiles[choiceKey.replace("save_", "")] : null);
+        }
+        return null;
+      };
+
+      const updatePresets = (choiceKey, type) => {
+        currentActiveKey = choiceKey;
+        const profileObj = getProfileForChoice(choiceKey, type);
         const activePresets = Array.isArray(profileObj) ? profileObj : (profileObj?.modifiers || []);
 
         if (activePresets.length > 0) {
@@ -3783,14 +4023,16 @@ Click a numbered modifier badge to execute a roll.</div>
         }
       };
 
-      const setInfo = (type, key) => {
+      const setInfo = (type, key, preservePresets = false) => {
         if (key && key.startsWith("custom_")) {
           const customData = storedProfiles[key];
           const name = customData?.name || "Custom Test";
           const abil = (customData?.ability || "int").toUpperCase();
+          const cat = customData?.category || type || "skill";
+          const catName = cat === 'tool' ? 'Tool' : (cat === 'check' ? 'Ability' : 'Skill');
           descTitle.text(name);
-          descSubtitle.text(`Custom ${abil} Test`);
-          descBody.text(customData?.desc || `Custom D20 check governed by ${actor.name}'s ${abil} modifier.`);
+          descSubtitle.text(`Custom ${abil} ${catName} Check`);
+          descBody.text(customData?.desc || `Custom D20 ${catName.toLowerCase()} check governed by ${actor.name}'s ${abil} modifier.`);
         } else if (type === "skill") {
           descTitle.text(SKILLS[key]?.label || key);
           descSubtitle.text("Skill Check");
@@ -3801,15 +4043,17 @@ Click a numbered modifier badge to execute a roll.</div>
           descSubtitle.text(`${tool?.ability?.toUpperCase()} Tool Check`);
           descBody.text(tool?.desc || "No description available.");
         } else if (type === "save") {
-          const abilName = ABILITIES[key] || key?.toUpperCase();
+          const abilKey = key.replace("save_", "");
+          const abilName = ABILITIES[abilKey] || abilKey?.toUpperCase();
           descTitle.text(`${abilName} Save`);
           descSubtitle.text("Saving Throw");
-          descBody.text(DESCRIPTIONS[`save_${key}`] || "No description available.");
+          descBody.text(DESCRIPTIONS[`save_${abilKey}`] || "No description available.");
         } else if (type === "check") {
-          const abilName = ABILITIES[key] || key?.toUpperCase();
+          const abilKey = key.replace("check_", "");
+          const abilName = ABILITIES[abilKey] || abilKey?.toUpperCase();
           descTitle.text(`${abilName} Check`);
           descSubtitle.text("Ability Check");
-          descBody.text(DESCRIPTIONS[`check_${key}`] || "No description available.");
+          descBody.text(DESCRIPTIONS[`check_${abilKey}`] || "No description available.");
         } else if (type === "concentration") {
           descTitle.text("Concentration");
           descSubtitle.text("Constitution Check");
@@ -3820,7 +4064,9 @@ Click a numbered modifier badge to execute a roll.</div>
           descBody.text(DESCRIPTIONS.init);
         }
 
-        updatePresets(key);
+        if (!preservePresets || currentActiveKey !== key) {
+          updatePresets(key, type);
+        }
       };
 
       html.find('.ability-card, .save-row, .sheet-entry-row').on('click', function(e) {
@@ -3830,12 +4076,18 @@ Click a numbered modifier badge to execute a roll.</div>
         setInfo(type, key);
       });
 
-      html.find('#other-tools-select-v2').on('change', function() {
+      html.find('#other-tools-select-v2').on('change input', function() {
         const key = $(this).val();
-        if (key) setInfo('tool', key);
+        if (key) {
+          setInfo('tool', key);
+        } else {
+          presetSection.hide();
+          presetList.empty();
+        }
       });
 
       const executeRoll = async (rollType, key) => {
+        const isSuperAdvantage = html.find('#super-advantage-v2').is(':checked');
         const isReliableTalent = html.find('#reliable-talent-v2').is(':checked');
         const isHalflingLuck = html.find('#halfling-luck-v2').is(':checked');
 
@@ -3859,6 +4111,7 @@ Click a numbered modifier badge to execute a roll.</div>
           key,
           isReliableTalent,
           isHalflingLuck,
+          isSuperAdvantage,
           otherModString
         }, actor.id, game.user.id);
       };
@@ -3867,7 +4120,7 @@ Click a numbered modifier badge to execute a roll.</div>
         e.stopPropagation();
         const type = $(this).data('type');
         const key = $(this).data('key');
-        setInfo(type, key);
+        setInfo(type, key, true);
         executeRoll(type, key);
       });
 
@@ -3875,7 +4128,7 @@ Click a numbered modifier badge to execute a roll.</div>
         e.stopPropagation();
         const key = html.find('#other-tools-select-v2').val();
         if (!key) return ui.notifications.warn("Please select a tool first.");
-        setInfo('tool', key);
+        setInfo('tool', key, true);
         executeRoll('tool', key);
       });
     }
@@ -5002,6 +5255,14 @@ window.CustomRolls.openD20PresetEditor = function() {
       { key: "ste", label: "Stealth (DEX)" },
       { key: "sur", label: "Survival (WIS)" }
     ]},
+    { optgroup: "Ability Checks", options: [
+      { key: "check_str", label: "Strength Check (STR)" },
+      { key: "check_dex", label: "Dexterity Check (DEX)" },
+      { key: "check_con", label: "Constitution Check (CON)" },
+      { key: "check_int", label: "Intelligence Check (INT)" },
+      { key: "check_wis", label: "Wisdom Check (WIS)" },
+      { key: "check_cha", label: "Charisma Check (CHA)" }
+    ]},
     { optgroup: "Common Tools", options: [
       { key: "alchemist", label: "Alchemist Supplies" },
       { key: "brewer", label: "Brewer's Supplies" },
@@ -5044,6 +5305,11 @@ window.CustomRolls.openD20PresetEditor = function() {
       const match = group.options.find(o => o.key === key);
       if (match) return match.label;
     }
+    const checkMatch = STANDARD_OPTIONS.find(g => g.optgroup === "Ability Checks")?.options.find(o => o.key === `check_${key}`);
+    if (checkMatch) return checkMatch.label;
+    const saveMatch = STANDARD_OPTIONS.find(g => g.optgroup === "Saving Throws")?.options.find(o => o.key === `save_${key}`);
+    if (saveMatch) return saveMatch.label;
+
     if (key.startsWith("custom_")) {
       const stored = currentProfiles[key];
       const customName = stored?.name || key.replace("custom_", "").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
@@ -5083,7 +5349,12 @@ window.CustomRolls.openD20PresetEditor = function() {
       const currentAbil = profileData?.ability || "int";
       const currentCat = profileData?.category || "skill";
 
+      const isProficient = Boolean(profileData?.proficient);
+
       const customSelectorsHtml = isCustom ? `
+        <label style="display: inline-flex; align-items: center; gap: 3px; font-size: 0.75em; margin-right: 6px; cursor: pointer; color: #2b3a4a; font-weight: 600;">
+          <input type="checkbox" class="custom-proficient-check" data-key="${k}" ${isProficient ? 'checked' : ''} style="margin: 0;" /> Proficient
+        </label>
         <select class="custom-category-select" data-key="${k}" title="Category" style="height: 22px; font-size: 0.75em; padding: 0 4px; margin-right: 4px;">
           ${Object.entries(CATEGORIES).map(([code, name]) => `<option value="${code}" ${currentCat === code ? 'selected' : ''}>${name}</option>`).join('')}
         </select>
@@ -5142,7 +5413,7 @@ window.CustomRolls.openD20PresetEditor = function() {
 
       <div id="custom-test-creator" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 12px; background: #fdfaf3; border: 1px solid #d5c898; border-radius: 4px; padding: 8px 10px;">
         <span style="font-weight: 700; font-size: 0.75em; color: #6d5b1f; letter-spacing: 0.5px;">NEW CUSTOM D20 TEST</span>
-        <div style="display: flex; gap: 6px; align-items: center;">
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
           <input type="text" id="custom-test-name" placeholder="Test Name (e.g. Scavenging)" style="flex: 1.5; min-width: 130px; height: 26px; font-size: 0.85em; padding: 2px 6px;" />
           <select id="custom-test-category" title="Roll Category" style="flex: 1; height: 26px; font-size: 0.8em; padding: 2px;">
             <option value="skill">Skill Check</option>
@@ -5152,6 +5423,9 @@ window.CustomRolls.openD20PresetEditor = function() {
           <select id="custom-test-ability" title="Ability Score" style="width: 65px; height: 26px; font-size: 0.8em; padding: 2px;">
             ${Object.entries(ABILITIES).map(([code, name]) => `<option value="${code}">${name}</option>`).join('')}
           </select>
+          <label style="display: flex; align-items: center; gap: 3px; font-size: 0.8em; cursor: pointer; color: #8d6e63; font-weight: 600;">
+            <input type="checkbox" id="custom-test-proficient" style="margin: 0;" /> Proficient
+          </label>
           <button type="button" id="btn-confirm-create-custom" style="height: 26px; padding: 0 10px; font-size: 0.82em; cursor: pointer; white-space: nowrap; font-weight: 600;">
             Add
           </button>
@@ -5176,7 +5450,9 @@ window.CustomRolls.openD20PresetEditor = function() {
       save: {
         icon: '<i class="fas fa-save"></i>',
         label: "Save Profiles",
-        callback: () => { performSave = true; }
+        callback: () => { 
+          performSave = true; 
+        }
       },
       cancel: { label: "Cancel" }
     },
@@ -5202,10 +5478,14 @@ window.CustomRolls.openD20PresetEditor = function() {
             const currentObj = currentProfiles[k] || {};
             const ability = html.find(`.custom-ability-select[data-key="${k}"]`).val() || currentObj.ability || "int";
             const category = html.find(`.custom-category-select[data-key="${k}"]`).val() || currentObj.category || "skill";
+            const profEl = html.find(`.custom-proficient-check[data-key="${k}"]`);
+            const proficient = profEl.length ? profEl.is(':checked') : Boolean(currentObj.proficient);
             currentProfiles[k] = {
               name: currentObj.name || k.replace("custom_", ""),
               ability: ability,
               category: category,
+              proficient: proficient,
+              desc: currentObj.desc || "",
               modifiers: list
             };
           } else {
@@ -5227,7 +5507,7 @@ window.CustomRolls.openD20PresetEditor = function() {
           }
 
           if (!currentProfiles[chosenKey]) {
-            currentProfiles[chosenKey] = [{ label: "Bonus", formula: "1d4", enabled: true }];
+            currentProfiles[chosenKey] = [];
           }
           refreshView();
         });
@@ -5239,6 +5519,7 @@ window.CustomRolls.openD20PresetEditor = function() {
 
           const chosenAbility = html.find('#custom-test-ability').val() || "int";
           const chosenCategory = html.find('#custom-test-category').val() || "skill";
+          const isProf = html.find('#custom-test-proficient').is(':checked');
           const customKey = "custom_" + customName.toLowerCase().replace(/[^a-z0-9]/g, "_");
 
           if (!currentProfiles[customKey]) {
@@ -5246,10 +5527,12 @@ window.CustomRolls.openD20PresetEditor = function() {
               name: customName,
               ability: chosenAbility,
               category: chosenCategory,
-              modifiers: [{ label: "Kit / Gear", formula: "1d4", enabled: true }]
+              proficient: isProf,
+              modifiers: []
             };
           }
           html.find('#custom-test-name').val('');
+          html.find('#custom-test-proficient').prop('checked', false);
           html.find('#custom-test-creator').hide();
           refreshView();
         });
@@ -5272,6 +5555,13 @@ window.CustomRolls.openD20PresetEditor = function() {
           }
         });
 
+        html.find('.custom-proficient-check').off('change').on('change', (e) => {
+          const key = $(e.currentTarget).data('key');
+          if (currentProfiles[key]) {
+            currentProfiles[key].proficient = $(e.currentTarget).is(':checked');
+          }
+        });
+
         html.find('.remove-test-btn').off('click').on('click', (e) => {
           syncFromInputs();
           const key = $(e.currentTarget).data('key');
@@ -5286,7 +5576,7 @@ window.CustomRolls.openD20PresetEditor = function() {
 
           if (isCustom) {
             if (!currentProfiles[key]) {
-              currentProfiles[key] = { name: key.replace("custom_", ""), ability: "int", category: "skill", modifiers: [] };
+              currentProfiles[key] = { name: key.replace("custom_", ""), ability: "int", category: "skill", proficient: false, modifiers: [] };
             }
             currentProfiles[key].modifiers.push({ label: "Item / Feature", formula: "1d4", enabled: true });
           } else {
@@ -5332,10 +5622,13 @@ window.CustomRolls.openD20PresetEditor = function() {
         if (isCustom) {
           const ability = html.find(`.custom-ability-select[data-key="${k}"]`).val() || currentProfiles[k]?.ability || "int";
           const category = html.find(`.custom-category-select[data-key="${k}"]`).val() || currentProfiles[k]?.category || "skill";
+          const profEl = html.find(`.custom-proficient-check[data-key="${k}"]`);
+          const proficient = profEl.length ? profEl.is(':checked') : Boolean(currentProfiles[k]?.proficient);
           finalProfiles[k] = {
             name: currentProfiles[k]?.name || k.replace("custom_", ""),
             ability: ability,
             category: category,
+            proficient: proficient,
             modifiers: list
           };
         } else if (list.length > 0) {
@@ -5410,6 +5703,14 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
       { key: "ste", label: "Stealth (DEX)" },
       { key: "sur", label: "Survival (WIS)" }
     ]},
+    { optgroup: "Ability Checks", options: [
+      { key: "check_str", label: "Strength Check (STR)" },
+      { key: "check_dex", label: "Dexterity Check (DEX)" },
+      { key: "check_con", label: "Constitution Check (CON)" },
+      { key: "check_int", label: "Intelligence Check (INT)" },
+      { key: "check_wis", label: "Wisdom Check (WIS)" },
+      { key: "check_cha", label: "Charisma Check (CHA)" }
+    ]},
     { optgroup: "Common Tools", options: [
       { key: "alchemist", label: "Alchemist Supplies" },
       { key: "brewer", label: "Brewer's Supplies" },
@@ -5452,6 +5753,11 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
       const match = group.options.find(o => o.key === key);
       if (match) return match.label;
     }
+    const checkMatch = STANDARD_OPTIONS.find(g => g.optgroup === "Ability Checks")?.options.find(o => o.key === `check_${key}`);
+    if (checkMatch) return checkMatch.label;
+    const saveMatch = STANDARD_OPTIONS.find(g => g.optgroup === "Saving Throws")?.options.find(o => o.key === `save_${key}`);
+    if (saveMatch) return saveMatch.label;
+
     if (key.startsWith("custom_")) {
       const stored = currentProfiles[key];
       const customName = stored?.name || key.replace("custom_", "").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
@@ -5491,7 +5797,12 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
       const currentAbil = profileData?.ability || "int";
       const currentCat = profileData?.category || "skill";
 
+      const isProficient = Boolean(profileData?.proficient);
+
       const customSelectorsHtml = isCustom ? `
+        <label style="display: inline-flex; align-items: center; gap: 3px; font-size: 0.75em; margin-right: 6px; cursor: pointer; color: #1a237e; font-weight: 600;">
+          <input type="checkbox" class="custom-proficient-check-v2" data-key="${k}" ${isProficient ? 'checked' : ''} style="margin: 0;" /> Proficient
+        </label>
         <select class="custom-category-select-v2" data-key="${k}" title="Category" style="height: 22px; font-size: 0.75em; padding: 0 4px; margin-right: 4px; border: 1px solid #7986cb; border-radius: 3px;">
           ${Object.entries(CATEGORIES).map(([code, name]) => `<option value="${code}" ${currentCat === code ? 'selected' : ''}>${name}</option>`).join('')}
         </select>
@@ -5557,7 +5868,7 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
 
       <div id="custom-test-creator-v2" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 10px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 4px; padding: 8px 10px;">
         <span style="font-weight: 700; font-size: 0.74em; color: #f57f17; letter-spacing: 0.5px;">NEW CUSTOM D20 TEST (V2)</span>
-        <div style="display: flex; gap: 6px; align-items: center;">
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
           <input type="text" id="custom-test-name-v2" placeholder="Test Name (e.g. Scavenging)" style="flex: 1.5; min-width: 130px; height: 26px; font-size: 0.84em; padding: 2px 6px; border: 1px solid #ffd54f; border-radius: 3px;" />
           <select id="custom-test-category-v2" title="Roll Category" style="flex: 1; height: 26px; font-size: 0.8em; padding: 2px; border: 1px solid #ffd54f; border-radius: 3px;">
             <option value="skill">Skill Check</option>
@@ -5567,6 +5878,9 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
           <select id="custom-test-ability-v2" title="Ability Score" style="width: 65px; height: 26px; font-size: 0.8em; padding: 2px; border: 1px solid #ffd54f; border-radius: 3px;">
             ${Object.entries(ABILITIES).map(([code, name]) => `<option value="${code}">${name}</option>`).join('')}
           </select>
+          <label style="display: flex; align-items: center; gap: 3px; font-size: 0.8em; cursor: pointer; color: #d84315; font-weight: 600;">
+            <input type="checkbox" id="custom-test-proficient-v2" style="margin: 0;" /> Proficient
+          </label>
           <button type="button" id="btn-confirm-create-custom-v2" style="height: 26px; padding: 0 10px; font-size: 0.82em; cursor: pointer; white-space: nowrap; font-weight: 600; background: #ffa000; color: #fff; border: 1px solid #ff8f00; border-radius: 3px;">
             Add
           </button>
@@ -5592,7 +5906,9 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
       save: {
         icon: '<i class="fas fa-save"></i>',
         label: "Save Profiles (V2)",
-        callback: () => { performSave = true; }
+        callback: (dlgHtml) => {
+          performSave = true;
+        }
       },
       cancel: { label: "Cancel" }
     },
@@ -5618,10 +5934,14 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
             const currentObj = currentProfiles[k] || {};
             const ability = html.find(`.custom-ability-select-v2[data-key="${k}"]`).val() || currentObj.ability || "int";
             const category = html.find(`.custom-category-select-v2[data-key="${k}"]`).val() || currentObj.category || "skill";
+            const profEl = html.find(`.custom-proficient-check-v2[data-key="${k}"]`);
+            const proficient = profEl.length ? profEl.is(':checked') : Boolean(currentObj.proficient);
             currentProfiles[k] = {
               name: currentObj.name || k.replace("custom_", ""),
               ability: ability,
               category: category,
+              proficient: proficient,
+              desc: currentObj.desc || "",
               modifiers: list
             };
           } else {
@@ -5643,7 +5963,7 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
           }
 
           if (!currentProfiles[chosenKey]) {
-            currentProfiles[chosenKey] = [{ label: "Bonus", formula: "1d4", enabled: true }];
+            currentProfiles[chosenKey] = [];
           }
           refreshView();
         });
@@ -5655,6 +5975,7 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
 
           const chosenAbility = html.find('#custom-test-ability-v2').val() || "int";
           const chosenCategory = html.find('#custom-test-category-v2').val() || "skill";
+          const isProf = html.find('#custom-test-proficient-v2').is(':checked');
           const customDesc = html.find('#custom-test-desc-v2').val()?.trim() || "";
           const customKey = "custom_" + customName.toLowerCase().replace(/[^a-z0-9]/g, "_");
 
@@ -5663,12 +5984,14 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
               name: customName,
               ability: chosenAbility,
               category: chosenCategory,
+              proficient: isProf,
               desc: customDesc,
-              modifiers: [{ label: "Kit / Gear", formula: "1d4", enabled: true }]
+              modifiers: []
             };
           }
           html.find('#custom-test-name-v2').val('');
           html.find('#custom-test-desc-v2').val('');
+          html.find('#custom-test-proficient-v2').prop('checked', false);
           html.find('#custom-test-creator-v2').hide();
           refreshView();
         });
@@ -5691,6 +6014,13 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
           }
         });
 
+        html.find('.custom-proficient-check-v2').off('change').on('change', (e) => {
+          const key = $(e.currentTarget).data('key');
+          if (currentProfiles[key]) {
+            currentProfiles[key].proficient = $(e.currentTarget).is(':checked');
+          }
+        });
+
         html.find('.remove-test-btn-v2').off('click').on('click', (e) => {
           syncFromInputs();
           const key = $(e.currentTarget).data('key');
@@ -5705,7 +6035,7 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
 
           if (isCustom) {
             if (!currentProfiles[key]) {
-              currentProfiles[key] = { name: key.replace("custom_", ""), ability: "int", category: "skill", modifiers: [] };
+              currentProfiles[key] = { name: key.replace("custom_", ""), ability: "int", category: "skill", proficient: false, modifiers: [] };
             }
             currentProfiles[key].modifiers.push({ label: "Item / Feature", formula: "1d4", enabled: true });
           } else {
@@ -5751,10 +6081,13 @@ window.CustomRolls.openD20PresetEditorV2 = function() {
         if (isCustom) {
           const ability = html.find(`.custom-ability-select-v2[data-key="${k}"]`).val() || currentProfiles[k]?.ability || "int";
           const category = html.find(`.custom-category-select-v2[data-key="${k}"]`).val() || currentProfiles[k]?.category || "skill";
+          const profEl = html.find(`.custom-proficient-check-v2[data-key="${k}"]`);
+          const proficient = profEl.length ? profEl.is(':checked') : Boolean(currentProfiles[k]?.proficient);
           finalProfiles[k] = {
             name: currentProfiles[k]?.name || k.replace("custom_", ""),
             ability: ability,
             category: category,
+            proficient: proficient,
             desc: currentProfiles[k]?.desc || "",
             modifiers: list
           };
