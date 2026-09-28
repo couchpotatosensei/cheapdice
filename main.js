@@ -10,6 +10,9 @@
 // PART 1: SYSTEM DEFAULTS, SPEED & ELEVATION CONTROLS
 // =============================================================================
 
+import { registerSettings } from "./scripts/settings.js";
+
+
 CONFIG.Token.movement.defaultSpeed = 14;
 
 // Persistent Profile Storage Registration
