@@ -17,4 +17,5 @@ export function registerSettings() {
   registerFeature("featureCustomRolls", "Custom Roll Dialogs", "Enables D20, Attack, Spell, and Action dialog launchers.");
   registerFeature("featurePresetEditors", "Preset & Action Editors", "Enables D20 preset editors and Action Builder/Generator tools.");
   registerFeature("featureSocketHandlers", "SocketLib Remote Handlers", "Enables SocketLib registration for automated combat and timer broadcasts.");
+  registerFeature("featureAnimations", "Automated Animations & Sequencer", "Enables Sequencer and Automated Animations integrations.");
 }
