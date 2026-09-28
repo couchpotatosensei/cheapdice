@@ -3,7 +3,7 @@ export function registerSettings() {
     game.settings.register("cheapdice", key, {
       name: `[Feature] ${name}`,
       hint: hint,
-      scope: "client",
+      scope: "world",
       config: true,
       type: Boolean,
       default: true,
