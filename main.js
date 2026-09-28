@@ -89,6 +89,8 @@ Hooks.on("renderSceneControls", (controls, html) => {
   toolsMenu.appendChild(li);
 });
 
+
+
 // 2. Draw AC badge above the token on the canvas
 function renderTokenAcBadge(token) {
   if (!token?.actor || !token.bars) return;
@@ -322,20 +324,32 @@ Hooks.on("renderTokenHUD", (app, html, data) => {
       if (dispIcon) dispIcon.style.color = currentMeta.color;
       flyoutMenu.appendChild(dispositionBtn);
 
-      // Button: D20 Test
+      // Button 2: D20 Test (Updated to V2 Dialog)
       const d20Btn = makeButton(
-        "Roll D20",
+        "Roll D20 (V2)",
         "docs/assets/fvtt.png",
         (e) => {
           e.preventDefault();
           e.stopPropagation();
-          window.CustomRolls?.openD20Dialog();
+          window.CustomRolls?.openD20DialogV2();
         },
         "32px"
       );
       flyoutMenu.appendChild(d20Btn);
 
-      // Button: Attacks
+      // Button 3: D20 Modifier Editor V2
+      const d20EditorV2Btn = makeButton(
+        "D20 Modifier Editor (V2)",
+        "fas fa-sliders",
+        (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.CustomRolls?.openD20PresetEditorV2();
+        }
+      );
+      flyoutMenu.appendChild(d20EditorV2Btn);
+
+      // Button 4: Attacks
       const attacksBtn = makeButton(
         "Attacks",
         "icons/logo-scifi.png",
@@ -348,7 +362,7 @@ Hooks.on("renderTokenHUD", (app, html, data) => {
       );
       flyoutMenu.appendChild(attacksBtn);
 
-      // Button: Action Editor
+      // Button 5: Action Editor
       const editorBtn = makeButton(
         "Action Editor",
         "fas fa-pen-to-square",
@@ -404,7 +418,7 @@ Hooks.on("renderTokenHUD", (app, html, data) => {
     "Roll D20",
     "docs/assets/fvtt.png",
     () => {
-      window.CustomRolls?.openD20Dialog();
+      window.CustomRolls?.openD20DialogV2();
     },
     "32px"
   );
@@ -657,6 +671,7 @@ Hooks.once("ready", () => {
     if (token) renderTokenAcBadge(token);
   });
 });
+
 
 // =============================================================================
 // PART 2: SOCKETLIB REGISTRATION & EXECUTION HANDLERS
@@ -2063,13 +2078,21 @@ socket.register("runAttackRoll", async (config, actorId, userId) => {
       formulaSuffix += ` ${formattedOther}`;
     }
 
+    // 1. Roll the primary roll (rolls 1d20 plus all extra modifiers and bonus dice)
     const fullFormula = `${dieFormula} ${formulaSuffix}`;
-
     const roll1 = await new Roll(fullFormula).evaluate();
-    const roll2 = await new Roll(fullFormula).evaluate();
+
+    // 2. Roll ONLY the second d20 for Advantage / Disadvantage
+    const rollD20Second = await new Roll(dieFormula).evaluate();
+
+    // 3. Construct Roll 2 reusing the non-d20 terms from Roll 1 so extra dice aren't re-rolled
+    const terms2 = [rollD20Second.terms[0], ...roll1.terms.slice(1)];
+    const roll2 = Roll.fromTerms(terms2);
+    roll2._total = roll2._evaluateTotal();
+    roll2._evaluated = true;
 
     const d20_1 = roll1.dice[0]?.total ?? 0;
-    const d20_2 = roll2.dice[0]?.total ?? 0;
+    const d20_2 = rollD20Second.dice[0]?.total ?? 0;
 
     let rHtml1 = await roll1.render();
     let rHtml2 = await roll2.render();
@@ -3351,6 +3374,514 @@ window.CustomRolls.openD20Dialog = function() {
     }
   }, { width: 560, height: 'auto' }).render(true);
 };
+
+// =========================================================================
+// VERSION 2: D20 TEST MINI CHARACTER SHEET LAUNCHER (REFINED & COMPACT)
+// =========================================================================
+window.CustomRolls.openD20DialogV2 = function() {
+  const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
+
+  if (!token) {
+    return ui.notifications.warn("Please select your token first.");
+  }
+
+  const actor = token.actor;
+  if (!actor || !actor.isOwner) {
+    return ui.notifications.warn("You don't have permissions to use this token.");
+  }
+
+  function getNumericValue(val, fallback = 0) {
+    if (typeof val === "number" && !isNaN(val)) return val;
+    if (val && typeof val === "object" && typeof val.value === "number") return val.value;
+    const parsed = Number(val);
+    return isNaN(parsed) ? fallback : parsed;
+  }
+
+  function formatSign(num) {
+    return num >= 0 ? `+${num}` : `${num}`;
+  }
+
+  const storedProfiles = window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2") || actor.getFlag("world", "d20ProfilesV2") || {};
+
+  const TOOLS = {
+    alchemist: { name: "Alchemist Supplies", ability: "int", desc: "Utilize: Identify a substance (DC 15), or start a fire (DC 15)\n\nCraft: Acid, Alchemist’s Fire, Component Pouch, Oil, Paper, Perfume" },
+    brewer: { name: "Brewer's Supplies", ability: "int", desc: "Utilize: Detect poisoned drink (DC 15), or identify alcohol (DC 10)\n\nCraft: Antitoxin" },
+    calligrapher: { name: "Calligrapher's Supplies", ability: "dex", desc: "Utilize: Write text with impressive flourishes that guard against forgery (DC 15)\n\nCraft: Ink, Spell Scroll" },
+    carpenter: { name: "Carpenter's Tools", ability: "str", desc: "Utilize: Seal or pry open a door or container (DC 20)\n\nCraft: Club, Greatclub, Quarterstaff, Barrel, Chest, Ladder, Pole, Portable Ram, Torch" },
+    cartographer: { name: "Cartographer's Tools", ability: "wis", desc: "Utilize: Draft a map of a small area (DC 15)\n\nCraft: Map" },
+    cobbler: { name: "Cobbler's Tools", ability: "dex", desc: "Utilize: Modify footwear to give Advantage on the wearer’s next Dexterity (Acrobatics) check (DC 10)\n\nCraft: Climber’s Kit" },
+    cook: { name: "Cook's Utensils", ability: "wis", desc: "Utilize: Improve food’s flavor (DC 10), or detect spoiled or poisoned food (DC 15)\n\nCraft: Rations" },
+    disguise: { name: "Disguise Kit", ability: "cha", desc: "Utilize: Apply makeup (DC 10)\n\nCraft: Costume" },
+    forgery: { name: "Forgery Kit", ability: "dex", desc: "Utilize: Mimic 10 or fewer words of someone else’s handwriting (DC 15), or duplicate a wax seal (DC 20)" },
+    gaming: { name: "Gaming Set", ability: "wis", desc: "Utilize: Discern whether someone is cheating (DC 10), or win the game (DC 20)" },
+    glassblower: { name: "Glassblower's Tools", ability: "int", desc: "Utilize: Discern what a glass object held in the past 24 hours (DC 15)\n\nCraft: Glass Bottle, Magnifying Glass, Spyglass, Vial" },
+    herbalism: { name: "Herbalism Kit", ability: "int", desc: "Utilize: Identify a plant (DC 10)\n\nCraft: Antitoxin, Candle, Healer’s Kit, Potion of Healing" },
+    jeweler: { name: "Jeweler's Tools", ability: "int", desc: "Utilize: Discern a gem’s value (DC 15)\n\nCraft: Arcane Focus, Holy Symbol" },
+    leatherworker: { name: "Leatherworker's Tools", ability: "dex", desc: "Utilize: Add a design to a leather item (DC 10)\n\nCraft: Sling, Whip, Hide Armor, Leather Armor, Studded Leather Armor, Backpack, Crossbow Bolt Case, Map or Scroll Case, Parchment, Pouch, Quiver, Waterskin" },
+    mason: { name: "Mason's Tools", ability: "str", desc: "Utilize: Chisel a symbol or hole in stone (DC 10)\n\nCraft: Block and Tackle" },
+    musical: { name: "Musical Instrument", ability: "cha", desc: "Utilize: Play a known tune (DC 10), or improvise a song (DC 15)" },
+    navigator: { name: "Navigator's Tools", ability: "wis", desc: "Utilize: Plot a course (DC 10), or determine position by stargazing (DC 15)" },
+    painter: { name: "Painter's Supplies", ability: "wis", desc: "Utilize: Paint a recognizable image of something you’ve seen (DC 10)\n\nCraft: Druidic Focus, Holy Symbol" },
+    poisoner: { name: "Poisoner's Kit", ability: "int", desc: "Utilize: Detect a poisoned object (DC 10)" },
+    potter: { name: "Potter's Tools", ability: "int", desc: "Utilize: Discern what a ceramic object held in the past 24 hours (DC 15)\n\nCraft: Jug, Lamp" },
+    smith: { name: "Smith's Tools", ability: "str", desc: "Utilize: Pry open a door or container (DC 20)\n\nCraft: Any Melee weapon (except Club, Greatclub, Quarterstaff, and Whip), Medium armor (except Hide), Heavy armor, Ball Bearings, Bucket, Caltrops, Chain, Crowbar, Firearm Bullets, Grappling Hook, Iron Pot, Iron Spikes, Sling Bullets" },
+    thieves: { name: "Thieves' Tools", ability: "dex", desc: "Utilize: Pick a lock (DC 15), or disarm a trap (DC 15)" },
+    tinker: { name: "Tinker's Tools", ability: "dex", desc: "Utilize: Assemble a Tiny item composed of scrap, which falls apart in 1 minute (DC 20)\n\nCraft: Musket, Pistol, Bell, Bullseye Lantern, Flask, Hooded Lantern, Hunting Trap, Lock, Manacles, Mirror, Shovel, Signal Whistle, Tinderbox" },
+    weaver: { name: "Weaver's Tools", ability: "dex", desc: "Utilize: Mend a tear in clothing (DC 10), or sew a Tiny design (DC 10)\n\nCraft: Padded Armor, Basket, Bedroll, Blanket, Fine Clothes, Net, Robe, Rope, Sack, String, Tent, Traveler's Clothes" },
+    woodcarver: { name: "Woodcarver's Tools", ability: "dex", desc: "Utilize: Carve a pattern in wood (DC 10)\n\nCraft: Club, Greatclub, Quarterstaff, Ranged weapons (except Pistol, Musket, and Sling), Arcane Focus, Arrows, Bolts, Druidic Focus, Ink Pen, Needles" }
+  };
+
+  const DESCRIPTIONS = {
+    acr: "Stay on your feet in a tricky situation, or perform an acrobatic stunt.",
+    ani: "Calm or train an animal, or get an animal to behave in a certain way.",
+    arc: "Recall lore about spells, magic items, and the planes of existence.",
+    ath: "Jump farther than normal, stay afloat in rough water, or break something.",
+    dec: "Tell a convincing lie, or wear a disguise convincingly.",
+    his: "Recall lore about historical events, people, nations, and cultures.",
+    ins: "Discern a person’s mood and intentions.",
+    itm: "Awe or threaten someone into doing what you want.",
+    inv: "Find obscure information in books, or deduce how something works.",
+    med: "Diagnose an illness, or determine what killed the recently slain.",
+    nat: "Recall lore about terrain, plants, animals, and weather.",
+    prc: "Using a combination of senses, notice something that’s easy to miss.",
+    prf: "Act, tell a story, perform music, or dance.",
+    per: "Honestly and graciously convince someone of something.",
+    rel: "Recall lore about gods, religious rituals, and holy symbols.",
+    slt: "Pick a pocket, conceal a handheld object, or perform legerdemain.",
+    ste: "Escape notice by moving quietly and hiding behind things.",
+    sur: "Follow tracks, forage, find a trail, or avoid natural hazards.",
+
+    check_str: "Measures bodily power, athletic training, and the extent to which you can exert raw physical force.\n\nUse to lift, push, pull, or break something.",
+    check_dex: "Measures agility, reflexes, balance, fine motor control, and swift movement.\n\nUse to move nimbly, quickly, or quietly.",
+    check_con: "Measures health, stamina, vital force, and bodily endurance under strain.\n\nUse to push your body beyond normal limits.",
+    check_int: "Measures mental acuity, accuracy of recall, and the ability to reason logically.\n\nUse to reason or remember.",
+    check_wis: "Reflects how attuned you are to your surroundings and represents perceptiveness, intuition, and willpower.\n\nUse to notice things in the environment or in creature's behavior.",
+    check_cha: "Measures your ability to interact effectively with others, confidence, eloquence, and forceful personality.\n\nUse to influence, entertain or deceive.",
+
+    save_str: "Resisting effects that physically push, knock down, restrain, or crush you.",
+    save_dex: "Dodging out of harm's way, avoiding area-of-effect spells like Fireball, or evading sudden hazards and traps.",
+    save_con: "Withstanding poisons, diseases, toxic gases, extreme exhaustion, or cold and heat hazards.",
+    save_int: "Resisting psychic incursions or illusions that challenge logic.",
+    save_wis: "Resisting charm effects, fright, mind control, or magical influence aimed at your willpower.",
+    save_cha: "Resisting effects that banish you to other planes, override your self-identity, or possess your spirit.",
+
+    concentration: "Maintaining focus on an ongoing spell when you take damage. The DC is 10 or half the damage taken, whichever is higher.",
+    init: "Determines turn order at the start of combat. Tied rolls are broken by the higher raw Dexterity score."
+  };
+
+  const ABILITIES = {
+    str: "Strength",
+    dex: "Dexterity",
+    con: "Constitution",
+    int: "Intelligence",
+    wis: "Wisdom",
+    cha: "Charisma"
+  };
+
+  const SKILLS = {
+    acr: { label: "Acrobatics", ability: "dex" },
+    ani: { label: "Animal Handling", ability: "wis" },
+    arc: { label: "Arcana", ability: "int" },
+    ath: { label: "Athletics", ability: "str" },
+    dec: { label: "Deception", ability: "cha" },
+    his: { label: "History", ability: "int" },
+    ins: { label: "Insight", ability: "wis" },
+    itm: { label: "Intimidation", ability: "cha" },
+    inv: { label: "Investigation", ability: "int" },
+    med: { label: "Medicine", ability: "wis" },
+    nat: { label: "Nature", ability: "int" },
+    prc: { label: "Perception", ability: "wis" },
+    prf: { label: "Performance", ability: "cha" },
+    per: { label: "Persuasion", ability: "cha" },
+    rel: { label: "Religion", ability: "int" },
+    slt: { label: "Sleight of Hand", ability: "dex" },
+    ste: { label: "Stealth", ability: "dex" },
+    sur: { label: "Survival", ability: "wis" }
+  };
+
+  const pb = getNumericValue(actor.system.attributes?.prof, 2);
+
+  const getProfMarker = (level) => {
+    if (level === 2) {
+      return `<i class="fas fa-star" style="color: #d4af37; font-size: 0.75em; margin-right: 4px; width: 10px; text-align: center;"></i>`;
+    }
+    if (level === 1) {
+      return `<i class="fas fa-circle" style="color: #2b7489; font-size: 0.72em; margin-right: 4px; width: 10px; text-align: center;"></i>`;
+    }
+    if (level === 0.5) {
+      return `<i class="fas fa-circle-half-stroke" style="color: #2b7489; font-size: 0.72em; margin-right: 4px; width: 10px; text-align: center;"></i>`;
+    }
+    return `<i class="far fa-circle" style="color: #b0b5bc; font-size: 0.72em; margin-right: 4px; width: 10px; text-align: center;"></i>`;
+  };
+
+  // Top Ability Scores Row
+  const abilityCardsHtml = Object.entries(ABILITIES).map(([key, name]) => {
+    const score = getNumericValue(actor.system.abilities?.[key]?.value, 10);
+    const mod = getNumericValue(actor.system.abilities?.[key]?.mod, 0);
+    return `
+      <div class="ability-card" data-key="${key}" data-type="check" style="flex: 1; min-width: 38px; background: rgba(0,0,0,0.03); border: 1px solid #d2d7df; border-radius: 4px; padding: 3px 1px; text-align: center; cursor: pointer;">
+        <div style="font-size: 0.68em; font-weight: 700; color: #4b5d88; text-transform: uppercase;">${key}</div>
+        <div style="font-size: 0.95em; font-weight: 700; color: #222; margin: 1px 0;">${score}</div>
+        <button type="button" class="roll-btn-v2" data-type="check" data-key="${key}" title="Roll ${name} Check" style="width: 32px; height: 20px; font-weight: 700; font-size: 0.8em; padding: 0; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; cursor: pointer; color: #2b3a4a; margin: 0 auto; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+          ${formatSign(mod)}
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  // Saving Throws: Col 1 (STR, DEX, CON), Col 2 (INT, WIS, CHA)
+  const saveCol1Keys = ["str", "dex", "con"];
+  const saveCol2Keys = ["int", "wis", "cha"];
+
+  const buildSaveColHtml = (keys) => keys.map(key => {
+    const name = ABILITIES[key];
+    const saveObj = actor.system.abilities?.[key]?.save;
+    const modObj = actor.system.abilities?.[key]?.mod;
+    const saveMod = getNumericValue(saveObj, getNumericValue(modObj, 0));
+    const isProf = Boolean(actor.system.abilities?.[key]?.proficient || actor.system.abilities?.[key]?.prof);
+    const profIcon = getProfMarker(isProf ? 1 : 0);
+
+    return `
+      <div class="save-row" data-key="${key}" data-type="save" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; border-radius: 3px; background: #fff; border: 1px solid #e5e5e5; cursor: pointer; margin-bottom: 2px;">
+        <span style="font-size: 0.74em; color: #333; display: flex; align-items: center;">${profIcon}${key.toUpperCase()}</span>
+        <button type="button" class="roll-btn-v2" data-type="save" data-key="${key}" title="Roll ${name} Save" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d2d7df; background: #fafafa; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
+          ${formatSign(saveMod)}
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  // Initiative and Concentration values
+  const conMod = getNumericValue(actor.system.abilities?.con?.mod, 0);
+  const rawConSave = getNumericValue(actor.system.abilities?.con?.save, null);
+  let conSaveTotal = conMod;
+  if (rawConSave !== null) {
+    conSaveTotal = rawConSave;
+  } else {
+    const isProf = actor.system.abilities?.con?.proficient || actor.system.abilities?.con?.prof;
+    conSaveTotal = conMod + (isProf ? pb : 0);
+  }
+
+  const dexMod = getNumericValue(actor.system.abilities?.dex?.mod, 0);
+  const dexScore = getNumericValue(actor.system.abilities?.dex?.value, 10);
+  const initBonus = getNumericValue(actor.system.attributes?.init?.bonus, 0);
+  const alertBonus = actor.items.some(i => i.name?.toLowerCase().includes("alert")) ? 5 : 0;
+  const totalInitMod = dexMod + initBonus + alertBonus;
+
+  // Skills List
+  const standardSkillsHtml = Object.entries(SKILLS).map(([key, s]) => {
+    const mod = getNumericValue(actor.system.skills?.[key]?.total, 0);
+    const profLevel = actor.system.skills?.[key]?.value ?? 0;
+    const profMarker = getProfMarker(profLevel);
+
+    return `
+      <div class="sheet-entry-row" data-key="${key}" data-type="skill" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
+        <span class="entry-label" style="font-size: 0.76em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          ${profMarker}${s.label} <small style="color: #888; margin-left: 2px;">(${s.ability.toUpperCase()})</small>
+        </span>
+        <button type="button" class="roll-btn-v2" data-type="skill" data-key="${key}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+          ${formatSign(mod)}
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  // Custom Skills
+  const customSkillsList = [];
+  Object.entries(storedProfiles).forEach(([k, val]) => {
+    if (k.startsWith("custom_")) {
+      const abil = val.ability || "int";
+      const abilMod = getNumericValue(actor.system.abilities?.[abil]?.mod, 0);
+      const cat = val.category || "skill";
+      customSkillsList.push(`
+        <div class="sheet-entry-row" data-key="${k}" data-type="${cat}" data-custom="true" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer; background: #fdfaf3;">
+          <span class="entry-label" style="font-size: 0.76em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            <i class="fas fa-diamond" style="color: #c5a059; font-size: 0.7em; margin-right: 4px; width: 10px; text-align: center;"></i>
+            ${val.name} <small style="color: #888; margin-left: 2px;">(${abil.toUpperCase()})</small>
+          </span>
+          <button type="button" class="roll-btn-v2" data-type="${cat}" data-key="${k}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+            ${formatSign(abilMod)}
+          </button>
+        </div>
+      `);
+    }
+  });
+
+  // Tools Division
+  const proficientToolsHtml = [];
+  const nonProficientToolsHtml = [];
+
+  Object.entries(TOOLS).sort((a, b) => a[1].name.localeCompare(b[1].name)).forEach(([k, t]) => {
+    const abilMod = getNumericValue(actor.system.abilities?.[t.ability]?.mod, 0);
+    const toolItem = actor.items.find(i => i.type === "tool" && i.name.toLowerCase().includes(t.name.toLowerCase().split("'")[0]));
+    const isProf = actor.system.tools?.[k]?.proficient || toolItem?.system?.proficient || 0;
+    const bonus = abilMod + (isProf ? pb * (isProf === 2 ? 2 : 1) : 0);
+
+    if (isProf) {
+      const profMarker = getProfMarker(isProf === 2 ? 2 : (isProf === 0.5 ? 0.5 : 1));
+      proficientToolsHtml.push(`
+        <div class="sheet-entry-row" data-key="${k}" data-type="tool" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
+          <span class="entry-label" style="font-size: 0.76em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            ${profMarker}${t.name} <small style="color: #888; margin-left: 2px;">(${t.ability.toUpperCase()})</small>
+          </span>
+          <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+            ${formatSign(bonus)}
+          </button>
+        </div>
+      `);
+    } else {
+      nonProficientToolsHtml.push(`<option value="${k}">${t.name} (${t.ability.toUpperCase()}) ${formatSign(bonus)}</option>`);
+    }
+  });
+
+  const dialogHtml = `
+    <div style="display: flex; gap: 8px; font-family: inherit; height: 570px; box-sizing: border-box;">
+      
+      <!-- LEFT + CENTER CONTAINER: Ability Scores, Saves, Tools, and Skills -->
+      <div style="flex: 2.1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+        
+        <!-- Ability Scores Header (Spanning strictly over Saves, Tools, and Skills) -->
+        <div style="display: flex; gap: 4px; justify-content: space-between; border-bottom: 1px solid #d2d7df; padding-bottom: 4px;">
+          ${abilityCardsHtml}
+        </div>
+
+        <!-- Two Sub-Columns: [Utilities + Saves + Tools] and [Skills] -->
+        <div style="display: flex; gap: 8px; flex: 1; min-height: 0;">
+          
+          <!-- LEFT SUB-COLUMN: Initiative, Concentration, Saves, Tools -->
+          <div style="flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; padding-right: 2px;">
+            
+            <!-- Initiative & Concentration -->
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+              <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;">
+                <span class="entry-label" style="font-size: 0.72em; font-weight: 600; color: #235d6e;">Initiative</span>
+                <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; height: 18px; font-size: 0.72em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
+                  ${formatSign(totalInitMod)} .${dexScore}
+                </button>
+              </div>
+              <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;">
+                <span class="entry-label" style="font-size: 0.72em; font-weight: 600; color: #a34848;">Concentration</span>
+                <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 30px; height: 18px; font-size: 0.72em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
+                  ${formatSign(conSaveTotal)}
+                </button>
+              </div>
+            </div>
+
+            <!-- Saving Throws -->
+            <div style="margin-top: 2px;">
+              <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">SAVING THROWS</label>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px;">
+                <div>${buildSaveColHtml(saveCol1Keys)}</div>
+                <div>${buildSaveColHtml(saveCol2Keys)}</div>
+              </div>
+            </div>
+
+            <!-- Tools Section -->
+            <div style="margin-top: 2px;">
+              <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">TOOLS</label>
+              <div style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 180px; overflow-y: auto;">
+                ${proficientToolsHtml.length > 0 ? proficientToolsHtml.join('') : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient tools.</span>'}
+              </div>
+
+              <label style="font-weight: 700; font-size: 0.65em; color: #777; display: block; margin-bottom: 1px;">OTHER TOOLS</label>
+              <div style="display: flex; flex-direction: column; gap: 3px;">
+                <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box;">
+                  <option value="">-- Choose Tool --</option>
+                  ${nonProficientToolsHtml.join('')}
+                </select>
+                <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                  Roll Selected Tool
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- RIGHT SUB-COLUMN: Skills Column -->
+          <div style="flex: 1.05; min-width: 170px; display: flex; flex-direction: column; border-left: 1px solid #e5e5e5; padding-left: 8px; overflow-y: auto;">
+            <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">SKILLS</label>
+            <div style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 1px 3px;">
+              ${standardSkillsHtml}
+              ${customSkillsList.join('')}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: Descriptions & Modifiers (Shifted to start at the very top) -->
+      <div style="flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid #d2d7df; padding-left: 8px;">
+        
+        <!-- Live Description Box (Starts at top) -->
+        <div style="flex: 1; display: flex; flex-direction: column; background: rgba(0,0,0,0.02); border-radius: 4px; padding: 6px 8px; border: 1px solid #e2e6ea; min-height: 160px;">
+          <div style="border-bottom: 1px solid #d2d7df; padding-bottom: 3px; margin-bottom: 4px;">
+            <div id="desc-title-v2" style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">D20 Test Overview</div>
+            <div id="desc-subtitle-v2" style="font-size: 0.72em; color: #777;">Information Pane</div>
+          </div>
+          <div id="desc-body-v2" style="font-size: 0.78em; line-height: 1.4; color: #444; overflow-y: auto; flex: 1; white-space: pre-wrap;">Select any ability, saving throw, skill, or tool name to inspect its details and usage rules here.
+
+Click a numbered modifier badge to execute a roll.</div>
+        </div>
+
+        <!-- Presets Section -->
+        <div id="preset-modifiers-section-v2" style="display: none; flex-direction: column; gap: 2px; background: rgba(0,0,0,0.02); border: 1px dashed #c0c6ce; border-radius: 4px; padding: 3px 5px;">
+          <label style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px;">PRESET MODIFIERS (V2)</label>
+          <div id="preset-list-v2" style="display: flex; flex-direction: column; gap: 2px;"></div>
+        </div>
+
+        <div>
+          <label for="other-modifier-v2" style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">EXTRA MODIFIER</label>
+          <input type="text" id="other-modifier-v2" name="other-modifier-v2" value="" placeholder="e.g. 1d4, +2" style="width: 100%; height: 24px; border-radius: 4px; border: 1px solid #ccc; padding: 1px 4px; font-size: 0.8em;" />
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 3px; border-top: 1px solid #e0e0e0; padding-top: 4px;">
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
+            <span>Reliable Talent (Min 10)</span>
+            <input type="checkbox" id="reliable-talent-v2" name="reliable-talent-v2" style="margin: 0;">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
+            <span>Halfling Luck (Reroll 1s)</span>
+            <input type="checkbox" id="halfling-luck-v2" name="halfling-luck-v2" style="margin: 0;">
+          </label>
+        </div>
+
+      </div>
+
+    </div>
+  `;
+
+  new Dialog({
+    title: `${actor.name}: Mini Sheet D20 Rolls (V2)`,
+    content: dialogHtml,
+    buttons: {
+      close: { label: "Close" }
+    },
+    default: "close",
+    render: (html) => {
+      const descTitle = html.find('#desc-title-v2');
+      const descSubtitle = html.find('#desc-subtitle-v2');
+      const descBody = html.find('#desc-body-v2');
+      const presetSection = html.find('#preset-modifiers-section-v2');
+      const presetList = html.find('#preset-list-v2');
+
+      const updatePresets = (choiceKey) => {
+        const profileObj = storedProfiles[choiceKey];
+        const activePresets = Array.isArray(profileObj) ? profileObj : (profileObj?.modifiers || []);
+
+        if (activePresets.length > 0) {
+          const listHtml = activePresets.map(p => `
+            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75em; cursor: pointer; padding: 2px 4px; background: #fff; border: 1px solid #d2d7df; border-radius: 3px;">
+              <span>${p.label} <b style="color: #4b5d88;">(${p.formula})</b></span>
+              <input type="checkbox" class="preset-mod-toggle-v2" data-formula="${p.formula}" ${p.enabled ? 'checked' : ''} style="margin: 0;">
+            </label>
+          `).join('');
+          presetList.html(listHtml);
+          presetSection.css('display', 'flex');
+        } else {
+          presetSection.hide();
+          presetList.empty();
+        }
+      };
+
+      const setInfo = (type, key) => {
+        if (key && key.startsWith("custom_")) {
+          const customData = storedProfiles[key];
+          const name = customData?.name || "Custom Test";
+          const abil = (customData?.ability || "int").toUpperCase();
+          descTitle.text(name);
+          descSubtitle.text(`Custom ${abil} Test`);
+          descBody.text(customData?.desc || `Custom D20 check governed by ${actor.name}'s ${abil} modifier.`);
+        } else if (type === "skill") {
+          descTitle.text(SKILLS[key]?.label || key);
+          descSubtitle.text("Skill Check");
+          descBody.text(DESCRIPTIONS[key] || "No description available.");
+        } else if (type === "tool") {
+          const tool = TOOLS[key];
+          descTitle.text(tool?.name || "Tool");
+          descSubtitle.text(`${tool?.ability?.toUpperCase()} Tool Check`);
+          descBody.text(tool?.desc || "No description available.");
+        } else if (type === "save") {
+          const abilName = ABILITIES[key] || key?.toUpperCase();
+          descTitle.text(`${abilName} Save`);
+          descSubtitle.text("Saving Throw");
+          descBody.text(DESCRIPTIONS[`save_${key}`] || "No description available.");
+        } else if (type === "check") {
+          const abilName = ABILITIES[key] || key?.toUpperCase();
+          descTitle.text(`${abilName} Check`);
+          descSubtitle.text("Ability Check");
+          descBody.text(DESCRIPTIONS[`check_${key}`] || "No description available.");
+        } else if (type === "concentration") {
+          descTitle.text("Concentration");
+          descSubtitle.text("Constitution Check");
+          descBody.text(DESCRIPTIONS.concentration);
+        } else if (type === "init") {
+          descTitle.text("Initiative");
+          descSubtitle.text("Dexterity Check");
+          descBody.text(DESCRIPTIONS.init);
+        }
+
+        updatePresets(key);
+      };
+
+      html.find('.ability-card, .save-row, .sheet-entry-row').on('click', function(e) {
+        if ($(e.target).closest('.roll-btn-v2').length) return;
+        const type = $(this).data('type');
+        const key = $(this).data('key');
+        setInfo(type, key);
+      });
+
+      html.find('#other-tools-select-v2').on('change', function() {
+        const key = $(this).val();
+        if (key) setInfo('tool', key);
+      });
+
+      const executeRoll = async (rollType, key) => {
+        const isReliableTalent = html.find('#reliable-talent-v2').is(':checked');
+        const isHalflingLuck = html.find('#halfling-luck-v2').is(':checked');
+
+        const activePresetFormulas = [];
+        html.find('.preset-mod-toggle-v2:checked').each((_, el) => {
+          const form = $(el).data('formula');
+          if (form) activePresetFormulas.push(form);
+        });
+
+        const manualMod = html.find('#other-modifier-v2').val()?.trim() || "";
+        if (manualMod) activePresetFormulas.push(manualMod);
+
+        const otherModString = activePresetFormulas.join(" + ");
+
+        if (!globalThis.attackSocket) {
+          return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
+        }
+
+        await globalThis.attackSocket.executeAsGM("runD20TestRoll", {
+          rollType,
+          key,
+          isReliableTalent,
+          isHalflingLuck,
+          otherModString
+        }, actor.id, game.user.id);
+      };
+
+      html.find('.roll-btn-v2').on('click', function(e) {
+        e.stopPropagation();
+        const type = $(this).data('type');
+        const key = $(this).data('key');
+        setInfo(type, key);
+        executeRoll(type, key);
+      });
+
+      html.find('#roll-other-tool-btn-v2').on('click', function(e) {
+        e.stopPropagation();
+        const key = html.find('#other-tools-select-v2').val();
+        if (!key) return ui.notifications.warn("Please select a tool first.");
+        setInfo('tool', key);
+        executeRoll('tool', key);
+      });
+    }
+  }, { width: 590, height: "auto" }).render(true);
+};
+
 
 // --- 3.2 Weapon Attack Client-Side Dialog Launcher ---
 window.CustomRolls.openAttackDialog = function() {
@@ -4821,6 +5352,435 @@ window.CustomRolls.openD20PresetEditor = function() {
 
   d.render(true);
 };
+
+
+
+// =========================================================================
+// VERSION 2: D20 PRESET MODIFIER EDITOR (DISTINCT V2 DIALOG THEME)
+// =========================================================================
+window.CustomRolls.openD20PresetEditorV2 = function() {
+  const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
+
+  if (!token) {
+    return ui.notifications.warn("Please select your token first.");
+  }
+
+  const actor = token.actor;
+  if (!actor || !actor.isOwner) {
+    return ui.notifications.warn("You don't have permissions to use this token.");
+  }
+
+  const currentProfiles = foundry.utils.deepClone(
+    window.CustomRolls.getProfileData?.(actor, "d20ProfilesV2") || actor.getFlag("world", "d20ProfilesV2") || {}
+  );
+
+  const ABILITIES = {
+    str: "STR",
+    dex: "DEX",
+    con: "CON",
+    int: "INT",
+    wis: "WIS",
+    cha: "CHA"
+  };
+
+  const CATEGORIES = {
+    skill: "Skill Check",
+    tool: "Tool Check",
+    check: "Ability Check"
+  };
+
+  const STANDARD_OPTIONS = [
+    { optgroup: "Skills", options: [
+      { key: "acr", label: "Acrobatics (DEX)" },
+      { key: "ani", label: "Animal Handling (WIS)" },
+      { key: "arc", label: "Arcana (INT)" },
+      { key: "ath", label: "Athletics (STR)" },
+      { key: "dec", label: "Deception (CHA)" },
+      { key: "his", label: "History (INT)" },
+      { key: "ins", label: "Insight (WIS)" },
+      { key: "itm", label: "Intimidation (CHA)" },
+      { key: "inv", label: "Investigation (INT)" },
+      { key: "med", label: "Medicine (WIS)" },
+      { key: "nat", label: "Nature (INT)" },
+      { key: "prc", label: "Perception (WIS)" },
+      { key: "prf", label: "Performance (CHA)" },
+      { key: "per", label: "Persuasion (CHA)" },
+      { key: "rel", label: "Religion (INT)" },
+      { key: "slt", label: "Sleight of Hand (DEX)" },
+      { key: "ste", label: "Stealth (DEX)" },
+      { key: "sur", label: "Survival (WIS)" }
+    ]},
+    { optgroup: "Common Tools", options: [
+      { key: "alchemist", label: "Alchemist Supplies" },
+      { key: "brewer", label: "Brewer's Supplies" },
+      { key: "calligrapher", label: "Calligrapher's Supplies" },
+      { key: "carpenter", label: "Carpenter's Tools" },
+      { key: "cartographer", label: "Cartographer's Tools" },
+      { key: "cobbler", label: "Cobbler's Tools" },
+      { key: "cook", label: "Cook's Utensils" },
+      { key: "disguise", label: "Disguise Kit" },
+      { key: "forgery", label: "Forgery Kit" },
+      { key: "gaming", label: "Gaming Set" },
+      { key: "glassblower", label: "Glassblower's Tools" },
+      { key: "herbalism", label: "Herbalism Kit" },
+      { key: "jeweler", label: "Jeweler's Tools" },
+      { key: "leatherworker", label: "Leatherworker's Tools" },
+      { key: "mason", label: "Mason's Tools" },
+      { key: "musical", label: "Musical Instrument" },
+      { key: "navigator", label: "Navigator's Tools" },
+      { key: "painter", label: "Painter's Supplies" },
+      { key: "poisoner", label: "Poisoner's Kit" },
+      { key: "potter", label: "Potter's Tools" },
+      { key: "smith", label: "Smith's Tools" },
+      { key: "thieves", label: "Thieves' Tools" },
+      { key: "tinker", label: "Tinker's Tools" },
+      { key: "weaver", label: "Weaver's Tools" },
+      { key: "woodcarver", label: "Woodcarver's Tools" }
+    ]},
+    { optgroup: "Saving Throws", options: [
+      { key: "save_str", label: "Strength Save" },
+      { key: "save_dex", label: "Dexterity Save" },
+      { key: "save_con", label: "Constitution Save" },
+      { key: "save_int", label: "Intelligence Save" },
+      { key: "save_wis", label: "Wisdom Save" },
+      { key: "save_cha", label: "Charisma Save" }
+    ]}
+  ];
+
+  const getLabelForKey = (key) => {
+    for (const group of STANDARD_OPTIONS) {
+      const match = group.options.find(o => o.key === key);
+      if (match) return match.label;
+    }
+    if (key.startsWith("custom_")) {
+      const stored = currentProfiles[key];
+      const customName = stored?.name || key.replace("custom_", "").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+      const customAbil = stored?.ability ? ` (${stored.ability.toUpperCase()})` : "";
+      const catLabel = stored?.category ? ` [${CATEGORIES[stored.category] || stored.category}]` : "";
+      return `${customName}${customAbil}${catLabel}`;
+    }
+    return key;
+  };
+
+  const buildSelectOptionsHtml = () => {
+    let out = `<option value="">-- Choose D20 Test (V2) to Configure --</option>`;
+    STANDARD_OPTIONS.forEach(grp => {
+      out += `<optgroup label="${grp.optgroup}">`;
+      grp.options.forEach(opt => {
+        out += `<option value="${opt.key}">${opt.label}</option>`;
+      });
+      out += `</optgroup>`;
+    });
+    out += `<optgroup label="Custom">
+      <option value="__create_custom__">+ Create New Custom D20 Test...</option>
+    </optgroup>`;
+    return out;
+  };
+
+  const buildSectionsHtml = () => {
+    const keys = Object.keys(currentProfiles);
+    if (keys.length === 0) {
+      return `<div style="text-align: center; color: #888; font-size: 0.85em; padding: 20px 0;">No active V2 modifier profiles configured yet for this token. Use the dropdown above to add one.</div>`;
+    }
+
+    return keys.map(k => {
+      const displayLabel = getLabelForKey(k);
+      const profileData = currentProfiles[k];
+      const isCustom = k.startsWith("custom_");
+      const presets = Array.isArray(profileData) ? profileData : (profileData.modifiers || []);
+      const currentAbil = profileData?.ability || "int";
+      const currentCat = profileData?.category || "skill";
+
+      const customSelectorsHtml = isCustom ? `
+        <select class="custom-category-select-v2" data-key="${k}" title="Category" style="height: 22px; font-size: 0.75em; padding: 0 4px; margin-right: 4px; border: 1px solid #7986cb; border-radius: 3px;">
+          ${Object.entries(CATEGORIES).map(([code, name]) => `<option value="${code}" ${currentCat === code ? 'selected' : ''}>${name}</option>`).join('')}
+        </select>
+        <select class="custom-ability-select-v2" data-key="${k}" title="Ability Score" style="height: 22px; font-size: 0.75em; padding: 0 4px; margin-right: 6px; border: 1px solid #7986cb; border-radius: 3px;">
+          ${Object.entries(ABILITIES).map(([code, name]) => `<option value="${code}" ${currentAbil === code ? 'selected' : ''}>${name}</option>`).join('')}
+        </select>
+      ` : '';
+
+      const presetsHtml = presets.map((p, idx) => `
+        <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
+          <input type="text" class="preset-label-v2" data-key="${k}" data-idx="${idx}" value="${p.label}" placeholder="Label (e.g. Guidance)" style="flex: 2; height: 26px; font-size: 0.82em; border: 1px solid #c5cae9; border-radius: 3px; padding: 0 4px;" />
+          <input type="text" class="preset-formula-v2" data-key="${k}" data-idx="${idx}" value="${p.formula}" placeholder="Formula (e.g. 1d4, 2)" style="flex: 1.2; height: 26px; font-size: 0.82em; border: 1px solid #c5cae9; border-radius: 3px; padding: 0 4px;" />
+          <label style="display: flex; align-items: center; gap: 3px; font-size: 0.78em; cursor: pointer; color: #283593;">
+            <input type="checkbox" class="preset-default-v2" data-key="${k}" data-idx="${idx}" ${p.enabled ? 'checked' : ''} style="margin: 0;" /> Default
+          </label>
+          <button type="button" class="delete-preset-btn-v2" data-key="${k}" data-idx="${idx}" title="Delete Modifier" style="width: 24px; height: 24px; line-height: 22px; padding: 0; color: #c62828; border: 1px solid #e0e0e0; background: #fff; border-radius: 3px; cursor: pointer;">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      `).join('');
+
+      return `
+        <div style="border: 1px solid #c5cae9; border-left: 4px solid #3f51b5; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; background: rgba(63, 81, 181, 0.02);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; border-bottom: 1px solid #e8eaf6; padding-bottom: 4px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <strong style="font-size: 0.88em; color: #1a237e;">${displayLabel}</strong>
+              <button type="button" class="remove-test-btn-v2" data-key="${k}" title="Remove Entire D20 Test Profile" style="border: none; background: none; color: #9fa8da; cursor: pointer; padding: 2px 4px; font-size: 0.8em;">
+                <i class="fas fa-times-circle"></i>
+              </button>
+            </div>
+            <div style="display: flex; align-items: center;">
+              ${customSelectorsHtml}
+              <button type="button" class="add-preset-btn-v2" data-key="${k}" style="font-size: 0.78em; height: 22px; line-height: 20px; padding: 0 6px; cursor: pointer; background: #e8eaf6; border: 1px solid #c5cae9; border-radius: 3px; color: #283593;">
+                <i class="fas fa-plus"></i> Add Bonus
+              </button>
+            </div>
+          </div>
+          <div id="container-v2-${k}">
+            ${presetsHtml || '<span style="font-size: 0.8em; color: #999;">No bonuses added yet.</span>'}
+          </div>
+        </div>
+      `;
+    }).join('');
+  };
+
+  const dialogHtml = `
+    <div style="max-height: 540px; overflow-y: auto; padding-right: 4px; font-family: inherit;">
+      
+      <!-- Distinct V2 Header Banner -->
+      <div style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #283593 0%, #3f51b5 100%); color: #fff; padding: 6px 10px; border-radius: 4px; margin-bottom: 10px;">
+        <span style="font-weight: 700; font-size: 0.88em; letter-spacing: 0.5px;">D20 MODIFIER PRESETS</span>
+        <span style="background: rgba(255,255,255,0.2); font-weight: 700; font-size: 0.72em; padding: 2px 6px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.35);">VERSION 2.0</span>
+      </div>
+
+      <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px; background: rgba(63, 81, 181, 0.04); border: 1px solid #c5cae9; border-radius: 4px; padding: 6px 8px;">
+        <select id="select-test-to-add-v2" style="flex: 1; height: 28px; font-size: 0.84em; border: 1px solid #9fa8da; border-radius: 3px;">
+          ${buildSelectOptionsHtml()}
+        </select>
+        <button type="button" id="btn-add-test-group-v2" style="height: 28px; padding: 0 10px; font-size: 0.82em; font-weight: 600; cursor: pointer; white-space: nowrap; background: #3f51b5; color: #fff; border: 1px solid #303f9f; border-radius: 3px;">
+          <i class="fas fa-plus"></i> Configure Test
+        </button>
+      </div>
+
+      <div id="custom-test-creator-v2" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 10px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 4px; padding: 8px 10px;">
+        <span style="font-weight: 700; font-size: 0.74em; color: #f57f17; letter-spacing: 0.5px;">NEW CUSTOM D20 TEST (V2)</span>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <input type="text" id="custom-test-name-v2" placeholder="Test Name (e.g. Scavenging)" style="flex: 1.5; min-width: 130px; height: 26px; font-size: 0.84em; padding: 2px 6px; border: 1px solid #ffd54f; border-radius: 3px;" />
+          <select id="custom-test-category-v2" title="Roll Category" style="flex: 1; height: 26px; font-size: 0.8em; padding: 2px; border: 1px solid #ffd54f; border-radius: 3px;">
+            <option value="skill">Skill Check</option>
+            <option value="tool">Tool Check</option>
+            <option value="check">Ability Check</option>
+          </select>
+          <select id="custom-test-ability-v2" title="Ability Score" style="width: 65px; height: 26px; font-size: 0.8em; padding: 2px; border: 1px solid #ffd54f; border-radius: 3px;">
+            ${Object.entries(ABILITIES).map(([code, name]) => `<option value="${code}">${name}</option>`).join('')}
+          </select>
+          <button type="button" id="btn-confirm-create-custom-v2" style="height: 26px; padding: 0 10px; font-size: 0.82em; cursor: pointer; white-space: nowrap; font-weight: 600; background: #ffa000; color: #fff; border: 1px solid #ff8f00; border-radius: 3px;">
+            Add
+          </button>
+          <button type="button" id="btn-cancel-create-custom-v2" style="height: 26px; padding: 0 8px; font-size: 0.82em; cursor: pointer; white-space: nowrap; color: #666; border: 1px solid #ccc; background: #fff; border-radius: 3px;">
+            Cancel
+          </button>
+        </div>
+        <textarea id="custom-test-desc-v2" placeholder="Description & rules details (optional, will display in the D20 dialog)..." style="width: 100%; height: 46px; font-size: 0.8em; border: 1px solid #ffd54f; border-radius: 3px; padding: 4px; resize: vertical; box-sizing: border-box;"></textarea>
+      </div>
+
+      <div id="preset-editor-content-v2">
+        ${buildSectionsHtml()}
+      </div>
+    </div>
+  `;
+
+  let performSave = false;
+
+  const d = new Dialog({
+    title: `[V2] ${actor.name}: D20 Modifier Presets`,
+    content: dialogHtml,
+    buttons: {
+      save: {
+        icon: '<i class="fas fa-save"></i>',
+        label: "Save Profiles (V2)",
+        callback: () => { performSave = true; }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "save",
+    render: (html) => {
+      const refreshView = () => {
+        html.find('#preset-editor-content-v2').html(buildSectionsHtml());
+        bindEvents();
+      };
+
+      const syncFromInputs = () => {
+        Object.keys(currentProfiles).forEach(k => {
+          const isCustom = k.startsWith("custom_");
+          const list = [];
+          html.find(`#container-v2-${k} > div`).each((idx, el) => {
+            const label = $(el).find('.preset-label-v2').val()?.trim() || "Bonus";
+            const formula = $(el).find('.preset-formula-v2').val()?.trim() || "0";
+            const enabled = $(el).find('.preset-default-v2').is(':checked');
+            list.push({ label, formula, enabled });
+          });
+
+          if (isCustom) {
+            const currentObj = currentProfiles[k] || {};
+            const ability = html.find(`.custom-ability-select-v2[data-key="${k}"]`).val() || currentObj.ability || "int";
+            const category = html.find(`.custom-category-select-v2[data-key="${k}"]`).val() || currentObj.category || "skill";
+            currentProfiles[k] = {
+              name: currentObj.name || k.replace("custom_", ""),
+              ability: ability,
+              category: category,
+              modifiers: list
+            };
+          } else {
+            currentProfiles[k] = list;
+          }
+        });
+      };
+
+      const bindEvents = () => {
+        html.find('#btn-add-test-group-v2').off('click').on('click', () => {
+          syncFromInputs();
+          const chosenKey = html.find('#select-test-to-add-v2').val();
+          if (!chosenKey) return;
+
+          if (chosenKey === '__create_custom__') {
+            html.find('#custom-test-creator-v2').css('display', 'flex');
+            html.find('#custom-test-name-v2').focus();
+            return;
+          }
+
+          if (!currentProfiles[chosenKey]) {
+            currentProfiles[chosenKey] = [{ label: "Bonus", formula: "1d4", enabled: true }];
+          }
+          refreshView();
+        });
+
+        html.find('#btn-confirm-create-custom-v2').off('click').on('click', () => {
+          syncFromInputs();
+          const customName = html.find('#custom-test-name-v2').val()?.trim();
+          if (!customName) return;
+
+          const chosenAbility = html.find('#custom-test-ability-v2').val() || "int";
+          const chosenCategory = html.find('#custom-test-category-v2').val() || "skill";
+          const customDesc = html.find('#custom-test-desc-v2').val()?.trim() || "";
+          const customKey = "custom_" + customName.toLowerCase().replace(/[^a-z0-9]/g, "_");
+
+          if (!currentProfiles[customKey]) {
+            currentProfiles[customKey] = {
+              name: customName,
+              ability: chosenAbility,
+              category: chosenCategory,
+              desc: customDesc,
+              modifiers: [{ label: "Kit / Gear", formula: "1d4", enabled: true }]
+            };
+          }
+          html.find('#custom-test-name-v2').val('');
+          html.find('#custom-test-desc-v2').val('');
+          html.find('#custom-test-creator-v2').hide();
+          refreshView();
+        });
+
+        html.find('#btn-cancel-create-custom-v2').off('click').on('click', () => {
+          html.find('#custom-test-creator-v2').hide();
+        });
+
+        html.find('.custom-ability-select-v2').off('change').on('change', (e) => {
+          const key = $(e.currentTarget).data('key');
+          if (currentProfiles[key]) {
+            currentProfiles[key].ability = $(e.currentTarget).val();
+          }
+        });
+
+        html.find('.custom-category-select-v2').off('change').on('change', (e) => {
+          const key = $(e.currentTarget).data('key');
+          if (currentProfiles[key]) {
+            currentProfiles[key].category = $(e.currentTarget).val();
+          }
+        });
+
+        html.find('.remove-test-btn-v2').off('click').on('click', (e) => {
+          syncFromInputs();
+          const key = $(e.currentTarget).data('key');
+          delete currentProfiles[key];
+          refreshView();
+        });
+
+        html.find('.add-preset-btn-v2').off('click').on('click', (e) => {
+          syncFromInputs();
+          const key = $(e.currentTarget).data('key');
+          const isCustom = key.startsWith("custom_");
+
+          if (isCustom) {
+            if (!currentProfiles[key]) {
+              currentProfiles[key] = { name: key.replace("custom_", ""), ability: "int", category: "skill", modifiers: [] };
+            }
+            currentProfiles[key].modifiers.push({ label: "Item / Feature", formula: "1d4", enabled: true });
+          } else {
+            if (!currentProfiles[key]) currentProfiles[key] = [];
+            currentProfiles[key].push({ label: "Item / Feature", formula: "1d4", enabled: true });
+          }
+          refreshView();
+        });
+
+        html.find('.delete-preset-btn-v2').off('click').on('click', (e) => {
+          syncFromInputs();
+          const key = $(e.currentTarget).data('key');
+          const idx = Number($(e.currentTarget).data('idx'));
+          const isCustom = key.startsWith("custom_");
+
+          if (isCustom && currentProfiles[key]?.modifiers) {
+            currentProfiles[key].modifiers.splice(idx, 1);
+          } else if (Array.isArray(currentProfiles[key])) {
+            currentProfiles[key].splice(idx, 1);
+          }
+          refreshView();
+        });
+      };
+
+      bindEvents();
+    },
+    close: async (html) => {
+      if (!performSave) return;
+
+      const finalProfiles = {};
+      Object.keys(currentProfiles).forEach(k => {
+        const isCustom = k.startsWith("custom_");
+        const list = [];
+        html.find(`#container-v2-${k} > div`).each((idx, el) => {
+          const label = $(el).find('.preset-label-v2').val()?.trim() || "";
+          const formula = $(el).find('.preset-formula-v2').val()?.trim() || "";
+          const enabled = $(el).find('.preset-default-v2').is(':checked');
+          if (label && formula) {
+            list.push({ label, formula, enabled });
+          }
+        });
+
+        if (isCustom) {
+          const ability = html.find(`.custom-ability-select-v2[data-key="${k}"]`).val() || currentProfiles[k]?.ability || "int";
+          const category = html.find(`.custom-category-select-v2[data-key="${k}"]`).val() || currentProfiles[k]?.category || "skill";
+          finalProfiles[k] = {
+            name: currentProfiles[k]?.name || k.replace("custom_", ""),
+            ability: ability,
+            category: category,
+            desc: currentProfiles[k]?.desc || "",
+            modifiers: list
+          };
+        } else if (list.length > 0) {
+          finalProfiles[k] = list;
+        }
+      });
+
+      if (window.CustomRolls.setProfileData) {
+        await window.CustomRolls.setProfileData(actor, "d20ProfilesV2", finalProfiles);
+      }
+      await actor.unsetFlag("world", "d20ProfilesV2");
+      await actor.setFlag("world", "d20ProfilesV2", finalProfiles);
+      ui.notifications.info(`Saved D20 presets (V2) for ${actor.name}.`);
+    }
+  }, { width: 560, height: "auto" });
+
+  d.render(true);
+};
+
+
+
+
+
+
+
 
 // --- 4.2 Unified Action Generator (Weapons & Spells) ---
 window.CustomRolls.openActionGenerator = async function() {
