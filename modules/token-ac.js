@@ -158,7 +158,15 @@ export function initTokenAc() {
 
     Hooks.on("updateToken", (document, change) => {
       const token = document.object;
-      if (token) renderTokenAcBadge(token);
+      if (!token) return;
+
+      // Only redraw if texture, scale, or the showAC flag changed
+      if (
+        foundry.utils.hasProperty(change, "texture") ||
+        foundry.utils.hasProperty(change, "flags.world.showAC")
+      ) {
+        renderTokenAcBadge(token);
+      }
     });
 
     Hooks.on("updateActor", (actor, change) => {
