@@ -2425,6 +2425,7 @@ async function triggerSequencerAnimation(actor, config, rollUser = null, autoTar
 export { triggerSequencerAnimation, registerSocketHandlers };
 globalThis.triggerSequencerAnimation = triggerSequencerAnimation;
 
+
 export function initSockets() {
   if (!game.settings.get("cheapdice", "featureSocketHandlers")) return;
 
@@ -2436,7 +2437,7 @@ export function initSockets() {
     }
   };
 
-  if (game.ready || game.settings) {
+  if (game.ready) {
     runSocketInit();
   } else {
     Hooks.once("setup", runSocketInit);
