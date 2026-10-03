@@ -46,18 +46,36 @@ export function renderTokenAcBadge(token) {
   const acValue = String(token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--");
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
 
-  // Derive font size to match token nameplate or scale relative to scene grid
-  const nameplateFontSize = Number(token.nameplate?.style?.fontSize);
+  // Robust dynamic font size resolution:
+  // 1. Direct nameplate style fontSize if set
+  // 2. Nameplate height or style from token.nameplate
+  // 3. CONFIG.canvasTextStyle.fontSize scaled by scene grid ratio
+  // 4. Proportional fallback based on scene grid size
+  const rawNpFontSize = Number(token.nameplate?.style?.fontSize);
+  const npHeight = Number(token.nameplate?.height);
+  const configCanvasFontSize = Number(CONFIG.canvasTextStyle?.fontSize);
   const baseGridSize = canvas.grid?.size ?? 100;
-  // If nameplate font size is available, match it; otherwise use ~24% of grid size
-  const fontSize = Number.isFinite(nameplateFontSize) && nameplateFontSize > 0
-    ? Math.round(nameplateFontSize)
-    : Math.max(16, Math.round(baseGridSize * 0.24));
+  // Standard Foundry grid is 100px; scale proportional to map resolution
+  const gridScaleRatio = baseGridSize / 100;
+
+  let fontSize;
+  if (Number.isFinite(rawNpFontSize) && rawNpFontSize > 0) {
+    fontSize = Math.round(rawNpFontSize);
+  } else if (Number.isFinite(npHeight) && npHeight > 0) {
+    fontSize = Math.round(npHeight * 0.8);
+  } else if (Number.isFinite(configCanvasFontSize) && configCanvasFontSize > 0) {
+    fontSize = Math.round(configCanvasFontSize * gridScaleRatio);
+  } else {
+    fontSize = Math.max(16, Math.round(baseGridSize * 0.24));
+  }
+
+  // Ensure minimum legibility relative to current grid scale
+  fontSize = Math.max(Math.round(18 * gridScaleRatio), fontSize);
 
   // Dynamically scale badge box dimensions to fit the font size comfortably
   const badgeWidth = Math.max(36, Math.round(fontSize * 2.0));
   const badgeHeight = Math.max(22, Math.round(fontSize * 1.3));
-  const paddingX = 6;
+  const paddingX = Math.max(6, Math.round(6 * gridScaleRatio));
 
   // If elevation is visible or token has elevation > 0, bias AC to the right, otherwise center or keep right
   const hasElevation = Boolean(token.document.elevation);
@@ -65,7 +83,7 @@ export function renderTokenAcBadge(token) {
     ? Math.round(token.w - badgeWidth - paddingX)
     : Math.round((token.w - badgeWidth) / 2);
   const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
-  const yPos = -badgeHeight - 6 - visualTopOffset;
+  const yPos = -badgeHeight - Math.max(6, Math.round(6 * gridScaleRatio)) - visualTopOffset;
 
   if (!acContainer) {
     acContainer = new PIXI.Container();
@@ -129,11 +147,13 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
 
   const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
   const badgeWidth = Math.max(36, Math.round(fontSize * (elevText.length > 3 ? 2.3 : 2.0)));
-  const paddingX = 6;
+  const baseGridSize = canvas.grid?.size ?? 100;
+  const gridScaleRatio = baseGridSize / 100;
+  const paddingX = Math.max(6, Math.round(6 * gridScaleRatio));
   const xPos = paddingX;
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
   const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
-  const yPos = -badgeHeight - 6 - visualTopOffset;
+  const yPos = -badgeHeight - Math.max(6, Math.round(6 * gridScaleRatio)) - visualTopOffset;
 
   if (!elevContainer) {
     elevContainer = new PIXI.Container();
@@ -210,6 +230,15 @@ export function initTokenAc() {
         this.elevation.renderable = false;
         this.elevation.text = "";
       }
+    };
+  }
+
+  // When nameplate is refreshed/rendered, re-render AC & Elevation badges to sync size & layout
+  if (typeof Token.prototype._refreshNameplate === "function") {
+    const originalRefreshNameplate = Token.prototype._refreshNameplate;
+    Token.prototype._refreshNameplate = function (...args) {
+      originalRefreshNameplate.apply(this, args);
+      renderTokenAcBadge(this);
     };
   }
 
