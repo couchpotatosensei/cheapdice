@@ -1191,6 +1191,10 @@ Click a numbered modifier badge to execute a roll.</div>
               });
             }
 
+            if (!globalThis.attackSocket) {
+              return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
+            }
+
             await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
           }
         },
@@ -1973,6 +1977,10 @@ Click a numbered modifier badge to execute a roll.</div>
                 });
               }
 
+              if (!globalThis.attackSocket) {
+                return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
+              }
+
               await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
             } else {
               const rawConfig = spellConfigs[selectedSpellKey];
@@ -2017,6 +2025,10 @@ Click a numbered modifier badge to execute a roll.</div>
                   }, { width: 260 }).render(true);
                 });
                 if (!choiceConfirmed) return;
+              }
+
+              if (!globalThis.attackSocket) {
+                return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
               }
 
               await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);

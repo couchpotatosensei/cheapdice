@@ -4,7 +4,10 @@
 
 function registerSocketHandlers() {
   if (!game.settings.get("cheapdice", "featureSocketHandlers")) return;
-  const socket = socketlib.registerSystem("dnd5e");
+  if (globalThis.attackSocket) return;
+  const socket = typeof socketlib.registerModule === "function"
+    ? socketlib.registerModule("cheapdice")
+    : socketlib.registerSystem("dnd5e");
   globalThis.attackSocket = socket;
 
 
@@ -2437,9 +2440,16 @@ export function initSockets() {
     }
   };
 
+  Hooks.once("socketlib.ready", () => {
+    if (!globalThis.attackSocket) registerSocketHandlers();
+  });
+
   if (game.ready) {
     runSocketInit();
   } else {
     Hooks.once("setup", runSocketInit);
+    Hooks.once("ready", () => {
+      if (!globalThis.attackSocket) runSocketInit();
+    });
   }
 }
