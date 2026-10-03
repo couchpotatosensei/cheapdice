@@ -1,6 +1,8 @@
+import { MODULE_ID, SETTINGS } from "../src/constants.js";
+
 export function registerSettings() {
   const registerFeature = (key, name, hint) => {
-    game.settings.register("cheapdice", key, {
+    game.settings.register(MODULE_ID, key, {
       name: `[Feature] ${name}`,
       hint: hint,
       scope: "world",
@@ -11,11 +13,12 @@ export function registerSettings() {
     });
   };
 
-  registerFeature("featureTokenAc", "Token AC Badges & Controls", "Enables token AC canvas badges and master/per-token controls.");
-  registerFeature("featureTokenHud", "Token HUD Enhancements", "Enables custom Token HUD buttons, status effect enhancements, and flyout menus.");
-  registerFeature("featureElevationControl", "Elevation & Speed Controls", "Enables player elevation restrictions on token movement.");
-  registerFeature("featureCustomRolls", "Custom Roll Dialogs", "Enables D20, Attack, Spell, and Action dialog launchers.");
-  registerFeature("featurePresetEditors", "Preset & Action Editors", "Enables D20 preset editors and Action Builder/Generator tools.");
-  registerFeature("featureSocketHandlers", "SocketLib Remote Handlers", "Enables SocketLib registration for automated combat and timer broadcasts.");
-  registerFeature("featureAnimations", "Automated Animations & Sequencer", "Enables Sequencer and Automated Animations integrations.");
+  registerFeature(SETTINGS.FEATURES.TOKEN_AC, "Token AC Badges & Controls", "Enables token AC canvas badges and master/per-token controls.");
+  registerFeature(SETTINGS.FEATURES.TOKEN_HUD, "Token HUD Enhancements", "Enables custom Token HUD buttons, status effect enhancements, and flyout menus.");
+  registerFeature(SETTINGS.FEATURES.ELEVATION_CONTROL, "Elevation & Speed Controls", "Enables player elevation restrictions on token movement.");
+  registerFeature(SETTINGS.FEATURES.CUSTOM_ROLLS, "Custom Roll Dialogs", "Enables D20, Attack, Spell, and Action dialog launchers.");
+  registerFeature(SETTINGS.FEATURES.PRESET_EDITORS, "Preset & Action Editors", "Enables D20 preset editors and Action Builder/Generator tools.");
+  registerFeature(SETTINGS.FEATURES.SOCKET_HANDLERS, "SocketLib Remote Handlers", "Enables SocketLib registration for automated combat and timer broadcasts.");
+  registerFeature(SETTINGS.FEATURES.ANIMATIONS, "Automated Animations & Sequencer", "Enables Sequencer and Automated Animations integrations.");
 }
+

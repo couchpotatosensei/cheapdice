@@ -1,15 +1,21 @@
+import { MODULE_ID, FLAGS, SETTINGS } from "../src/constants.js";
+
 export function getGlobalShowAC() {
   try {
-    return Boolean(game.settings.get("world", "globalShowAC"));
+    return Boolean(game.settings.get(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC));
   } catch (e) {
-    return false;
+    try {
+      return Boolean(game.settings.get("world", "globalShowAC"));
+    } catch {
+      return false;
+    }
   }
 }
 
 export function renderTokenAcBadge(token) {
   if (!token?.actor || !token.bars) return;
 
-  if (!game.settings.get("cheapdice", "featureTokenAc")) {
+  if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) {
     const existing = token.bars.getChildByName("acBadgeContainer");
     if (existing) existing.destroy({ children: true });
     return;
@@ -24,7 +30,11 @@ export function renderTokenAcBadge(token) {
     return;
   }
 
-  const tokenShowAC = Boolean(token.document.getFlag("world", "showAC"));
+  // Check scoped flag with fallback to legacy flag for backward compatibility
+  const tokenShowAC = Boolean(
+    token.document.getFlag(MODULE_ID, FLAGS.SHOW_AC) ??
+    token.document.getFlag("world", "showAC")
+  );
   if (!tokenShowAC) {
     if (acContainer) acContainer.destroy({ children: true });
     return;
@@ -79,13 +89,12 @@ export function renderTokenAcBadge(token) {
   acContainer.position.set(xPos, yPos);
 }
 
-
 export function initTokenAc() {
-  if (!game.settings.get("cheapdice", "featureTokenAc")) return;
+  if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
   Hooks.on("renderSceneControls", (controls, html) => {
     if (!game.user.isGM) return;
-    if (!game.settings.get("cheapdice", "featureTokenAc")) return;
+    if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
     const root = html instanceof HTMLElement ? html : (html[0] ?? document.getElementById("scene-controls"));
     if (!root) return;
@@ -120,7 +129,7 @@ export function initTokenAc() {
       const currentState = getGlobalShowAC();
       const newState = !currentState;
 
-      await game.settings.set("world", "globalShowAC", newState);
+      await game.settings.set(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, newState);
       btn.setAttribute("aria-pressed", String(newState));
       canvas.tokens?.placeables.forEach(t => renderTokenAcBadge(t));
     });
@@ -131,7 +140,7 @@ export function initTokenAc() {
 
   Hooks.once("ready", () => {
     try {
-      game.settings.register("world", "globalShowAC", {
+      game.settings.register(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, {
         name: "Master AC Display",
         hint: "Globally display AC badges above tokens.",
         scope: "world",
@@ -153,6 +162,7 @@ export function initTokenAc() {
     canvas.tokens?.placeables.forEach(t => renderTokenAcBadge(t));
 
     Hooks.on("drawToken", (token) => {
+      if (!token?.actor) return;
       renderTokenAcBadge(token);
     });
 
@@ -163,6 +173,7 @@ export function initTokenAc() {
       // Only redraw if texture, scale, or the showAC flag changed
       if (
         foundry.utils.hasProperty(change, "texture") ||
+        foundry.utils.hasProperty(change, `flags.${MODULE_ID}.${FLAGS.SHOW_AC}`) ||
         foundry.utils.hasProperty(change, "flags.world.showAC")
       ) {
         renderTokenAcBadge(token);
@@ -177,5 +188,7 @@ export function initTokenAc() {
   });
 }
 
+// Preserve backwards-compatible global references and expose to module public API
 globalThis.renderTokenAcBadge = renderTokenAcBadge;
 globalThis.getGlobalShowAC = getGlobalShowAC;
+
