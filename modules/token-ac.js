@@ -182,13 +182,33 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
 export function initTokenAc() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
-  // Suppress core raw tooltip elevation text when our custom styled elevation badge is active
+  // Suppress core raw tooltip / elevation indicators completely
+  if (typeof Token.prototype._getTooltipText === "function") {
+    Token.prototype._getTooltipText = function () {
+      return "";
+    };
+  }
+
   if (typeof Token.prototype._refreshTooltip === "function") {
     const originalRefreshTooltip = Token.prototype._refreshTooltip;
     Token.prototype._refreshTooltip = function (...args) {
       originalRefreshTooltip.apply(this, args);
-      if (this.tooltip && this.document.elevation !== 0) {
+      if (this.tooltip) {
         this.tooltip.visible = false;
+        this.tooltip.renderable = false;
+        this.tooltip.text = "";
+      }
+    };
+  }
+
+  if (typeof Token.prototype._refreshElevation === "function") {
+    const originalRefreshElevation = Token.prototype._refreshElevation;
+    Token.prototype._refreshElevation = function (...args) {
+      originalRefreshElevation.apply(this, args);
+      if (this.elevation) {
+        this.elevation.visible = false;
+        this.elevation.renderable = false;
+        this.elevation.text = "";
       }
     };
   }
@@ -261,6 +281,16 @@ export function initTokenAc() {
     }
 
     function refreshElevationVisuals(t) {
+      if (t.tooltip) {
+        t.tooltip.visible = false;
+        t.tooltip.renderable = false;
+        t.tooltip.text = "";
+      }
+      if (t.elevation) {
+        t.elevation.visible = false;
+        t.elevation.renderable = false;
+        t.elevation.text = "";
+      }
       if (t._refreshTooltip) t._refreshTooltip();
       if (t._refreshElevation) t._refreshElevation();
     }
