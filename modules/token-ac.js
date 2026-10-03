@@ -43,11 +43,19 @@ export function renderTokenAcBadge(token) {
   const acValue = String(token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--");
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
 
-  const fontSize = 22;
-  const badgeWidth = 44;
-  const badgeHeight = 28;
+  // Derive font size to match token nameplate or scale relative to scene grid
+  const nameplateFontSize = Number(token.nameplate?.style?.fontSize);
+  const baseGridSize = canvas.grid?.size ?? 100;
+  // If nameplate font size is available, match it; otherwise use ~24% of grid size
+  const fontSize = Number.isFinite(nameplateFontSize) && nameplateFontSize > 0
+    ? Math.round(nameplateFontSize)
+    : Math.max(16, Math.round(baseGridSize * 0.24));
 
+  // Dynamically scale badge box dimensions to fit the font size comfortably
+  const badgeWidth = Math.max(36, Math.round(fontSize * 2.0));
+  const badgeHeight = Math.max(22, Math.round(fontSize * 1.3));
   const paddingX = 6;
+
   // If elevation is visible or token has elevation > 0, bias AC to the right, otherwise center or keep right
   const hasElevation = Boolean(token.document.elevation);
   const xPos = hasElevation
@@ -62,14 +70,10 @@ export function renderTokenAcBadge(token) {
 
     const bg = new PIXI.Graphics();
     bg.name = "acBadgeBg";
-    bg.beginFill(0x000000, 0.85);
-    bg.lineStyle(2, 0xd4af37, 1);
-    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, 6);
-    bg.endFill();
     acContainer.addChild(bg);
 
     const style = new PIXI.TextStyle({
-      fontFamily: "Signika, sans-serif",
+      fontFamily: token.nameplate?.style?.fontFamily || "Signika, sans-serif",
       fontSize: fontSize,
       fontWeight: "bold",
       fill: "#ffffff",
@@ -79,16 +83,27 @@ export function renderTokenAcBadge(token) {
     const text = new PIXI.Text(acValue, style);
     text.name = "acBadgeText";
     text.anchor.set(0.5, 0.5);
-    text.position.set(badgeWidth / 2, badgeHeight / 2);
     acContainer.addChild(text);
 
     token.bars.addChild(acContainer);
-  } else {
-    // In-place text update without reallocating Graphics/Text/Containers
-    const text = acContainer.getChildByName("acBadgeText");
-    if (text && text.text !== acValue) {
-      text.text = acValue;
-    }
+  }
+
+  // Draw/update background box geometry based on current dynamic dimensions
+  const bg = acContainer.getChildByName("acBadgeBg");
+  if (bg) {
+    bg.clear();
+    bg.beginFill(0x000000, 0.85);
+    bg.lineStyle(2, 0xd4af37, 1);
+    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.22));
+    bg.endFill();
+  }
+
+  // Update text value and ensure style matches target fontSize
+  const text = acContainer.getChildByName("acBadgeText");
+  if (text) {
+    if (text.text !== acValue) text.text = acValue;
+    if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
+    text.position.set(badgeWidth / 2, badgeHeight / 2);
   }
 
   acContainer.position.set(xPos, yPos);
@@ -97,24 +112,40 @@ export function renderTokenAcBadge(token) {
 export function initTokenAc() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
-  // Patch elevation rendering to align to the top-left rather than center/bottom
+  // In Foundry v12+, the canvas elevation text (+10 / -10) is rendered in token.tooltip (PreciseText)
+  // via _refreshTooltip(), while in legacy versions it was token.elevation.
   function applyElevationLayout(token) {
-    if (!token?.elevation) return;
+    const textElement = token?.tooltip ?? token?.elevation;
+    if (!textElement) return;
+
     const pad = 6;
-    token.elevation.anchor.set(0, 1); // Anchor at bottom-left of text so it sits at yPos
-    // Position text in the top-left margin above the token
+    textElement.anchor.set(0, 1); // Anchor at bottom-left of text so it sits flush above token
     const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
     const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
-    token.elevation.position.set(pad, -visualTopOffset);
+    textElement.position.set(pad, -visualTopOffset);
   }
 
-  const originalRefreshElevation = Token.prototype._refreshElevation;
-  Token.prototype._refreshElevation = function (...args) {
-    originalRefreshElevation.apply(this, args);
-    if (this.elevation?.visible) {
-      applyElevationLayout(this);
-    }
-  };
+  // Wrap _refreshTooltip (Foundry v12+)
+  if (typeof Token.prototype._refreshTooltip === "function") {
+    const originalRefreshTooltip = Token.prototype._refreshTooltip;
+    Token.prototype._refreshTooltip = function (...args) {
+      originalRefreshTooltip.apply(this, args);
+      if (this.tooltip?.visible && this.document.elevation !== 0) {
+        applyElevationLayout(this);
+      }
+    };
+  }
+
+  // Wrap _refreshElevation (Foundry v11 / legacy fallback)
+  if (typeof Token.prototype._refreshElevation === "function") {
+    const originalRefreshElevation = Token.prototype._refreshElevation;
+    Token.prototype._refreshElevation = function (...args) {
+      originalRefreshElevation.apply(this, args);
+      if (this.elevation?.visible) {
+        applyElevationLayout(this);
+      }
+    };
+  }
 
   Hooks.on("renderSceneControls", (controls, html) => {
     if (!game.user.isGM) return;
@@ -183,15 +214,20 @@ export function initTokenAc() {
       ui.controls.render(true);
     }
 
+    function refreshElevationVisuals(t) {
+      if (t._refreshTooltip) t._refreshTooltip();
+      if (t._refreshElevation) t._refreshElevation();
+    }
+
     canvas.tokens?.placeables.forEach(t => {
       renderTokenAcBadge(t);
-      if (t._refreshElevation) t._refreshElevation();
+      refreshElevationVisuals(t);
     });
 
     Hooks.on("drawToken", (token) => {
       if (!token?.actor) return;
       renderTokenAcBadge(token);
-      if (token._refreshElevation) token._refreshElevation();
+      refreshElevationVisuals(token);
     });
 
     Hooks.on("updateToken", (document, change) => {
