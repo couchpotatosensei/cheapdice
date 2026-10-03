@@ -23,10 +23,12 @@ export function renderTokenAcBadge(token) {
 
   const masterEnabled = getGlobalShowAC();
   let acContainer = token.bars.getChildByName("acBadgeContainer");
+  let elevContainer = token.bars.getChildByName("elevationBadgeContainer");
 
   // Fast path: if master toggle is off, remove badge if present and exit immediately
   if (!masterEnabled) {
     if (acContainer) acContainer.destroy({ children: true });
+    if (elevContainer) elevContainer.destroy({ children: true });
     return;
   }
 
@@ -37,6 +39,7 @@ export function renderTokenAcBadge(token) {
   );
   if (!tokenShowAC) {
     if (acContainer) acContainer.destroy({ children: true });
+    if (elevContainer) elevContainer.destroy({ children: true });
     return;
   }
 
@@ -107,42 +110,85 @@ export function renderTokenAcBadge(token) {
   }
 
   acContainer.position.set(xPos, yPos);
+
+  // Render matching elevation badge with exact same font size and badge height
+  renderTokenElevationBadge(token, fontSize, badgeHeight);
+}
+
+export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
+  if (!token?.bars) return;
+
+  const elevationValue = token.document.elevation ?? 0;
+  let elevContainer = token.bars.getChildByName("elevationBadgeContainer");
+
+  // Hide or remove if elevation is 0
+  if (!elevationValue) {
+    if (elevContainer) elevContainer.destroy({ children: true });
+    return;
+  }
+
+  const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
+  const badgeWidth = Math.max(36, Math.round(fontSize * (elevText.length > 3 ? 2.3 : 2.0)));
+  const paddingX = 6;
+  const xPos = paddingX;
+  const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
+  const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
+  const yPos = -badgeHeight - 6 - visualTopOffset;
+
+  if (!elevContainer) {
+    elevContainer = new PIXI.Container();
+    elevContainer.name = "elevationBadgeContainer";
+
+    const bg = new PIXI.Graphics();
+    bg.name = "elevationBadgeBg";
+    elevContainer.addChild(bg);
+
+    const style = new PIXI.TextStyle({
+      fontFamily: token.nameplate?.style?.fontFamily || "Signika, sans-serif",
+      fontSize: fontSize,
+      fontWeight: "bold",
+      fill: "#ffffff",
+      align: "center"
+    });
+
+    const text = new PIXI.Text(elevText, style);
+    text.name = "elevationBadgeText";
+    text.anchor.set(0.5, 0.5);
+    elevContainer.addChild(text);
+
+    token.bars.addChild(elevContainer);
+  }
+
+  // Draw background matching AC badge aesthetic
+  const bg = elevContainer.getChildByName("elevationBadgeBg");
+  if (bg) {
+    bg.clear();
+    bg.beginFill(0x000000, 0.85);
+    bg.lineStyle(2, 0x4a90e2, 1); // Subtle blue border distinction for elevation, or gold matching
+    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.22));
+    bg.endFill();
+  }
+
+  const text = elevContainer.getChildByName("elevationBadgeText");
+  if (text) {
+    if (text.text !== elevText) text.text = elevText;
+    if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
+    text.position.set(badgeWidth / 2, badgeHeight / 2);
+  }
+
+  elevContainer.position.set(xPos, yPos);
 }
 
 export function initTokenAc() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
-  // In Foundry v12+, the canvas elevation text (+10 / -10) is rendered in token.tooltip (PreciseText)
-  // via _refreshTooltip(), while in legacy versions it was token.elevation.
-  function applyElevationLayout(token) {
-    const textElement = token?.tooltip ?? token?.elevation;
-    if (!textElement) return;
-
-    const pad = 6;
-    textElement.anchor.set(0, 1); // Anchor at bottom-left of text so it sits flush above token
-    const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
-    const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
-    textElement.position.set(pad, -visualTopOffset);
-  }
-
-  // Wrap _refreshTooltip (Foundry v12+)
+  // Suppress core raw tooltip elevation text when our custom styled elevation badge is active
   if (typeof Token.prototype._refreshTooltip === "function") {
     const originalRefreshTooltip = Token.prototype._refreshTooltip;
     Token.prototype._refreshTooltip = function (...args) {
       originalRefreshTooltip.apply(this, args);
-      if (this.tooltip?.visible && this.document.elevation !== 0) {
-        applyElevationLayout(this);
-      }
-    };
-  }
-
-  // Wrap _refreshElevation (Foundry v11 / legacy fallback)
-  if (typeof Token.prototype._refreshElevation === "function") {
-    const originalRefreshElevation = Token.prototype._refreshElevation;
-    Token.prototype._refreshElevation = function (...args) {
-      originalRefreshElevation.apply(this, args);
-      if (this.elevation?.visible) {
-        applyElevationLayout(this);
+      if (this.tooltip && this.document.elevation !== 0) {
+        this.tooltip.visible = false;
       }
     };
   }
@@ -255,5 +301,6 @@ export function initTokenAc() {
 
 // Preserve backwards-compatible global references and expose to module public API
 globalThis.renderTokenAcBadge = renderTokenAcBadge;
+globalThis.renderTokenElevationBadge = renderTokenElevationBadge;
 globalThis.getGlobalShowAC = getGlobalShowAC;
 
