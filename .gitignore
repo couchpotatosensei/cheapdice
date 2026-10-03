@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# History & environment
+.Rhistory
+.env
+*.local
+
+# IDE & Editor files
+.vscode/
+.idea/
+GEMINI.md
+
+# Local backup / scratch directories
+From VS Code/
