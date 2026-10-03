@@ -5,9 +5,17 @@
 function registerSocketHandlers() {
   if (!game.settings.get("cheapdice", "featureSocketHandlers")) return;
   if (globalThis.attackSocket) return;
-  const socket = typeof socketlib.registerModule === "function"
-    ? socketlib.registerModule("cheapdice")
-    : socketlib.registerSystem("dnd5e");
+  let socket = null;
+  if (typeof socketlib.registerModule === "function") {
+    socket = socketlib.registerModule("cheapdice");
+  }
+  if (!socket && typeof socketlib.registerSystem === "function") {
+    socket = socketlib.registerSystem("dnd5e");
+  }
+  if (!socket) {
+    console.error("[CheapDice] Failed to initialize SocketLib socket.");
+    return;
+  }
   globalThis.attackSocket = socket;
 
 
