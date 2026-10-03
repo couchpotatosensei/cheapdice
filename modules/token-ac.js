@@ -46,12 +46,13 @@ export function renderTokenAcBadge(token) {
   const acValue = String(token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--");
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
 
-  // Proportional sizing matching the Token HUD Spell DC badge (20px font, 4px border-radius)
-  const fontSize = 20;
-  const badgeWidth = Math.max(38, Math.round(fontSize * (acValue.length > 2 ? 2.2 : 1.9)));
-  const badgeHeight = 28;
-  const paddingX = 6;
-  const paddingY = 6;
+  // Proportional sizing based on token width so it stays identical relative to the token on every map
+  const tokenSize = Math.min(token.w, token.h);
+  const fontSize = Math.max(14, Math.round(tokenSize * 0.18));
+  const badgeWidth = Math.max(34, Math.round(fontSize * (acValue.length > 2 ? 2.2 : 1.9)));
+  const badgeHeight = Math.max(22, Math.round(fontSize * 1.35));
+  const paddingX = Math.max(4, Math.round(tokenSize * 0.05));
+  const paddingY = Math.max(4, Math.round(tokenSize * 0.05));
 
   // If elevation is visible or token has elevation > 0, bias AC to the right, otherwise center
   const hasElevation = Boolean(token.document.elevation);
@@ -90,8 +91,8 @@ export function renderTokenAcBadge(token) {
   if (bg) {
     bg.clear();
     bg.beginFill(0x000000, 0.85);
-    bg.lineStyle(2, 0xd4af37, 1);
-    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.22));
+    bg.lineStyle(Math.max(1, Math.round(fontSize * 0.08)), 0xd4af37, 1);
+    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.18));
     bg.endFill();
   }
 
@@ -122,9 +123,10 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
   }
 
   const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
-  const badgeWidth = Math.max(38, Math.round(fontSize * (elevText.length > 3 ? 2.3 : 1.9)));
-  const paddingX = 6;
-  const paddingY = 6;
+  const tokenSize = Math.min(token.w, token.h);
+  const badgeWidth = Math.max(34, Math.round(fontSize * (elevText.length > 3 ? 2.3 : 1.9)));
+  const paddingX = Math.max(4, Math.round(tokenSize * 0.05));
+  const paddingY = Math.max(4, Math.round(tokenSize * 0.05));
   const xPos = paddingX;
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
   const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
@@ -159,8 +161,8 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
   if (bg) {
     bg.clear();
     bg.beginFill(0x000000, 0.85);
-    bg.lineStyle(2, 0x4a90e2, 1); // Subtle blue border distinction for elevation, or gold matching
-    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.22));
+    bg.lineStyle(Math.max(1, Math.round(fontSize * 0.08)), 0x4a90e2, 1);
+    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.18));
     bg.endFill();
   }
 
@@ -177,16 +179,19 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
 export function initTokenAc() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
+  const TokenCls = foundry.canvas?.placeables?.Token ?? (typeof Token !== "undefined" ? Token : null);
+  if (!TokenCls) return;
+
   // Suppress core raw tooltip / elevation indicators completely
-  if (typeof Token.prototype._getTooltipText === "function") {
-    Token.prototype._getTooltipText = function () {
+  if (typeof TokenCls.prototype._getTooltipText === "function") {
+    TokenCls.prototype._getTooltipText = function () {
       return "";
     };
   }
 
-  if (typeof Token.prototype._refreshTooltip === "function") {
-    const originalRefreshTooltip = Token.prototype._refreshTooltip;
-    Token.prototype._refreshTooltip = function (...args) {
+  if (typeof TokenCls.prototype._refreshTooltip === "function") {
+    const originalRefreshTooltip = TokenCls.prototype._refreshTooltip;
+    TokenCls.prototype._refreshTooltip = function (...args) {
       originalRefreshTooltip.apply(this, args);
       if (this.tooltip) {
         this.tooltip.visible = false;
@@ -196,9 +201,9 @@ export function initTokenAc() {
     };
   }
 
-  if (typeof Token.prototype._refreshElevation === "function") {
-    const originalRefreshElevation = Token.prototype._refreshElevation;
-    Token.prototype._refreshElevation = function (...args) {
+  if (typeof TokenCls.prototype._refreshElevation === "function") {
+    const originalRefreshElevation = TokenCls.prototype._refreshElevation;
+    TokenCls.prototype._refreshElevation = function (...args) {
       originalRefreshElevation.apply(this, args);
       if (this.elevation) {
         this.elevation.visible = false;
@@ -208,14 +213,19 @@ export function initTokenAc() {
     };
   }
 
-  // When nameplate is refreshed/rendered, re-render AC & Elevation badges to sync size & layout
-  if (typeof Token.prototype._refreshNameplate === "function") {
-    const originalRefreshNameplate = Token.prototype._refreshNameplate;
-    Token.prototype._refreshNameplate = function (...args) {
+  // When nameplate or token transforms are refreshed, re-render AC & Elevation badges
+  if (typeof TokenCls.prototype._refreshNameplate === "function") {
+    const originalRefreshNameplate = TokenCls.prototype._refreshNameplate;
+    TokenCls.prototype._refreshNameplate = function (...args) {
       originalRefreshNameplate.apply(this, args);
       renderTokenAcBadge(this);
     };
   }
+
+  // Foundry v11/v12/v13/v14 hook into token refresh
+  Hooks.on("refreshToken", (token) => {
+    if (token?.actor) renderTokenAcBadge(token);
+  });
 
   Hooks.on("renderSceneControls", (controls, html) => {
     if (!game.user.isGM) return;
