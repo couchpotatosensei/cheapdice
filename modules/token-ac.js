@@ -25,32 +25,29 @@ export function renderTokenAcBadge(token) {
   let acContainer = token.bars.getChildByName("acBadgeContainer");
   let elevContainer = token.bars.getChildByName("elevationBadgeContainer");
 
-  // Fast path: if master toggle is off, remove badge if present and exit immediately
-  if (!masterEnabled) {
-    if (acContainer) acContainer.destroy({ children: true });
-    if (elevContainer) elevContainer.destroy({ children: true });
-    return;
-  }
+  const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
+  const tokenSize = Math.min(token.w, token.h);
+  const fontSize = Math.max(14, Math.round(tokenSize * 0.18));
+  const badgeHeight = Math.max(22, Math.round(fontSize * 1.35));
 
-  // Check scoped flag with fallback to legacy flag for backward compatibility
+  // Render matching elevation badge independently whenever token elevation is non-zero
+  renderTokenElevationBadge(token, fontSize, badgeHeight);
+
+  // Check master AC toggle and per-token AC flag
   const tokenShowAC = Boolean(
     token.document.getFlag(MODULE_ID, FLAGS.SHOW_AC) ??
     token.document.getFlag("world", "showAC")
   );
-  if (!tokenShowAC) {
+
+  if (!masterEnabled || !tokenShowAC) {
     if (acContainer) acContainer.destroy({ children: true });
-    if (elevContainer) elevContainer.destroy({ children: true });
     return;
   }
 
   const acValue = String(token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--");
-  const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
 
   // Proportional sizing based on token width so it stays identical relative to the token on every map
-  const tokenSize = Math.min(token.w, token.h);
-  const fontSize = Math.max(14, Math.round(tokenSize * 0.18));
   const badgeWidth = Math.max(34, Math.round(fontSize * (acValue.length > 2 ? 2.2 : 1.9)));
-  const badgeHeight = Math.max(22, Math.round(fontSize * 1.35));
   const paddingX = Math.max(4, Math.round(tokenSize * 0.05));
   const paddingY = Math.max(4, Math.round(tokenSize * 0.05));
 
@@ -105,9 +102,6 @@ export function renderTokenAcBadge(token) {
   }
 
   acContainer.position.set(xPos, yPos);
-
-  // Render matching elevation badge with exact same font size and badge height
-  renderTokenElevationBadge(token, fontSize, badgeHeight);
 }
 
 export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
@@ -122,8 +116,10 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
     return;
   }
 
-  const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
   const tokenSize = Math.min(token.w, token.h);
+  fontSize = fontSize ?? Math.max(14, Math.round(tokenSize * 0.18));
+  badgeHeight = badgeHeight ?? Math.max(22, Math.round(fontSize * 1.35));
+  const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
   const badgeWidth = Math.max(34, Math.round(fontSize * (elevText.length > 3 ? 2.3 : 1.9)));
   const paddingX = Math.max(4, Math.round(tokenSize * 0.05));
   const paddingY = Math.max(4, Math.round(tokenSize * 0.05));
