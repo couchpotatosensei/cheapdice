@@ -47,7 +47,12 @@ export function renderTokenAcBadge(token) {
   const badgeWidth = 44;
   const badgeHeight = 28;
 
-  const xPos = Math.round((token.w - badgeWidth) / 2);
+  const paddingX = 6;
+  // If elevation is visible or token has elevation > 0, bias AC to the right, otherwise center or keep right
+  const hasElevation = Boolean(token.document.elevation);
+  const xPos = hasElevation
+    ? Math.round(token.w - badgeWidth - paddingX)
+    : Math.round((token.w - badgeWidth) / 2);
   const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
   const yPos = -badgeHeight - 6 - visualTopOffset;
 
@@ -91,6 +96,25 @@ export function renderTokenAcBadge(token) {
 
 export function initTokenAc() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
+
+  // Patch elevation rendering to align to the top-left rather than center/bottom
+  function applyElevationLayout(token) {
+    if (!token?.elevation) return;
+    const pad = 6;
+    token.elevation.anchor.set(0, 1); // Anchor at bottom-left of text so it sits at yPos
+    // Position text in the top-left margin above the token
+    const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
+    const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
+    token.elevation.position.set(pad, -visualTopOffset);
+  }
+
+  const originalRefreshElevation = Token.prototype._refreshElevation;
+  Token.prototype._refreshElevation = function (...args) {
+    originalRefreshElevation.apply(this, args);
+    if (this.elevation?.visible) {
+      applyElevationLayout(this);
+    }
+  };
 
   Hooks.on("renderSceneControls", (controls, html) => {
     if (!game.user.isGM) return;
@@ -159,20 +183,25 @@ export function initTokenAc() {
       ui.controls.render(true);
     }
 
-    canvas.tokens?.placeables.forEach(t => renderTokenAcBadge(t));
+    canvas.tokens?.placeables.forEach(t => {
+      renderTokenAcBadge(t);
+      if (t._refreshElevation) t._refreshElevation();
+    });
 
     Hooks.on("drawToken", (token) => {
       if (!token?.actor) return;
       renderTokenAcBadge(token);
+      if (token._refreshElevation) token._refreshElevation();
     });
 
     Hooks.on("updateToken", (document, change) => {
       const token = document.object;
       if (!token) return;
 
-      // Only redraw if texture, scale, or the showAC flag changed
+      // Redraw if texture, scale, elevation, or showAC flag changed
       if (
         foundry.utils.hasProperty(change, "texture") ||
+        foundry.utils.hasProperty(change, "elevation") ||
         foundry.utils.hasProperty(change, `flags.${MODULE_ID}.${FLAGS.SHOW_AC}`) ||
         foundry.utils.hasProperty(change, "flags.world.showAC")
       ) {
