@@ -3,35 +3,7 @@ import { renderTokenAcBadge, getGlobalShowAC } from "./token-ac.js";
 export function initTokenHud() {
   if (!game.settings.get("cheapdice", "featureTokenHud")) return;
 
-  const TokenCls = foundry.canvas?.placeables?.Token ?? (typeof Token !== "undefined" ? Token : null);
-  if (TokenCls) {
-    // 1. Allow TokenHUD permission check (_canHUD) for LIMITED users
-    const originalCanHUD = TokenCls.prototype._canHUD;
-    TokenCls.prototype._canHUD = function (user, event) {
-      user = user ?? game.user;
-      if (user && !user.isGM && this.actor?.testUserPermission(user, "LIMITED")) {
-        return true;
-      }
-      return originalCanHUD ? originalCanHUD.call(this, user, event) : this.actor?.isOwner;
-    };
 
-    // 2. Intercept right click on token to open HUD for players with LIMITED permission
-    const originalOnClickRight = TokenCls.prototype._onClickRight;
-    TokenCls.prototype._onClickRight = function (event) {
-      if (!game.user.isGM && !this.actor?.isOwner && this.actor?.testUserPermission(game.user, "LIMITED")) {
-        // Toggle or bind token HUD directly
-        if (canvas.hud.token.rendered && canvas.hud.token.object === this) {
-          canvas.hud.token.clear();
-        } else {
-          canvas.hud.token.bind(this);
-        }
-        return;
-      }
-      if (typeof originalOnClickRight === "function") {
-        return originalOnClickRight.call(this, event);
-      }
-    };
-  }
 
   // 3. Token HUD adjustments
   Hooks.on("renderTokenHUD", (app, html, data) => {
@@ -284,9 +256,7 @@ export function initTokenHud() {
     }
 
     // Player Code (Non-GM)
-    const isOwner = Boolean(token.actor.isOwner);
-    const hasLimited = token.actor.testUserPermission(game.user, "LIMITED");
-    if (!isOwner && !hasLimited) return;
+    if (!token.actor.isOwner) return;
 
     const elevationTargets = root.querySelectorAll(
       '.control-icon[data-action="elevation"], input[name="elevation"], .attribute.elevation, [data-action="elevation"]'
@@ -316,33 +286,6 @@ export function initTokenHud() {
     const colRight = root.querySelector(".col.right");
     const colMiddle = root.querySelector(".col.middle");
     if (!colLeft || !colRight || !colMiddle) return;
-
-    // LIMITED VIEW (Non-Owner with Limited/Observer permission)
-    if (!isOwner) {
-      // Clean up player action controls not permitted on non-owned NPC
-      colLeft.innerHTML = "";
-      colRight.innerHTML = "";
-      colMiddle.querySelectorAll(".attribute").forEach(el => el.remove());
-
-      // Target Button for Limited view
-      const isTargeted = token.isTargeted;
-      const targetBtn = makeButton(
-        isTargeted ? "Untarget Token" : "Target Token",
-        "fa-solid fa-crosshairs",
-        (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          token.setTarget(!token.isTargeted, { releaseOthers: false });
-          app.render();
-        }
-      );
-      if (isTargeted) targetBtn.classList.add("active");
-      colRight.appendChild(targetBtn);
-
-      // Render AC and Elevation badges in HUD top row
-      renderHudBadges(token, colMiddle, false);
-      return;
-    }
 
     root.querySelector('.control-icon[data-action="target"]')?.remove();
 
