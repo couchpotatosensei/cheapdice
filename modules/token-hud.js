@@ -3,14 +3,33 @@ import { renderTokenAcBadge, getGlobalShowAC } from "./token-ac.js";
 export function initTokenHud() {
   if (!game.settings.get("cheapdice", "featureTokenHud")) return;
 
-  // Allow players with LIMITED or OBSERVER permission to open TokenHUD on NPCs
-  const originalCanControl = Token.prototype._canControl;
-  if (typeof originalCanControl === "function") {
-    Token.prototype._canControl = function (user, event) {
+  const TokenCls = foundry.canvas?.placeables?.Token ?? (typeof Token !== "undefined" ? Token : null);
+  if (TokenCls) {
+    // 1. Allow TokenHUD permission check (_canHUD) for LIMITED users
+    const originalCanHUD = TokenCls.prototype._canHUD;
+    TokenCls.prototype._canHUD = function (user, event) {
+      user = user ?? game.user;
       if (user && !user.isGM && this.actor?.testUserPermission(user, "LIMITED")) {
         return true;
       }
-      return originalCanControl.apply(this, arguments);
+      return originalCanHUD ? originalCanHUD.call(this, user, event) : this.actor?.isOwner;
+    };
+
+    // 2. Intercept right click on token to open HUD for players with LIMITED permission
+    const originalOnClickRight = TokenCls.prototype._onClickRight;
+    TokenCls.prototype._onClickRight = function (event) {
+      if (!game.user.isGM && !this.actor?.isOwner && this.actor?.testUserPermission(game.user, "LIMITED")) {
+        // Toggle or bind token HUD directly
+        if (canvas.hud.token.rendered && canvas.hud.token.object === this) {
+          canvas.hud.token.clear();
+        } else {
+          canvas.hud.token.bind(this);
+        }
+        return;
+      }
+      if (typeof originalOnClickRight === "function") {
+        return originalOnClickRight.call(this, event);
+      }
     };
   }
 
