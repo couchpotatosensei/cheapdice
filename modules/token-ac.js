@@ -27,8 +27,11 @@ export function renderTokenAcBadge(token) {
 
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
   const tokenSize = Math.min(token.w, token.h);
-  const fontSize = Math.max(14, Math.round(tokenSize * 0.18));
-  const badgeHeight = Math.max(22, Math.round(fontSize * 1.35));
+  const rawNpFontSize = Number(token.nameplate?.style?.fontSize);
+  const fontSize = Number.isFinite(rawNpFontSize) && rawNpFontSize > 0
+    ? Math.round(rawNpFontSize)
+    : Math.max(8, Math.round(tokenSize * 0.18));
+  const badgeHeight = Math.max(Math.round(fontSize * 1.35), Math.round(tokenSize * 0.22));
 
   // Render matching elevation badge independently whenever token elevation is non-zero
   renderTokenElevationBadge(token, fontSize, badgeHeight);
@@ -47,9 +50,9 @@ export function renderTokenAcBadge(token) {
   const acValue = String(token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--");
 
   // Proportional sizing based on token width so it stays identical relative to the token on every map
-  const badgeWidth = Math.max(34, Math.round(fontSize * (acValue.length > 2 ? 2.2 : 1.9)));
-  const paddingX = Math.max(4, Math.round(tokenSize * 0.05));
-  const paddingY = Math.max(4, Math.round(tokenSize * 0.05));
+  const badgeWidth = Math.max(Math.round(tokenSize * 0.35), Math.round(fontSize * (acValue.length > 2 ? 2.2 : 1.9)));
+  const paddingX = Math.max(2, Math.round(tokenSize * 0.05));
+  const paddingY = Math.max(2, Math.round(tokenSize * 0.05));
 
   // If elevation is visible or token has elevation > 0, bias AC to the right, otherwise center
   const hasElevation = Boolean(token.document.elevation);
@@ -117,12 +120,17 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
   }
 
   const tokenSize = Math.min(token.w, token.h);
-  fontSize = fontSize ?? Math.max(14, Math.round(tokenSize * 0.18));
-  badgeHeight = badgeHeight ?? Math.max(22, Math.round(fontSize * 1.35));
+  if (fontSize == null) {
+    const rawNpFontSize = Number(token.nameplate?.style?.fontSize);
+    fontSize = Number.isFinite(rawNpFontSize) && rawNpFontSize > 0
+      ? Math.round(rawNpFontSize)
+      : Math.max(8, Math.round(tokenSize * 0.18));
+  }
+  badgeHeight = badgeHeight ?? Math.max(Math.round(fontSize * 1.35), Math.round(tokenSize * 0.22));
   const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
-  const badgeWidth = Math.max(34, Math.round(fontSize * (elevText.length > 3 ? 2.3 : 1.9)));
-  const paddingX = Math.max(4, Math.round(tokenSize * 0.05));
-  const paddingY = Math.max(4, Math.round(tokenSize * 0.05));
+  const badgeWidth = Math.max(Math.round(tokenSize * 0.35), Math.round(fontSize * (elevText.length > 3 ? 2.3 : 1.9)));
+  const paddingX = Math.max(2, Math.round(tokenSize * 0.05));
+  const paddingY = Math.max(2, Math.round(tokenSize * 0.05));
   const xPos = paddingX;
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
   const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
