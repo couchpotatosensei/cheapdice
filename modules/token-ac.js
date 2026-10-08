@@ -27,8 +27,16 @@ export function renderTokenAcBadge(token) {
 
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
   const tokenSize = Math.min(token.w, token.h);
-  // Purely proportional to token size so it stays identical relative to the token across any grid density (e.g. 22px to 200px+)
-  const fontSize = Math.max(4, Math.round(tokenSize * 0.20));
+
+  // If token is too small to display readable text (e.g. low-res 22px maps), suppress badges
+  if (tokenSize < 40) {
+    if (acContainer) acContainer.destroy({ children: true });
+    if (elevContainer) elevContainer.destroy({ children: true });
+    return;
+  }
+
+  // Purely proportional to token size so it stays identical relative to the token across any grid density
+  const fontSize = Math.round(tokenSize * 0.20);
   const badgeHeight = Math.round(tokenSize * 0.28);
 
   // Render matching elevation badge independently whenever token elevation is non-zero
@@ -118,7 +126,13 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
   }
 
   const tokenSize = Math.min(token.w, token.h);
-  fontSize = fontSize ?? Math.max(4, Math.round(tokenSize * 0.20));
+  // If token is too small to display readable text (e.g. low-res 22px maps), suppress badge
+  if (tokenSize < 40) {
+    if (elevContainer) elevContainer.destroy({ children: true });
+    return;
+  }
+
+  fontSize = fontSize ?? Math.round(tokenSize * 0.20);
   badgeHeight = badgeHeight ?? Math.round(tokenSize * 0.28);
   const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
   const badgeWidth = Math.round(fontSize * (elevText.length > 3 ? 2.3 : 1.9));
