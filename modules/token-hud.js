@@ -1,7 +1,18 @@
-import { renderTokenAcBadge } from "./token-ac.js";
+import { renderTokenAcBadge, getGlobalShowAC } from "./token-ac.js";
 
 export function initTokenHud() {
   if (!game.settings.get("cheapdice", "featureTokenHud")) return;
+
+  // Allow players with LIMITED or OBSERVER permission to open TokenHUD on NPCs
+  const originalCanControl = Token.prototype._canControl;
+  if (typeof originalCanControl === "function") {
+    Token.prototype._canControl = function (user, event) {
+      if (user && !user.isGM && this.actor?.testUserPermission(user, "LIMITED")) {
+        return true;
+      }
+      return originalCanControl.apply(this, arguments);
+    };
+  }
 
   // 3. Token HUD adjustments
   Hooks.on("renderTokenHUD", (app, html, data) => {
@@ -254,7 +265,9 @@ export function initTokenHud() {
     }
 
     // Player Code (Non-GM)
-    if (!token.actor.isOwner) return;
+    const isOwner = Boolean(token.actor.isOwner);
+    const hasLimited = token.actor.testUserPermission(game.user, "LIMITED");
+    if (!isOwner && !hasLimited) return;
 
     const elevationTargets = root.querySelectorAll(
       '.control-icon[data-action="elevation"], input[name="elevation"], .attribute.elevation, [data-action="elevation"]'
@@ -279,12 +292,40 @@ export function initTokenHud() {
 
     root.querySelector('.control-icon[data-action="sort"]')?.remove();
     root.querySelector('.control-icon[data-action="combat"]')?.remove();
-    root.querySelector('.control-icon[data-action="target"]')?.remove();
 
     const colLeft = root.querySelector(".col.left");
     const colRight = root.querySelector(".col.right");
     const colMiddle = root.querySelector(".col.middle");
     if (!colLeft || !colRight || !colMiddle) return;
+
+    // LIMITED VIEW (Non-Owner with Limited/Observer permission)
+    if (!isOwner) {
+      // Clean up player action controls not permitted on non-owned NPC
+      colLeft.innerHTML = "";
+      colRight.innerHTML = "";
+      colMiddle.querySelectorAll(".attribute").forEach(el => el.remove());
+
+      // Target Button for Limited view
+      const isTargeted = token.isTargeted;
+      const targetBtn = makeButton(
+        isTargeted ? "Untarget Token" : "Target Token",
+        "fa-solid fa-crosshairs",
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          token.setTarget(!token.isTargeted, { releaseOthers: false });
+          app.render();
+        }
+      );
+      if (isTargeted) targetBtn.classList.add("active");
+      colRight.appendChild(targetBtn);
+
+      // Render AC and Elevation badges in HUD top row
+      renderHudBadges(token, colMiddle, false);
+      return;
+    }
+
+    root.querySelector('.control-icon[data-action="target"]')?.remove();
 
     const d20Btn = makeButton(
       "Roll D20",
@@ -345,31 +386,8 @@ export function initTokenHud() {
     }
     colLeft.appendChild(measureBtn);
 
-    const actorSystem = token.actor.system;
-    const hasSpellcasting = Boolean(actorSystem.attributes?.spellcasting);
-    const rawDC = actorSystem.attributes?.spell?.dc ?? actorSystem.attributes?.spelldc;
-    const spellDC = (hasSpellcasting && rawDC && rawDC > 0) ? rawDC : "S.DC";
-
-    const dcBadge = document.createElement("div");
-    dcBadge.className = "attribute spell-dc";
-    dcBadge.title = "Spell Save DC";
-    dcBadge.style.cssText = `
-    position: absolute;
-    top: -35px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.7);
-    border: 1px solid #7a7971;
-    border-radius: 4px;
-    color: #fff;
-    padding: 2px 6px;
-    font-size: 20px;
-    font-weight: bold;
-    pointer-events: none;
-    white-space: nowrap;
-  `;
-    dcBadge.innerHTML = `<i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i>${spellDC}`;
-    colMiddle.appendChild(dcBadge);
+    // Render AC, Elevation, and Spell DC badges in HUD top row for owned tokens
+    renderHudBadges(token, colMiddle, true);
 
     const allInputs = Array.from(colMiddle.querySelectorAll('.attribute input'));
     const bottomInput = allInputs[allInputs.length - 1];
@@ -494,4 +512,100 @@ export function initTokenHud() {
     colRight.appendChild(makeButton("Slot 3", "fas fa-square-3", () => runHotbarSlot(50)));
   });
 
+  /**
+   * Helper to render AC, Elevation, and optionally Spell DC badges in the top row of Token HUD.
+   */
+  function renderHudBadges(token, colMiddle, includeSpellDC = true) {
+    colMiddle.querySelector(".cheapdice-hud-badges-row")?.remove();
+
+    const row = document.createElement("div");
+    row.className = "cheapdice-hud-badges-row";
+    row.style.cssText = `
+      position: absolute;
+      top: -38px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 100;
+    `;
+
+    // Elevation badge: Blue accent, hidden if elevation === 0
+    const elevationValue = Number(token.document.elevation ?? 0);
+    if (elevationValue !== 0) {
+      const elevBadge = document.createElement("div");
+      elevBadge.className = "attribute cheapdice-hud-elev-badge";
+      elevBadge.title = "Elevation";
+      elevBadge.style.cssText = `
+        background: rgba(0, 0, 0, 0.85);
+        border: 1px solid #4a90e2;
+        border-radius: 4px;
+        color: #fff;
+        padding: 2px 7px;
+        font-size: 18px;
+        font-weight: bold;
+        line-height: 1.2;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      `;
+      elevBadge.innerHTML = `<i class="fa-solid fa-arrow-up-right-dots" style="margin-right: 4px; color: #4a90e2;"></i>${elevationValue > 0 ? "+" : ""}${elevationValue}`;
+      row.appendChild(elevBadge);
+    }
+
+    // AC badge: Gold accent, shown if master toggle is on AND token flag is enabled
+    const masterAC = getGlobalShowAC();
+    const tokenShowAC = Boolean(token.document.getFlag("world", "showAC") ?? token.document.getFlag("cheapdice", "showAC"));
+    if (masterAC && tokenShowAC) {
+      const acValue = String(token.actor?.system?.attributes?.ac?.value ?? token.actor?.system?.attributes?.ac ?? "--");
+      const acBadge = document.createElement("div");
+      acBadge.className = "attribute cheapdice-hud-ac-badge";
+      acBadge.title = "Armor Class (AC)";
+      acBadge.style.cssText = `
+        background: rgba(0, 0, 0, 0.85);
+        border: 1px solid #d4af37;
+        border-radius: 4px;
+        color: #fff;
+        padding: 2px 7px;
+        font-size: 18px;
+        font-weight: bold;
+        line-height: 1.2;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      `;
+      acBadge.innerHTML = `<i class="fas fa-shield-halved" style="margin-right: 4px; color: #d4af37;"></i>${acValue}`;
+      row.appendChild(acBadge);
+    }
+
+    // Spell Save DC: only for owned tokens if requested
+    if (includeSpellDC) {
+      const actorSystem = token.actor?.system;
+      const hasSpellcasting = Boolean(actorSystem?.attributes?.spellcasting);
+      const rawDC = actorSystem?.attributes?.spell?.dc ?? actorSystem?.attributes?.spelldc;
+      if (hasSpellcasting && rawDC && rawDC > 0) {
+        const dcBadge = document.createElement("div");
+        dcBadge.className = "attribute spell-dc";
+        dcBadge.title = "Spell Save DC";
+        dcBadge.style.cssText = `
+          background: rgba(0, 0, 0, 0.85);
+          border: 1px solid #7a7971;
+          border-radius: 4px;
+          color: #fff;
+          padding: 2px 7px;
+          font-size: 18px;
+          font-weight: bold;
+          line-height: 1.2;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        `;
+        dcBadge.innerHTML = `<i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i>${rawDC}`;
+        row.appendChild(dcBadge);
+      }
+    }
+
+    if (row.children.length > 0) {
+      colMiddle.appendChild(row);
+    }
+  }
 }
