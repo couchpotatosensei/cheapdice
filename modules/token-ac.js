@@ -12,232 +12,240 @@ export function getGlobalShowAC() {
   }
 }
 
-export function renderTokenAcBadge(token) {
-  if (!token?.actor || !token.bars) return;
+/**
+ * Ensures the persistent DOM overlay container exists inside Foundry's canvas overlay UI layer.
+ */
+function getOrCreateOverlayLayer() {
+  let layer = document.getElementById("cheapdice-token-overlay-layer");
+  if (!layer) {
+    const parent = document.getElementById("hud") || document.body;
+    layer = document.createElement("div");
+    layer.id = "cheapdice-token-overlay-layer";
+    layer.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 25;
+      overflow: visible;
+    `;
+    parent.appendChild(layer);
+  }
+  return layer;
+}
 
-  if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) {
-    const existing = token.bars.getChildByName("acBadgeContainer");
-    if (existing) existing.destroy({ children: true });
+/**
+ * Renders or updates the HTML DOM overlay badges (AC and Elevation) for a token.
+ */
+export function renderTokenAcBadge(token) {
+  if (!token?.actor) return;
+
+  const tokenId = token.id;
+  const overlayLayer = getOrCreateOverlayLayer();
+  let wrapper = document.getElementById(`cheapdice-badge-wrap-${tokenId}`);
+
+  // If feature is disabled or token is destroyed/not rendered, remove overlay
+  if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC) || !token.visible || token.destroyed) {
+    if (wrapper) wrapper.remove();
     return;
   }
 
   const masterEnabled = getGlobalShowAC();
-  let acContainer = token.bars.getChildByName("acBadgeContainer");
-  let elevContainer = token.bars.getChildByName("elevationBadgeContainer");
-
-  const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
-  const tokenSize = Math.min(token.w, token.h);
-
-  // If token is too small to display readable text (e.g. low-res 22px maps), suppress badges
-  if (tokenSize < 40) {
-    if (acContainer) acContainer.destroy({ children: true });
-    if (elevContainer) elevContainer.destroy({ children: true });
-    return;
-  }
-
-  // Purely proportional to token size so it stays identical relative to the token across any grid density
-  const fontSize = Math.round(tokenSize * 0.20);
-  const badgeHeight = Math.round(tokenSize * 0.28);
-
-  // Render matching elevation badge independently whenever token elevation is non-zero
-  renderTokenElevationBadge(token, fontSize, badgeHeight);
-
-  // Check master AC toggle and per-token AC flag
   const tokenShowAC = Boolean(
     token.document.getFlag(MODULE_ID, FLAGS.SHOW_AC) ??
     token.document.getFlag("world", "showAC")
   );
 
-  if (!masterEnabled || !tokenShowAC) {
-    if (acContainer) acContainer.destroy({ children: true });
+  const elevationValue = Number(token.document.elevation ?? 0);
+  const showElevation = elevationValue !== 0;
+  const showAC = masterEnabled && tokenShowAC;
+
+  // If neither badge needs to be shown, remove overlay wrapper
+  if (!showAC && !showElevation) {
+    if (wrapper) wrapper.remove();
     return;
   }
 
-  const acValue = String(token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--");
-
-  // Proportional sizing based on token width so it stays identical relative to the token on every map
-  const badgeWidth = Math.round(fontSize * (acValue.length > 2 ? 2.2 : 1.9));
-  const paddingX = Math.round(tokenSize * 0.04);
-  const paddingY = Math.round(tokenSize * 0.04);
-
-  // If elevation is visible or token has elevation > 0, bias AC to the right, otherwise center
-  const hasElevation = Boolean(token.document.elevation);
-  const xPos = hasElevation
-    ? Math.round(token.w - badgeWidth - paddingX)
-    : Math.round((token.w - badgeWidth) / 2);
-  const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
-  const yPos = -badgeHeight - paddingY - visualTopOffset;
-
-  if (!acContainer) {
-    acContainer = new PIXI.Container();
-    acContainer.name = "acBadgeContainer";
-
-    const bg = new PIXI.Graphics();
-    bg.name = "acBadgeBg";
-    acContainer.addChild(bg);
-
-    const style = new PIXI.TextStyle({
-      fontFamily: token.nameplate?.style?.fontFamily || "Signika, sans-serif",
-      fontSize: fontSize,
-      fontWeight: "bold",
-      fill: "#ffffff",
-      align: "center"
-    });
-
-    const text = new PIXI.Text(acValue, style);
-    text.name = "acBadgeText";
-    text.anchor.set(0.5, 0.5);
-    acContainer.addChild(text);
-
-    token.bars.addChild(acContainer);
+  // Create wrapper if not existing
+  if (!wrapper) {
+    wrapper = document.createElement("div");
+    wrapper.id = `cheapdice-badge-wrap-${tokenId}`;
+    wrapper.className = "cheapdice-token-badge-wrapper";
+    wrapper.style.cssText = `
+      position: absolute;
+      pointer-events: none;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transform-origin: center bottom;
+      z-index: 25;
+      white-space: nowrap;
+      user-select: none;
+    `;
+    overlayLayer.appendChild(wrapper);
   }
 
-  // Draw/update background box geometry based on current dynamic dimensions
-  const bg = acContainer.getChildByName("acBadgeBg");
-  if (bg) {
-    bg.clear();
-    bg.beginFill(0x000000, 0.85);
-    bg.lineStyle(Math.max(1, Math.round(fontSize * 0.08)), 0xd4af37, 1);
-    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.18));
-    bg.endFill();
+  // Compute screen coordinates from canvas token bounds
+  updateBadgeOverlayPosition(token, wrapper);
+
+  // Elevation badge HTML
+  let elevBadge = wrapper.querySelector(".cheapdice-elevation-badge");
+  if (showElevation) {
+    if (!elevBadge) {
+      elevBadge = document.createElement("div");
+      elevBadge.className = "cheapdice-elevation-badge";
+      elevBadge.style.cssText = `
+        background: rgba(0, 0, 0, 0.85);
+        border: 1.5px solid #4a90e2;
+        border-radius: 4px;
+        color: #ffffff;
+        font-family: ${token.nameplate?.style?.fontFamily || "Signika, sans-serif"};
+        font-size: 15px;
+        font-weight: bold;
+        line-height: 1;
+        padding: 3px 7px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+      wrapper.appendChild(elevBadge);
+    }
+    const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
+    if (elevBadge.textContent !== elevText) {
+      elevBadge.textContent = elevText;
+    }
+  } else if (elevBadge) {
+    elevBadge.remove();
   }
 
-  // Update text value and ensure style matches target fontSize
-  const text = acContainer.getChildByName("acBadgeText");
-  if (text) {
-    if (text.text !== acValue) text.text = acValue;
-    if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
-    text.position.set(badgeWidth / 2, badgeHeight / 2);
+  // AC badge HTML
+  let acBadge = wrapper.querySelector(".cheapdice-ac-badge");
+  if (showAC) {
+    if (!acBadge) {
+      acBadge = document.createElement("div");
+      acBadge.className = "cheapdice-ac-badge";
+      acBadge.style.cssText = `
+        background: rgba(0, 0, 0, 0.85);
+        border: 1.5px solid #d4af37;
+        border-radius: 4px;
+        color: #ffffff;
+        font-family: ${token.nameplate?.style?.fontFamily || "Signika, sans-serif"};
+        font-size: 15px;
+        font-weight: bold;
+        line-height: 1;
+        padding: 3px 7px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+      wrapper.appendChild(acBadge);
+    }
+    const acValue = String(token.actor?.system?.attributes?.ac?.value ?? token.actor?.system?.attributes?.ac ?? "--");
+    if (acBadge.textContent !== acValue) {
+      acBadge.textContent = acValue;
+    }
+  } else if (acBadge) {
+    acBadge.remove();
   }
-
-  acContainer.position.set(xPos, yPos);
 }
 
-export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
-  if (!token?.bars) return;
-
-  const elevationValue = token.document.elevation ?? 0;
-  let elevContainer = token.bars.getChildByName("elevationBadgeContainer");
-
-  // Hide or remove if elevation is 0
-  if (!elevationValue) {
-    if (elevContainer) elevContainer.destroy({ children: true });
+/**
+ * Updates wrapper screen coordinates to stay locked flush right above the token head.
+ */
+function updateBadgeOverlayPosition(token, wrapper) {
+  if (!token?.visible || !canvas.ready || !canvas.stage) {
+    wrapper.style.display = "none";
     return;
   }
 
-  const tokenSize = Math.min(token.w, token.h);
-  // If token is too small to display readable text (e.g. low-res 22px maps), suppress badge
-  if (tokenSize < 40) {
-    if (elevContainer) elevContainer.destroy({ children: true });
-    return;
-  }
+  wrapper.style.display = "flex";
 
-  fontSize = fontSize ?? Math.round(tokenSize * 0.20);
-  badgeHeight = badgeHeight ?? Math.round(tokenSize * 0.28);
-  const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
-  const badgeWidth = Math.round(fontSize * (elevText.length > 3 ? 2.3 : 1.9));
-  const paddingX = Math.round(tokenSize * 0.04);
-  const paddingY = Math.round(tokenSize * 0.04);
-  const xPos = paddingX;
+  // Get screen-space coordinates of the token's top-center
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
   const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
-  const yPos = -badgeHeight - paddingY - visualTopOffset;
+  const worldX = token.x + (token.w / 2);
+  const worldY = token.y - visualTopOffset - 6;
 
-  if (!elevContainer) {
-    elevContainer = new PIXI.Container();
-    elevContainer.name = "elevationBadgeContainer";
+  // Convert canvas world coordinates to screen/viewport coordinates
+  const screenPos = canvas.stage.worldTransform.apply({ x: worldX, y: worldY });
+  const zoom = canvas.stage.scale.x;
 
-    const bg = new PIXI.Graphics();
-    bg.name = "elevationBadgeBg";
-    elevContainer.addChild(bg);
+  // Position wrapper anchored at bottom-center so it sits right above token
+  wrapper.style.left = `${screenPos.x}px`;
+  wrapper.style.top = `${screenPos.y}px`;
+  wrapper.style.transform = `translate(-50%, -100%) scale(${Math.max(0.65, Math.min(1.4, zoom))})`;
+}
 
-    const style = new PIXI.TextStyle({
-      fontFamily: token.nameplate?.style?.fontFamily || "Signika, sans-serif",
-      fontSize: fontSize,
-      fontWeight: "bold",
-      fill: "#ffffff",
-      align: "center"
-    });
+/**
+ * Public helper to re-render elevation badge (mirrors AC badge logic).
+ */
+export function renderTokenElevationBadge(token) {
+  renderTokenAcBadge(token);
+}
 
-    const text = new PIXI.Text(elevText, style);
-    text.name = "elevationBadgeText";
-    text.anchor.set(0.5, 0.5);
-    elevContainer.addChild(text);
+/**
+ * Clean up overlay DOM node on token deletion.
+ */
+function removeTokenOverlay(tokenId) {
+  const el = document.getElementById(`cheapdice-badge-wrap-${tokenId}`);
+  if (el) el.remove();
+}
 
-    token.bars.addChild(elevContainer);
+/**
+ * Sync all badge overlay positions on canvas pan, zoom, or refresh.
+ */
+function updateAllBadgePositions() {
+  if (!canvas.tokens?.placeables) return;
+  for (const token of canvas.tokens.placeables) {
+    const wrapper = document.getElementById(`cheapdice-badge-wrap-${token.id}`);
+    if (wrapper) updateBadgeOverlayPosition(token, wrapper);
   }
-
-  // Draw background matching AC badge aesthetic
-  const bg = elevContainer.getChildByName("elevationBadgeBg");
-  if (bg) {
-    bg.clear();
-    bg.beginFill(0x000000, 0.85);
-    bg.lineStyle(Math.max(1, Math.round(fontSize * 0.08)), 0x4a90e2, 1);
-    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.18));
-    bg.endFill();
-  }
-
-  const text = elevContainer.getChildByName("elevationBadgeText");
-  if (text) {
-    if (text.text !== elevText) text.text = elevText;
-    if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
-    text.position.set(badgeWidth / 2, badgeHeight / 2);
-  }
-
-  elevContainer.position.set(xPos, yPos);
 }
 
 export function initTokenAc() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
   const TokenCls = foundry.canvas?.placeables?.Token ?? (typeof Token !== "undefined" ? Token : null);
-  if (!TokenCls) return;
+  if (TokenCls) {
+    // Suppress core raw tooltip / elevation indicators completely
+    if (typeof TokenCls.prototype._getTooltipText === "function") {
+      TokenCls.prototype._getTooltipText = function () {
+        return "";
+      };
+    }
 
-  // Suppress core raw tooltip / elevation indicators completely
-  if (typeof TokenCls.prototype._getTooltipText === "function") {
-    TokenCls.prototype._getTooltipText = function () {
-      return "";
-    };
+    if (typeof TokenCls.prototype._refreshTooltip === "function") {
+      const originalRefreshTooltip = TokenCls.prototype._refreshTooltip;
+      TokenCls.prototype._refreshTooltip = function (...args) {
+        originalRefreshTooltip.apply(this, args);
+        if (this.tooltip) {
+          this.tooltip.visible = false;
+          this.tooltip.renderable = false;
+          this.tooltip.text = "";
+        }
+      };
+    }
+
+    if (typeof TokenCls.prototype._refreshElevation === "function") {
+      const originalRefreshElevation = TokenCls.prototype._refreshElevation;
+      TokenCls.prototype._refreshElevation = function (...args) {
+        originalRefreshElevation.apply(this, args);
+        if (this.elevation) {
+          this.elevation.visible = false;
+          this.elevation.renderable = false;
+          this.elevation.text = "";
+        }
+      };
+    }
   }
 
-  if (typeof TokenCls.prototype._refreshTooltip === "function") {
-    const originalRefreshTooltip = TokenCls.prototype._refreshTooltip;
-    TokenCls.prototype._refreshTooltip = function (...args) {
-      originalRefreshTooltip.apply(this, args);
-      if (this.tooltip) {
-        this.tooltip.visible = false;
-        this.tooltip.renderable = false;
-        this.tooltip.text = "";
-      }
-    };
-  }
-
-  if (typeof TokenCls.prototype._refreshElevation === "function") {
-    const originalRefreshElevation = TokenCls.prototype._refreshElevation;
-    TokenCls.prototype._refreshElevation = function (...args) {
-      originalRefreshElevation.apply(this, args);
-      if (this.elevation) {
-        this.elevation.visible = false;
-        this.elevation.renderable = false;
-        this.elevation.text = "";
-      }
-    };
-  }
-
-  // When nameplate or token transforms are refreshed, re-render AC & Elevation badges
-  if (typeof TokenCls.prototype._refreshNameplate === "function") {
-    const originalRefreshNameplate = TokenCls.prototype._refreshNameplate;
-    TokenCls.prototype._refreshNameplate = function (...args) {
-      originalRefreshNameplate.apply(this, args);
-      renderTokenAcBadge(this);
-    };
-  }
-
-  // Foundry v11/v12/v13/v14 hook into token refresh
-  Hooks.on("refreshToken", (token) => {
-    if (token?.actor) renderTokenAcBadge(token);
-  });
-
+  // Hook into Foundry scene controls for GM Master Toggle
   Hooks.on("renderSceneControls", (controls, html) => {
     if (!game.user.isGM) return;
     if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
@@ -305,45 +313,33 @@ export function initTokenAc() {
       ui.controls.render(true);
     }
 
-    function refreshElevationVisuals(t) {
-      if (t.tooltip) {
-        t.tooltip.visible = false;
-        t.tooltip.renderable = false;
-        t.tooltip.text = "";
-      }
-      if (t.elevation) {
-        t.elevation.visible = false;
-        t.elevation.renderable = false;
-        t.elevation.text = "";
-      }
-      if (t._refreshTooltip) t._refreshTooltip();
-      if (t._refreshElevation) t._refreshElevation();
-    }
+    // Sync all active tokens
+    canvas.tokens?.placeables.forEach(t => renderTokenAcBadge(t));
 
-    canvas.tokens?.placeables.forEach(t => {
-      renderTokenAcBadge(t);
-      refreshElevationVisuals(t);
+    // Pan / Zoom update listener
+    Hooks.on("canvasPan", () => updateAllBadgePositions());
+
+    // Token movement / refresh listeners
+    Hooks.on("refreshToken", (token) => {
+      if (token?.actor) renderTokenAcBadge(token);
     });
 
     Hooks.on("drawToken", (token) => {
-      if (!token?.actor) return;
-      renderTokenAcBadge(token);
-      refreshElevationVisuals(token);
+      if (token?.actor) renderTokenAcBadge(token);
+    });
+
+    Hooks.on("destroyToken", (token) => {
+      if (token?.id) removeTokenOverlay(token.id);
+    });
+
+    Hooks.on("deleteToken", (document) => {
+      if (document?.id) removeTokenOverlay(document.id);
     });
 
     Hooks.on("updateToken", (document, change) => {
       const token = document.object;
       if (!token) return;
-
-      // Redraw if texture, scale, elevation, or showAC flag changed
-      if (
-        foundry.utils.hasProperty(change, "texture") ||
-        foundry.utils.hasProperty(change, "elevation") ||
-        foundry.utils.hasProperty(change, `flags.${MODULE_ID}.${FLAGS.SHOW_AC}`) ||
-        foundry.utils.hasProperty(change, "flags.world.showAC")
-      ) {
-        renderTokenAcBadge(token);
-      }
+      renderTokenAcBadge(token);
     });
 
     Hooks.on("updateActor", (actor, change) => {
@@ -358,4 +354,3 @@ export function initTokenAc() {
 globalThis.renderTokenAcBadge = renderTokenAcBadge;
 globalThis.renderTokenElevationBadge = renderTokenElevationBadge;
 globalThis.getGlobalShowAC = getGlobalShowAC;
-
