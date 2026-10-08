@@ -1,4 +1,4 @@
-import { renderTokenAcBadge, getGlobalShowAC } from "./token-ac.js";
+import { renderTokenAcBadge } from "./token-ac.js";
 
 export function initTokenHud() {
   if (!game.settings.get("cheapdice", "featureTokenHud")) return;
@@ -348,8 +348,38 @@ export function initTokenHud() {
     }
     colLeft.appendChild(measureBtn);
 
-    // Render AC, Elevation, and Spell DC badges in HUD top row for owned tokens
-    renderHudBadges(token, colMiddle, true);
+    // Spell Save DC for owned tokens
+    const actorSystem = token.actor?.system;
+    const hasSpellcasting = Boolean(actorSystem?.attributes?.spellcasting);
+    const rawDC = actorSystem?.attributes?.spell?.dc ?? actorSystem?.attributes?.spelldc;
+
+    if (hasSpellcasting && rawDC && rawDC > 0) {
+      colMiddle.querySelector(".spell-dc")?.remove();
+
+      const dcBadge = document.createElement("div");
+      dcBadge.className = "attribute spell-dc";
+      dcBadge.title = "Spell Save DC";
+      dcBadge.style.cssText = `
+        position: absolute;
+        top: -38px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.85);
+        border: 1px solid #7a7971;
+        border-radius: 4px;
+        color: #fff;
+        padding: 2px 7px;
+        font-size: 18px;
+        font-weight: bold;
+        line-height: 1.2;
+        pointer-events: none;
+        white-space: nowrap;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        z-index: 100;
+      `;
+      dcBadge.innerHTML = `<i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i>${rawDC}`;
+      colMiddle.appendChild(dcBadge);
+    }
 
     const allInputs = Array.from(colMiddle.querySelectorAll('.attribute input'));
     const bottomInput = allInputs[allInputs.length - 1];
@@ -473,101 +503,4 @@ export function initTokenHud() {
     colRight.appendChild(makeButton("Slot 2", "fas fa-square-2", () => runHotbarSlot(49)));
     colRight.appendChild(makeButton("Slot 3", "fas fa-square-3", () => runHotbarSlot(50)));
   });
-
-  /**
-   * Helper to render AC, Elevation, and optionally Spell DC badges in the top row of Token HUD.
-   */
-  function renderHudBadges(token, colMiddle, includeSpellDC = true) {
-    colMiddle.querySelector(".cheapdice-hud-badges-row")?.remove();
-
-    const row = document.createElement("div");
-    row.className = "cheapdice-hud-badges-row";
-    row.style.cssText = `
-      position: absolute;
-      top: -38px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      pointer-events: none;
-      white-space: nowrap;
-      z-index: 100;
-    `;
-
-    // Elevation badge: Blue accent, hidden if elevation === 0
-    const elevationValue = Number(token.document.elevation ?? 0);
-    if (elevationValue !== 0) {
-      const elevBadge = document.createElement("div");
-      elevBadge.className = "attribute cheapdice-hud-elev-badge";
-      elevBadge.title = "Elevation";
-      elevBadge.style.cssText = `
-        background: rgba(0, 0, 0, 0.85);
-        border: 1px solid #4a90e2;
-        border-radius: 4px;
-        color: #fff;
-        padding: 2px 7px;
-        font-size: 18px;
-        font-weight: bold;
-        line-height: 1.2;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-      `;
-      elevBadge.innerHTML = `<i class="fa-solid fa-arrow-up-right-dots" style="margin-right: 4px; color: #4a90e2;"></i>${elevationValue > 0 ? "+" : ""}${elevationValue}`;
-      row.appendChild(elevBadge);
-    }
-
-    // AC badge: Gold accent, shown if master toggle is on AND token flag is enabled
-    const masterAC = getGlobalShowAC();
-    const tokenShowAC = Boolean(token.document.getFlag("world", "showAC") ?? token.document.getFlag("cheapdice", "showAC"));
-    if (masterAC && tokenShowAC) {
-      const acValue = String(token.actor?.system?.attributes?.ac?.value ?? token.actor?.system?.attributes?.ac ?? "--");
-      const acBadge = document.createElement("div");
-      acBadge.className = "attribute cheapdice-hud-ac-badge";
-      acBadge.title = "Armor Class (AC)";
-      acBadge.style.cssText = `
-        background: rgba(0, 0, 0, 0.85);
-        border: 1px solid #d4af37;
-        border-radius: 4px;
-        color: #fff;
-        padding: 2px 7px;
-        font-size: 18px;
-        font-weight: bold;
-        line-height: 1.2;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-      `;
-      acBadge.innerHTML = `<i class="fas fa-shield-halved" style="margin-right: 4px; color: #d4af37;"></i>${acValue}`;
-      row.appendChild(acBadge);
-    }
-
-    // Spell Save DC: only for owned tokens if requested
-    if (includeSpellDC) {
-      const actorSystem = token.actor?.system;
-      const hasSpellcasting = Boolean(actorSystem?.attributes?.spellcasting);
-      const rawDC = actorSystem?.attributes?.spell?.dc ?? actorSystem?.attributes?.spelldc;
-      if (hasSpellcasting && rawDC && rawDC > 0) {
-        const dcBadge = document.createElement("div");
-        dcBadge.className = "attribute spell-dc";
-        dcBadge.title = "Spell Save DC";
-        dcBadge.style.cssText = `
-          background: rgba(0, 0, 0, 0.85);
-          border: 1px solid #7a7971;
-          border-radius: 4px;
-          color: #fff;
-          padding: 2px 7px;
-          font-size: 18px;
-          font-weight: bold;
-          line-height: 1.2;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-        `;
-        dcBadge.innerHTML = `<i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i>${rawDC}`;
-        row.appendChild(dcBadge);
-      }
-    }
-
-    if (row.children.length > 0) {
-      colMiddle.appendChild(row);
-    }
-  }
 }
