@@ -27,8 +27,12 @@ export function renderTokenAcBadge(token) {
 
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
   const tokenSize = Math.min(token.w, token.h);
+  // Purely proportional to token size so it stays identical relative to the token across any grid density (e.g. 22px to 200px+)
+  const fontSize = Math.max(4, Math.round(tokenSize * 0.20));
+  const badgeHeight = Math.round(tokenSize * 0.28);
+
   // Render matching elevation badge independently whenever token elevation is non-zero
-  renderTokenElevationBadge(token);
+  renderTokenElevationBadge(token, fontSize, badgeHeight);
 
   // Check master AC toggle and per-token AC flag
   const tokenShowAC = Boolean(
@@ -43,18 +47,10 @@ export function renderTokenAcBadge(token) {
 
   const acValue = String(token.actor.system?.attributes?.ac?.value ?? token.actor.system?.attributes?.ac ?? "--");
 
-  // Uniform proportional scaling: render at base reference size (token size 100) and scale container
-  const baseScale = tokenSize / 100;
-  const baseFontSize = 20;
-  const baseBadgeHeight = 28;
-  const baseBadgeWidth = Math.round(baseFontSize * (acValue.length > 2 ? 2.2 : 1.9));
-  const basePaddingX = 4;
-  const basePaddingY = 4;
-
-  const badgeWidth = baseBadgeWidth * baseScale;
-  const badgeHeight = baseBadgeHeight * baseScale;
-  const paddingX = basePaddingX * baseScale;
-  const paddingY = basePaddingY * baseScale;
+  // Proportional sizing based on token width so it stays identical relative to the token on every map
+  const badgeWidth = Math.round(fontSize * (acValue.length > 2 ? 2.2 : 1.9));
+  const paddingX = Math.round(tokenSize * 0.04);
+  const paddingY = Math.round(tokenSize * 0.04);
 
   // If elevation is visible or token has elevation > 0, bias AC to the right, otherwise center
   const hasElevation = Boolean(token.document.elevation);
@@ -74,7 +70,7 @@ export function renderTokenAcBadge(token) {
 
     const style = new PIXI.TextStyle({
       fontFamily: token.nameplate?.style?.fontFamily || "Signika, sans-serif",
-      fontSize: baseFontSize,
+      fontSize: fontSize,
       fontWeight: "bold",
       fill: "#ffffff",
       align: "center"
@@ -83,31 +79,29 @@ export function renderTokenAcBadge(token) {
     const text = new PIXI.Text(acValue, style);
     text.name = "acBadgeText";
     text.anchor.set(0.5, 0.5);
-    text.resolution = Math.max(2, Math.round(2 / Math.min(baseScale, 1)));
     acContainer.addChild(text);
 
     token.bars.addChild(acContainer);
   }
 
-  // Draw background at base reference coordinates
+  // Draw/update background box geometry based on current dynamic dimensions
   const bg = acContainer.getChildByName("acBadgeBg");
   if (bg) {
     bg.clear();
     bg.beginFill(0x000000, 0.85);
-    bg.lineStyle(1.6, 0xd4af37, 1);
-    bg.drawRoundedRect(0, 0, baseBadgeWidth, baseBadgeHeight, 5);
+    bg.lineStyle(Math.max(1, Math.round(fontSize * 0.08)), 0xd4af37, 1);
+    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.18));
     bg.endFill();
   }
 
-  // Update text value and ensure crisp resolution when zooming
+  // Update text value and ensure style matches target fontSize
   const text = acContainer.getChildByName("acBadgeText");
   if (text) {
     if (text.text !== acValue) text.text = acValue;
-    text.resolution = Math.max(2, Math.round(2 / Math.min(baseScale, 1)));
-    text.position.set(baseBadgeWidth / 2, baseBadgeHeight / 2);
+    if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
+    text.position.set(badgeWidth / 2, badgeHeight / 2);
   }
 
-  acContainer.scale.set(baseScale, baseScale);
   acContainer.position.set(xPos, yPos);
 }
 
@@ -124,17 +118,12 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
   }
 
   const tokenSize = Math.min(token.w, token.h);
-  const baseScale = tokenSize / 100;
-  const baseFontSize = 20;
-  const baseBadgeHeight = 28;
+  fontSize = fontSize ?? Math.max(4, Math.round(tokenSize * 0.20));
+  badgeHeight = badgeHeight ?? Math.round(tokenSize * 0.28);
   const elevText = `${elevationValue > 0 ? "+" : ""}${elevationValue}`;
-  const baseBadgeWidth = Math.round(baseFontSize * (elevText.length > 3 ? 2.3 : 1.9));
-  const basePaddingX = 4;
-  const basePaddingY = 4;
-
-  const badgeHeight = baseBadgeHeight * baseScale;
-  const paddingX = basePaddingX * baseScale;
-  const paddingY = basePaddingY * baseScale;
+  const badgeWidth = Math.round(fontSize * (elevText.length > 3 ? 2.3 : 1.9));
+  const paddingX = Math.round(tokenSize * 0.04);
+  const paddingY = Math.round(tokenSize * 0.04);
   const xPos = paddingX;
   const tokenScale = Math.max(Math.abs(token.document.texture?.scaleX ?? 1), 1);
   const visualTopOffset = Math.max(0, (token.h * (tokenScale - 1)) / 2);
@@ -150,7 +139,7 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
 
     const style = new PIXI.TextStyle({
       fontFamily: token.nameplate?.style?.fontFamily || "Signika, sans-serif",
-      fontSize: baseFontSize,
+      fontSize: fontSize,
       fontWeight: "bold",
       fill: "#ffffff",
       align: "center"
@@ -159,30 +148,28 @@ export function renderTokenElevationBadge(token, fontSize, badgeHeight) {
     const text = new PIXI.Text(elevText, style);
     text.name = "elevationBadgeText";
     text.anchor.set(0.5, 0.5);
-    text.resolution = Math.max(2, Math.round(2 / Math.min(baseScale, 1)));
     elevContainer.addChild(text);
 
     token.bars.addChild(elevContainer);
   }
 
-  // Draw background matching AC badge aesthetic at base reference scale
+  // Draw background matching AC badge aesthetic
   const bg = elevContainer.getChildByName("elevationBadgeBg");
   if (bg) {
     bg.clear();
     bg.beginFill(0x000000, 0.85);
-    bg.lineStyle(1.6, 0x4a90e2, 1);
-    bg.drawRoundedRect(0, 0, baseBadgeWidth, baseBadgeHeight, 5);
+    bg.lineStyle(Math.max(1, Math.round(fontSize * 0.08)), 0x4a90e2, 1);
+    bg.drawRoundedRect(0, 0, badgeWidth, badgeHeight, Math.round(badgeHeight * 0.18));
     bg.endFill();
   }
 
   const text = elevContainer.getChildByName("elevationBadgeText");
   if (text) {
     if (text.text !== elevText) text.text = elevText;
-    text.resolution = Math.max(2, Math.round(2 / Math.min(baseScale, 1)));
-    text.position.set(baseBadgeWidth / 2, baseBadgeHeight / 2);
+    if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
+    text.position.set(badgeWidth / 2, badgeHeight / 2);
   }
 
-  elevContainer.scale.set(baseScale, baseScale);
   elevContainer.position.set(xPos, yPos);
 }
 
