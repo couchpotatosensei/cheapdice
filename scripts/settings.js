@@ -36,5 +36,14 @@ export function registerSettings() {
       }
     }
   });
+
+  game.settings.register(MODULE_ID, SETTINGS.FEATURES.CORE_SETTINGS_ENFORCER, {
+    name: "Enforce Core Settings",
+    hint: "Automatically sets preferred Foundry VTT core and system configurations upon GM login.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
 }
 

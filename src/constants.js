@@ -15,6 +15,7 @@ export const SETTINGS = {
     PRESET_EDITORS: "featurePresetEditors",
     SOCKET_HANDLERS: "featureSocketHandlers",
     ANIMATIONS: "featureAnimations",
-    MACRO_GENERATOR: "enableMacroGenerator"
+    MACRO_GENERATOR: "enableMacroGenerator",
+    CORE_SETTINGS_ENFORCER: "coreSettingsEnforcer"
   }
 };
