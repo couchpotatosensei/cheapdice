@@ -1893,6 +1893,16 @@ export function initActionEditors() {
       ).join('');
     }
 
+    function escapeHTML(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
     function renderUnifiedManager() {
       const isWeapons = activeCategory === "weapons";
       const flagKey = isWeapons ? "attackConfigs" : "spellConfigs";
@@ -1926,7 +1936,8 @@ export function initActionEditors() {
         ? keys.map(k => {
             const slot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === activeCategory && data?.name === k)?.[0];
             const badge = slot ? ` [HUD Button ${slot}]` : "";
-            return `<option value="${k}">${k}${badge}</option>`;
+            const escapedKey = escapeHTML(k);
+            return `<option value="${escapedKey}">${escapedKey}${escapeHTML(badge)}</option>`;
           }).join("")
         : `<option value="">-- No configured ${isWeapons ? 'weapons' : 'spells'} --</option>`;
 
@@ -2074,14 +2085,14 @@ export function initActionEditors() {
               const promptHtml = `
               <div style="font-family: inherit; padding: 4px;">
                 <label style="font-weight: bold; font-size: 0.85em; display: block; margin-bottom: 3px;">Macro Name:</label>
-                <input type="text" id="qm-name-input" value="${actor.name}: ${choice}" style="width: 100%; height: 28px; font-size: 0.9em; margin-bottom: 6px;" />
+                <input type="text" id="qm-name-input" value="${escapeHTML(`${actor.name}: ${choice}`)}" style="width: 100%; height: 28px; font-size: 0.9em; margin-bottom: 6px;" />
                 ${gwmToggleHtml}
                 ${extrasCheckboxesHtml}
               </div>
             `;
 
               new Dialog({
-                title: `Configure Quick Macro: ${choice}`,
+                title: `Configure Quick Macro: ${escapeHTML(choice)}`,
                 content: promptHtml,
                 buttons: {
                   create: {
@@ -2324,11 +2335,11 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
         <div style="display: flex; gap: 8px; margin-bottom: 8px;">
           <div style="flex: 1;">
             <label style="font-weight: bold; font-size: 0.85em; display: block; margin-bottom: 2px;">Action Name:</label>
-            <input type="text" name="macroName" value="${item.macroName ?? name}" style="width: 100%; height: 28px; font-size: 0.9em;"/>
+            <input type="text" name="macroName" value="${escapeHTML(item.macroName ?? name)}" style="width: 100%; height: 28px; font-size: 0.9em;"/>
           </div>
           <div style="flex: 1;">
             <label style="font-weight: bold; font-size: 0.85em; display: block; margin-bottom: 2px;">Chat Card Title:</label>
-            <input type="text" name="chatCardTitle" value="${item.chatCardTitle ?? name}" style="width: 100%; height: 28px; font-size: 0.9em;"/>
+            <input type="text" name="chatCardTitle" value="${escapeHTML(item.chatCardTitle ?? name)}" style="width: 100%; height: 28px; font-size: 0.9em;"/>
           </div>
         </div>
 
@@ -2546,7 +2557,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
       <form style="padding: 5px; font-family: inherit;">
         <div class="form-group" style="margin-bottom: 8px;">
           <label style="font-weight: bold; display: block; font-size: 0.85em;">Spell Name:</label>
-          <input type="text" name="spellName" value="${s.spellName ?? name}" style="width: 100%; height: 28px; font-size: 0.9em;" />
+          <input type="text" name="spellName" value="${escapeHTML(s.spellName ?? name)}" style="width: 100%; height: 28px; font-size: 0.9em;" />
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
