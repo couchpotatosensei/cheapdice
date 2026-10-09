@@ -14,6 +14,7 @@ export const SETTINGS = {
     CUSTOM_ROLLS: "featureCustomRolls",
     PRESET_EDITORS: "featurePresetEditors",
     SOCKET_HANDLERS: "featureSocketHandlers",
-    ANIMATIONS: "featureAnimations"
+    ANIMATIONS: "featureAnimations",
+    MACRO_GENERATOR: "enableMacroGenerator"
   }
 };

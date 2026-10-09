@@ -20,5 +20,21 @@ export function registerSettings() {
   registerFeature(SETTINGS.FEATURES.PRESET_EDITORS, "Preset & Action Editors", "Enables D20 preset editors and Action Builder/Generator tools.");
   registerFeature(SETTINGS.FEATURES.SOCKET_HANDLERS, "SocketLib Remote Handlers", "Enables SocketLib registration for automated combat and timer broadcasts.");
   registerFeature(SETTINGS.FEATURES.ANIMATIONS, "Automated Animations & Sequencer", "Enables Sequencer and Automated Animations integrations.");
+
+  game.settings.register(MODULE_ID, SETTINGS.FEATURES.MACRO_GENERATOR, {
+    name: "[Feature] Macro Generator",
+    hint: "Automatically creates and updates module utility macros in the world macro directory.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    requiresReload: false,
+    onChange: async (value) => {
+      if (value && game.user.isGM) {
+        const { generateModuleMacros } = await import("../modules/macro-generator.js");
+        generateModuleMacros({ forceHotbar: true });
+      }
+    }
+  });
 }
 

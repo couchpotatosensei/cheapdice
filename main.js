@@ -11,6 +11,7 @@ import { initElevation } from "./modules/elevation.js";
 import { initSockets } from "./modules/socket-handlers.js";
 import { initCustomRolls } from "./modules/custom-rolls.js";
 import { initActionEditors } from "./modules/action-editors.js";
+import { initMacroGenerator } from "./modules/macro-generator.js";
 
 // Global namespace initializations (legacy compatibility)
 window.CustomRolls = window.CustomRolls || {};
@@ -79,6 +80,10 @@ function initializeFeatures() {
 
   if (game.settings.get(MODULE_ID, SETTINGS.FEATURES.PRESET_EDITORS)) {
     initActionEditors();
+  }
+
+  if (game.settings.get(MODULE_ID, SETTINGS.FEATURES.MACRO_GENERATOR)) {
+    initMacroGenerator();
   }
 }
 
