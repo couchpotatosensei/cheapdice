@@ -106,6 +106,42 @@ function registerSocketHandlers() {
     }
   };
 
+  // --- Helper: DM Chat Card Disposition Outline Wrapper ---
+  function getCardDispositionWrapper(actor, token, userId, innerHtml) {
+    const rollUser = game.users.get(userId) || game.user;
+    // Only apply if the executing user is a GM
+    if (!rollUser?.isGM) return innerHtml;
+
+    // If the token is player-owned, do not apply an outline
+    if (actor?.hasPlayerOwner) return innerHtml;
+
+    const tok = token || actor?.getActiveTokens?.()[0];
+    const disposition = tok?.document?.disposition ?? actor?.prototypeToken?.disposition;
+
+    // Match Foundry token border colors:
+    // FRIENDLY = #43dfdf (cyan), NEUTRAL = #f1d836 (yellow), HOSTILE = #e72124 (red), SECRET = #a612d3 (purple)
+    let borderColor = null;
+    let glowColor = null;
+
+    if (disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE) {
+      borderColor = "rgba(231, 33, 36, 0.75)";
+      glowColor = "rgba(231, 33, 36, 0.18)";
+    } else if (disposition === CONST.TOKEN_DISPOSITIONS.NEUTRAL) {
+      borderColor = "rgba(241, 216, 54, 0.75)";
+      glowColor = "rgba(241, 216, 54, 0.18)";
+    } else if (disposition === CONST.TOKEN_DISPOSITIONS.FRIENDLY) {
+      borderColor = "rgba(67, 223, 223, 0.75)";
+      glowColor = "rgba(67, 223, 223, 0.18)";
+    } else if (disposition === CONST.TOKEN_DISPOSITIONS.SECRET) {
+      borderColor = "rgba(166, 18, 211, 0.75)";
+      glowColor = "rgba(166, 18, 211, 0.18)";
+    }
+
+    if (!borderColor) return innerHtml;
+
+    return `<div style="border: 1.5px solid ${borderColor}; border-radius: 6px; padding: 6px 8px; box-shadow: 0 0 8px 1px ${glowColor}, inset 0 0 6px 0 ${glowColor}; background: linear-gradient(to bottom, ${glowColor} 0%, transparent 18%);">${innerHtml}</div>`;
+  }
+
   // --- 2.2 Attack Execution Handler ---
   socket.register("runAttackRoll", async (config, actorId, userId) => {
     const actor = game.actors.get(actorId);
@@ -608,7 +644,7 @@ function registerSocketHandlers() {
     await ChatMessage.create({
       user: userId,
       speaker: speaker,
-      content: chatContent,
+      content: getCardDispositionWrapper(actor, token, userId, chatContent),
       rolls: finalRolls,
       sound: CONFIG.sounds.dice,
       flags: {
@@ -870,7 +906,7 @@ function registerSocketHandlers() {
       await ChatMessage.create({
         user: userId,
         speaker: speaker,
-        content: healCard,
+        content: getCardDispositionWrapper(actor, token, userId, healCard),
         rolls: [rollObj],
         sound: CONFIG.sounds.dice,
         flags: {
@@ -911,7 +947,7 @@ function registerSocketHandlers() {
       return await ChatMessage.create({
         user: userId,
         speaker: speaker,
-        content: utilityCard
+        content: getCardDispositionWrapper(actor, token, userId, utilityCard)
       });
     }
 
@@ -984,7 +1020,7 @@ function registerSocketHandlers() {
       await ChatMessage.create({
         user: userId,
         speaker: speaker,
-        content: autoCard,
+        content: getCardDispositionWrapper(actor, token, userId, autoCard),
         rolls: rolledObjects,
         sound: CONFIG.sounds.dice,
         flags: {
@@ -1150,7 +1186,7 @@ function registerSocketHandlers() {
       await ChatMessage.create({
         user: userId,
         speaker: speaker,
-        content: attackCard,
+        content: getCardDispositionWrapper(actor, token, userId, attackCard),
         rolls: rolledObjects,
         sound: CONFIG.sounds.dice,
         flags: {
@@ -1312,7 +1348,7 @@ function registerSocketHandlers() {
     await ChatMessage.create({
       user: userId,
       speaker: speaker,
-      content: saveCard,
+      content: getCardDispositionWrapper(actor, token, userId, saveCard),
       rolls: [damageRoll],
       sound: CONFIG.sounds.dice,
       flags: {
@@ -1667,7 +1703,7 @@ function registerSocketHandlers() {
     return await ChatMessage.create({
       user: userId,
       speaker: ChatMessage.getSpeaker({ actor }),
-      content: cardContent,
+      content: getCardDispositionWrapper(actor, token, userId, cardContent),
       rolls: chatRolls,
       sound: CONFIG.sounds.dice
     });
