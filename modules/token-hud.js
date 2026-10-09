@@ -90,7 +90,7 @@ export function initTokenHud() {
                   ${extras.map((ex, i) => `
                     <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; padding: 3px 6px; background: rgba(0,0,0,0.03); border: 1px solid #e0e0e0; border-radius: 4px; cursor: pointer;">
                       <span><strong>${ex.label || 'Extra ' + (i + 1)}</strong> <small style="color: #666;">(${ex.formula})</small></span>
-                      <input type="checkbox" class="hud-prompt-extra" data-index="${i}" ${ex.isActive ? 'checked' : ''} style="margin: 0;">
+                      <input type="checkbox" class="hud-prompt-extra" data-index="${i}" style="margin: 0;">
                     </label>
                   `).join("")}
                 </div>
