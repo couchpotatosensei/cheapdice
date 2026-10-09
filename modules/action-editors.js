@@ -1917,8 +1917,17 @@ export function initActionEditors() {
         await actor.setFlag("world", flagKey, newData, { recursive: false });
       }
 
+      const assignedSlots = foundry.utils.deepClone(
+        window.CustomRolls.getProfileData(actor, "hudAssignedSlots") ||
+        actor.getFlag("world", "hudAssignedSlots") || {}
+      );
+
       const selectOptions = keys.length > 0
-        ? keys.map(k => `<option value="${k}">${k}</option>`).join("")
+        ? keys.map(k => {
+            const slot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === activeCategory && data?.name === k)?.[0];
+            const badge = slot ? ` [HUD Button ${slot}]` : "";
+            return `<option value="${k}">${k}${badge}</option>`;
+          }).join("")
         : `<option value="">-- No configured ${isWeapons ? 'weapons' : 'spells'} --</option>`;
 
       const content = `
@@ -1938,6 +1947,19 @@ export function initActionEditors() {
           </label>
           <select id="action-choice" style="width: 100%; height: 32px; font-size: 0.9em; border-radius: 4px; border: 1px solid #7289da; padding: 2px 6px;">
             ${selectOptions}
+          </select>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div>
+            <label style="font-weight: bold; font-size: 0.85em; display: block; color: #2b7489;">HUD Button Assignment:</label>
+            <span style="font-size: 0.72em; color: #666; display: block;">Fallback for token HUD when hotbar slot is unassigned.</span>
+          </div>
+          <select id="action-hud-slot" style="height: 28px; font-size: 0.85em; border-radius: 4px; border: 1px solid #2b7489; padding: 2px 6px;">
+            <option value="">None</option>
+            <option value="1">Button 1 (Slot 48 fallback)</option>
+            <option value="2">Button 2 (Slot 49 fallback)</option>
+            <option value="3">Button 3 (Slot 50 fallback)</option>
           </select>
         </div>
       </div>
@@ -2145,6 +2167,20 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               if (!choice) return;
               delete allConfigs[choice];
               await saveAllData(allConfigs);
+
+              // Clear HUD slot assignment if this item was assigned
+              let slotChanged = false;
+              for (const [slotNum, slotData] of Object.entries(assignedSlots)) {
+                if (slotData?.category === activeCategory && slotData?.name === choice) {
+                  delete assignedSlots[slotNum];
+                  slotChanged = true;
+                }
+              }
+              if (slotChanged) {
+                await window.CustomRolls.setProfileData(actor, "hudAssignedSlots", assignedSlots);
+                await actor.setFlag("world", "hudAssignedSlots", assignedSlots);
+              }
+
               ui.notifications.warn(`Deleted "${choice}" from Persistent Storage.`);
               renderUnifiedManager();
             }
@@ -2156,6 +2192,52 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
         },
         default: "edit",
         render: (html) => {
+          const actionChoice = html.find('#action-choice');
+          const hudSlotSelect = html.find('#action-hud-slot');
+
+          const updateHudSlotSelect = () => {
+            const currentChoice = actionChoice.val();
+            if (!currentChoice) {
+              hudSlotSelect.val("");
+              return;
+            }
+            const foundSlot = Object.entries(assignedSlots).find(
+              ([sNum, data]) => data?.category === activeCategory && data?.name === currentChoice
+            )?.[0];
+            hudSlotSelect.val(foundSlot || "");
+          };
+
+          updateHudSlotSelect();
+          actionChoice.on('change', updateHudSlotSelect);
+
+          hudSlotSelect.on('change', async () => {
+            const currentChoice = actionChoice.val();
+            if (!currentChoice) return;
+            const newSlot = hudSlotSelect.val();
+
+            // Clear any previous assignment for this item
+            for (const [slotNum, slotData] of Object.entries(assignedSlots)) {
+              if (slotData?.category === activeCategory && slotData?.name === currentChoice) {
+                delete assignedSlots[slotNum];
+              }
+            }
+
+            // If a slot was chosen, assign it (overwriting whatever was on that slot before)
+            if (newSlot) {
+              assignedSlots[newSlot] = {
+                category: activeCategory,
+                name: currentChoice,
+                handler: activeCategory === "weapons" ? "runAttackRoll" : "runSpellAttackRoll"
+              };
+            }
+
+            await window.CustomRolls.setProfileData(actor, "hudAssignedSlots", assignedSlots);
+            await actor.setFlag("world", "hudAssignedSlots", assignedSlots);
+            ui.notifications.info(newSlot ? `Assigned "${currentChoice}" to HUD Button ${newSlot}.` : `Unassigned "${currentChoice}" from HUD buttons.`);
+            dlg.close();
+            renderUnifiedManager();
+          });
+
           html.find('#tab-btn-weapon').on('click', () => {
             if (activeCategory !== "weapons") {
               activeCategory = "weapons";

@@ -34,6 +34,44 @@ export function initTokenHud() {
       return btn;
     };
 
+    // Helper: HUD Button Slot Runner (Player Hotbar Priority, DM Assigned Action Fallback)
+    const runHudButtonSlot = async (buttonNumber, slotIndex) => {
+      // 1. Priority: User's hotbar slot macro
+      const macroId = game.user.hotbar[slotIndex];
+      const macro = game.macros.get(macroId);
+      if (macro) {
+        return macro.execute({ actor: token.actor, token: token });
+      }
+
+      // 2. Fallback: DM assigned action on the actor
+      const assignedSlots = window.CustomRolls?.getProfileData?.(token.actor, "hudAssignedSlots")
+        || token.actor.getFlag("world", "hudAssignedSlots")
+        || {};
+      const assignment = assignedSlots[buttonNumber] || assignedSlots[String(buttonNumber)];
+
+      if (assignment?.name) {
+        const flagKey = assignment.category === "spells" ? "spellConfigs" : "attackConfigs";
+        const configs = window.CustomRolls?.getProfileData?.(token.actor, flagKey)
+          || token.actor.getFlag("world", flagKey)
+          || {};
+        const config = configs[assignment.name];
+
+        if (!config) {
+          return ui.notifications.warn(`Assigned action "${assignment.name}" not found in actor configurations.`);
+        }
+
+        if (!globalThis.attackSocket) {
+          return ui.notifications.error("SocketLib handler is not initialized.");
+        }
+
+        const handler = assignment.handler || (assignment.category === "spells" ? "runSpellAttackRoll" : "runAttackRoll");
+        return await globalThis.attackSocket.executeAsGM(handler, config, token.actor.id, game.user.id);
+      }
+
+      // 3. Neither hotbar macro nor assigned action configured
+      ui.notifications.info(`Button ${buttonNumber}: Hotbar slot ${slotIndex} is empty and no action is assigned.`);
+    };
+
     // Helper: Hotbar Slot Runner
     const runHotbarSlot = (slotIndex) => {
       const macroId = game.user.hotbar[slotIndex];
@@ -499,8 +537,31 @@ export function initTokenHud() {
     leftFlyoutWrapper.appendChild(leftFlyout);
     colLeft.appendChild(leftFlyoutWrapper);
 
-    colRight.appendChild(makeButton("Slot 1", "fas fa-square-1", () => runHotbarSlot(48)));
-    colRight.appendChild(makeButton("Slot 2", "fas fa-square-2", () => runHotbarSlot(49)));
-    colRight.appendChild(makeButton("Slot 3", "fas fa-square-3", () => runHotbarSlot(50)));
+    const getButtonInfo = (btnNum, slotIdx) => {
+      const macroId = game.user.hotbar[slotIdx];
+      const macro = game.macros.get(macroId);
+      if (macro) {
+        return { title: `Hotbar ${slotIdx}: ${macro.name}`, icon: `fas fa-square-${btnNum}` };
+      }
+
+      const assignedSlots = window.CustomRolls?.getProfileData?.(token.actor, "hudAssignedSlots")
+        || token.actor.getFlag("world", "hudAssignedSlots")
+        || {};
+      const assignment = assignedSlots[btnNum] || assignedSlots[String(btnNum)];
+      if (assignment?.name) {
+        const typeLabel = assignment.category === "spells" ? "Spell" : "Weapon";
+        return { title: `HUD ${btnNum} (${typeLabel}): ${assignment.name}`, icon: `fas fa-square-${btnNum}` };
+      }
+
+      return { title: `Slot ${btnNum} (Hotbar ${slotIdx})`, icon: `fas fa-square-${btnNum}` };
+    };
+
+    const b1 = getButtonInfo(1, 48);
+    const b2 = getButtonInfo(2, 49);
+    const b3 = getButtonInfo(3, 50);
+
+    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(1, 48)));
+    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(2, 49)));
+    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(3, 50)));
   });
 }
