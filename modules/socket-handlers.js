@@ -1369,6 +1369,7 @@ function registerSocketHandlers() {
   socket.register("runD20TestRoll", async (data, actorId, userId) => {
     const actor = game.actors.get(actorId);
     if (!actor) return ui.notifications.warn("Actor not found for D20 Test.");
+    const token = actor.getActiveTokens?.()[0] || null;
 
     const {
       rollType,
