@@ -207,14 +207,18 @@ function registerSocketHandlers() {
     let autoTargetedToken = null;
     let targetIds = Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
 
-    if (targetIds.length === 0 && token) {
+    const animationsEnabled = game.settings.get("cheapdice", "featureAnimations");
+    if (animationsEnabled && targetIds.length === 0 && token) {
       const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
       if (!isHostileNpc) {
-        const hostiles = canvas.tokens.placeables.filter(t =>
-          t.id !== token.id &&
-          t.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE &&
-          t.visible
-        );
+        const hostiles = canvas.tokens.placeables.filter(t => {
+          if (t.id === token.id) return false;
+          if (t.document.disposition !== CONST.TOKEN_DISPOSITIONS.HOSTILE) return false;
+          if (!t.visible || t.document.hidden) return false;
+          const isInvisible = t.actor?.statuses?.has?.("invisible") ||
+            t.actor?.effects?.some(e => !e.disabled && (e.statuses?.has?.("invisible") || /invis/i.test(e.name || "")));
+          return !isInvisible;
+        });
         if (hostiles.length > 0) {
           let nearestHostile = null;
           let minDistance = Infinity;
@@ -764,15 +768,19 @@ function registerSocketHandlers() {
     let autoTargetedToken = null;
     let targetIds = Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
 
+    const animationsEnabled = game.settings.get("cheapdice", "featureAnimations");
     // If not self/point/healing and no targets, auto-target nearest hostile for player / non-hostile tokens
-    if (targetIds.length === 0 && token && !isHealingType && targetType !== "self" && targetType !== "point") {
+    if (animationsEnabled && targetIds.length === 0 && token && !isHealingType && targetType !== "self" && targetType !== "point") {
       const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
       if (!isHostileNpc) {
-        const hostiles = canvas.tokens.placeables.filter(t =>
-          t.id !== token.id &&
-          t.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE &&
-          t.visible
-        );
+        const hostiles = canvas.tokens.placeables.filter(t => {
+          if (t.id === token.id) return false;
+          if (t.document.disposition !== CONST.TOKEN_DISPOSITIONS.HOSTILE) return false;
+          if (!t.visible || t.document.hidden) return false;
+          const isInvisible = t.actor?.statuses?.has?.("invisible") ||
+            t.actor?.effects?.some(e => !e.disabled && (e.statuses?.has?.("invisible") || /invis/i.test(e.name || "")));
+          return !isInvisible;
+        });
         if (hostiles.length > 0) {
           let nearestHostile = null;
           let minDistance = Infinity;
@@ -2379,11 +2387,14 @@ async function triggerSequencerAnimation(actor, config, rollUser = null, autoTar
   if (targets.length === 0) {
     const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
     if (!isHostileNpc) {
-      const hostiles = canvas.tokens.placeables.filter(t =>
-        t.id !== token.id &&
-        t.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE &&
-        t.visible
-      );
+      const hostiles = canvas.tokens.placeables.filter(t => {
+        if (t.id === token.id) return false;
+        if (t.document.disposition !== CONST.TOKEN_DISPOSITIONS.HOSTILE) return false;
+        if (!t.visible || t.document.hidden) return false;
+        const isInvisible = t.actor?.statuses?.has?.("invisible") ||
+          t.actor?.effects?.some(e => !e.disabled && (e.statuses?.has?.("invisible") || /invis/i.test(e.name || "")));
+        return !isInvisible;
+      });
 
       if (hostiles.length > 0) {
         let nearestHostile = null;
