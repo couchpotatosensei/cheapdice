@@ -65,7 +65,80 @@ export function initTokenHud() {
         }
 
         const handler = assignment.handler || (assignment.category === "spells" ? "runSpellAttackRoll" : "runAttackRoll");
-        return await globalThis.attackSocket.executeAsGM(handler, config, token.actor.id, game.user.id);
+        const rollConfig = foundry.utils.deepClone(config);
+        const extras = (rollConfig.additionalDamageComponents || []).filter(c => c && c.formula);
+        const hasGWM = Boolean(rollConfig.hasGWM);
+
+        // If extra damage components or GWM are present, prompt a quick toggle dialog
+        if (extras.length > 0 || hasGWM) {
+          let gwmHtml = "";
+          if (hasGWM) {
+            gwmHtml = `
+              <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #a34848; padding: 4px 6px; background: rgba(163,72,72,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+                <span>GWM / Sharpshooter (-5 / +10)</span>
+                <input type="checkbox" id="hud-prompt-gwm" style="margin: 0;">
+              </label>
+            `;
+          }
+
+          let extrasHtml = "";
+          if (extras.length > 0) {
+            extrasHtml = `
+              <div style="margin-bottom: 6px;">
+                <span style="font-weight: 700; font-size: 0.78em; color: #4b5d88; display: block; margin-bottom: 4px;">EXTRA DAMAGE SOURCES:</span>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  ${extras.map((ex, i) => `
+                    <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; padding: 3px 6px; background: rgba(0,0,0,0.03); border: 1px solid #e0e0e0; border-radius: 4px; cursor: pointer;">
+                      <span><strong>${ex.label || 'Extra ' + (i + 1)}</strong> <small style="color: #666;">(${ex.formula})</small></span>
+                      <input type="checkbox" class="hud-prompt-extra" data-index="${i}" ${ex.isActive ? 'checked' : ''} style="margin: 0;">
+                    </label>
+                  `).join("")}
+                </div>
+              </div>
+            `;
+          }
+
+          const promptHtml = `
+            <div style="font-family: inherit; padding: 4px 2px;">
+              ${gwmHtml}
+              ${extrasHtml}
+            </div>
+          `;
+
+          return new Dialog({
+            title: `${assignment.name}`,
+            content: promptHtml,
+            buttons: {
+              roll: {
+                icon: '<i class="fas fa-dice-d20"></i>',
+                label: "Roll",
+                callback: async (html) => {
+                  if (hasGWM && html.find("#hud-prompt-gwm").is(":checked")) {
+                    rollConfig.attackCircumstanceModifier = (Number(rollConfig.attackCircumstanceModifier) || 0) - 5;
+                    rollConfig.damageModifier = (Number(rollConfig.damageModifier) || 0) + 10;
+                    rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [GWM/SS]`;
+                  }
+
+                  if (rollConfig.additionalDamageComponents) {
+                    html.find(".hud-prompt-extra").each(function () {
+                      const idx = $(this).data("index");
+                      if (extras[idx]) {
+                        extras[idx].isActive = $(this).is(":checked");
+                      }
+                    });
+                  }
+
+                  return await globalThis.attackSocket.executeAsGM(handler, rollConfig, token.actor.id, game.user.id);
+                }
+              },
+              cancel: { label: "Cancel" }
+            },
+            default: "roll"
+          }, { width: 310, height: "auto" }).render(true);
+        }
+
+        // Direct roll when no extras or GWM exist
+        return await globalThis.attackSocket.executeAsGM(handler, rollConfig, token.actor.id, game.user.id);
       }
 
       // 3. Neither hotbar macro nor assigned action configured
