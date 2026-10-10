@@ -24,15 +24,29 @@ function setupChangeLevelBypass() {
   if (foundry.applications?.api?.DialogV2?.confirm) {
     const originalConfirm = foundry.applications.api.DialogV2.confirm;
 
-    foundry.applications.api.DialogV2.confirm = function (options = {}) {
+    foundry.applications.api.DialogV2.confirm = async function (options = {}) {
       const dialogId = options.id ?? "";
-
-      // Target dialogs originating specifically from RegionBehavior prompts
       const isRegionBehaviorPrompt = dialogId.startsWith("dialog-Scene.") && dialogId.includes(".RegionBehavior.");
 
       if (isRegionBehaviorPrompt) {
-        // Return true immediately so #confirmDialog proceeds without rendering UI
-        return Promise.resolve(true);
+        // 1. If a callback is defined on the affirmative button or options, execute it
+        if (typeof options.yes?.callback === "function") {
+          try {
+            await options.yes.callback(null, null);
+          } catch (err) {
+            console.error("Error executing DialogV2 affirmative callback:", err);
+          }
+        } else if (typeof options.callback === "function") {
+          try {
+            await options.callback("yes");
+          } catch (err) {
+            console.error("Error executing DialogV2 root callback:", err);
+          }
+        }
+
+        // 2. Resolve to the affirmative button action identifier (or "yes" / true)
+        const affirmativeResult = options.yes?.action ?? "yes";
+        return affirmativeResult;
       }
 
       return originalConfirm.apply(this, arguments);
