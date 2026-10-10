@@ -15,16 +15,10 @@ export function initElevation() {
   });
 }
 
-export function initRegionLevelAutomation() {
-  Hooks.once("init", () => {
-    patchChangeLevelBehavior();
-  });
-}
-
 function patchChangeLevelBehavior() {
-  // Resolve the Change Level behavior DataModel
   const ChangeLevelType = 
     CONFIG.RegionBehavior?.dataModels?.changeLevel ??
+    CONFIG.RegionBehavior?.typeDataModels?.changeLevel ??
     foundry.data.regionBehaviors?.ChangeLevelRegionBehaviorType;
 
   if (!ChangeLevelType) {
@@ -32,48 +26,49 @@ function patchChangeLevelBehavior() {
     return;
   }
 
-  // Foundry Scene Regions dispatch behaviors through _handleRegionEvent or handleEvent
-  const originalHandleEvent = ChangeLevelType.prototype._handleRegionEvent 
-    ?? ChangeLevelType.prototype.handleEvent;
+  // Determine which event handler exists on the prototype
+  const proto = ChangeLevelType.prototype;
+  const methodName = proto._handleRegionEvent 
+    ? "_handleRegionEvent" 
+    : (proto.handleEvent ? "handleEvent" : null);
 
-  if (!originalHandleEvent) {
-    console.warn("Region Level Automation: Event handler not found on ChangeLevel prototype.");
+  if (!methodName) {
+    console.warn("Region Level Automation: Neither _handleRegionEvent nor handleEvent found on ChangeLevel prototype.");
     return;
   }
 
-  ChangeLevelType.prototype._handleRegionEvent = async function (event) {
+  const originalMethod = proto[methodName];
+
+  proto[methodName] = async function (event) {
     // Only intercept token movement / entry events
     if (event.name !== "tokenMove" && event.name !== "tokenEnter") {
-      return originalHandleEvent.call(this, event);
+      return originalMethod.call(this, event);
     }
 
-    const token = event.data?.token;
-    if (!token) return originalHandleEvent.call(this, event);
+    const token = event.data?.token ?? event.token;
+    if (!token) return originalMethod.call(this, event);
 
-    // Resolve destination level data
-    // In Foundry v12+, Scene Levels are stored on canvas.scene.levels or this.system.level
+    // Resolve destination level in Foundry v14 / Scene Levels
     const destinationLevelId = this.system?.level ?? this.level;
     const sceneLevels = canvas.scene?.levels;
     const destinationLevel = sceneLevels?.get ? sceneLevels.get(destinationLevelId) : destinationLevelId;
 
-    if (!destinationLevel) {
-      return originalHandleEvent.call(this, event);
+    if (!destinationLevel || typeof destinationLevel !== "object") {
+      return originalMethod.call(this, event);
     }
 
-    // Determine target bottom elevation (forcing relative offset to 0)
-    const baseElevation = destinationLevel.elevation?.bottom ?? destinationLevel.elevation ?? 0;
+    // Lock relative elevation to 0 by snapping to bottom elevation
+    const baseElevation = destinationLevel.elevation?.bottom ?? destinationLevel.bottom ?? destinationLevel.elevation ?? 0;
 
-    // Directly update token document, bypassing any dialog calls
     const updateData = {
       elevation: baseElevation
     };
 
-    // If Scene Levels flag is used to track token level assignments:
     if (destinationLevel.id) {
       updateData["flags.core.level"] = destinationLevel.id;
     }
 
     await token.document.update(updateData, { animate: false });
-    return; // Complete execution without calling original handler
+    return;
   };
 }
