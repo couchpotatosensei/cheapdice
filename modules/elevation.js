@@ -1,7 +1,9 @@
+// =============================================================================
+// Region Behavior: Auto-Accept Change Level (Bypass Dialog & Set Relative Elevation 0)
+// =============================================================================
+
 export function initElevation() {
   CONFIG.Token.movement.defaultSpeed = 14;
-
-  patchChangeLevelBehavior();
 
   Hooks.once("ready", () => {
     if (!game.user.isGM && game.settings.get("cheapdice", "featureElevationControl")) {
@@ -15,60 +17,54 @@ export function initElevation() {
   });
 }
 
+// Hook directly into init to ensure the prototype is patched before Region instances are created
+Hooks.once("init", () => {
+  patchChangeLevelBehavior();
+});
+
 function patchChangeLevelBehavior() {
-  const ChangeLevelType = 
-    CONFIG.RegionBehavior?.dataModels?.changeLevel ??
-    CONFIG.RegionBehavior?.typeDataModels?.changeLevel ??
-    foundry.data.regionBehaviors?.ChangeLevelRegionBehaviorType;
-
-  if (!ChangeLevelType) {
-    console.warn("Region Level Automation: ChangeLevel DataModel not found on CONFIG.RegionBehavior.");
+  const ChangeLevelType = CONFIG.RegionBehavior?.dataModels?.changeLevel;
+  if (!ChangeLevelType?.prototype?._handleRegionEvent) {
+    console.warn("Region Level Automation: _handleRegionEvent not found on ChangeLevel prototype.");
     return;
   }
 
-  // Determine which event handler exists on the prototype
-  const proto = ChangeLevelType.prototype;
-  const methodName = proto._handleRegionEvent 
-    ? "_handleRegionEvent" 
-    : (proto.handleEvent ? "handleEvent" : null);
+  const originalHandleRegionEvent = ChangeLevelType.prototype._handleRegionEvent;
 
-  if (!methodName) {
-    console.warn("Region Level Automation: Neither _handleRegionEvent nor handleEvent found on ChangeLevel prototype.");
-    return;
-  }
-
-  const originalMethod = proto[methodName];
-
-  proto[methodName] = async function (event) {
-    // Only intercept token movement / entry events
-    if (event.name !== "tokenMove" && event.name !== "tokenEnter") {
-      return originalMethod.call(this, event);
+  ChangeLevelType.prototype._handleRegionEvent = async function (event) {
+    // Only intercept token movement / entry triggers
+    const isMovementEvent = event.name === "tokenMove" || event.name === "tokenEnter" || event.name === "tokenPreMove";
+    if (!isMovementEvent) {
+      return originalHandleRegionEvent.call(this, event);
     }
 
     const token = event.data?.token ?? event.token;
-    if (!token) return originalMethod.call(this, event);
-
-    // Resolve destination level in Foundry v14 / Scene Levels
-    const destinationLevelId = this.system?.level ?? this.level;
-    const sceneLevels = canvas.scene?.levels;
-    const destinationLevel = sceneLevels?.get ? sceneLevels.get(destinationLevelId) : destinationLevelId;
-
-    if (!destinationLevel || typeof destinationLevel !== "object") {
-      return originalMethod.call(this, event);
+    if (!token) {
+      return originalHandleRegionEvent.call(this, event);
     }
 
-    // Lock relative elevation to 0 by snapping to bottom elevation
-    const baseElevation = destinationLevel.elevation?.bottom ?? destinationLevel.bottom ?? destinationLevel.elevation ?? 0;
+    // Resolve target level from the behavior's system data
+    const levelId = this.level ?? this.system?.level;
+    const targetLevel = canvas.scene?.levels?.get(levelId);
 
-    const updateData = {
+    // If destination level cannot be found, fallback to original logic
+    if (!targetLevel) {
+      return originalHandleRegionEvent.call(this, event);
+    }
+
+    // Snap token directly to the base elevation of the target level (relative offset = 0)
+    const baseElevation = targetLevel.elevation?.bottom ?? targetLevel.bottom ?? 0;
+
+    const updates = {
       elevation: baseElevation
     };
 
-    if (destinationLevel.id) {
-      updateData["flags.core.level"] = destinationLevel.id;
+    if (targetLevel.id) {
+      updates["flags.core.level"] = targetLevel.id;
     }
 
-    await token.document.update(updateData, { animate: false });
+    // Apply movement update directly to bypass the confirmation dialog
+    await token.document.update(updates, { animate: false });
     return;
   };
 }
