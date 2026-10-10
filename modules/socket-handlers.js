@@ -191,10 +191,10 @@ function registerSocketHandlers() {
     const gwfThreshold = Number(GWF_REROLL_THRESHOLD) || 0;
     const isSuperAdv = String(superAdv) === "true" || superAdv === true;
 
-    const damageDiceCount = Number(config.damageDiceCount) ?? 0;
-    const rawDie = String(config.damageDieSize || "6").replace(/^d/i, "");
-    const cleanDieSize = `d${rawDie}`;
-    const maxDieValue = Number(rawDie) || 0;
+    const damageDiceCount = Math.max(0, Number(config.damageDiceCount) || 0);
+    const rawDie = String(config.damageDieSize || "").toLowerCase() === "none" ? "none" : String(config.damageDieSize || "6").replace(/^d/i, "");
+    const cleanDieSize = rawDie === "none" ? "" : `d${rawDie}`;
+    const maxDieValue = rawDie === "none" ? 0 : (Number(rawDie) || 0);
 
     const abilityMod = actor.system.abilities[abilityScore]?.mod || 0;
     const prof = isProficient ? (actor.system.attributes.prof || 0) : 0;
@@ -339,7 +339,7 @@ function registerSocketHandlers() {
     }
 
     async function _rollDamageDice() {
-      if (damageDiceCount <= 0) {
+      if (damageDiceCount <= 0 || !cleanDieSize || maxDieValue <= 0) {
         return { finalCombinedDieResult: 0, allDieRolls: [], rerollSummary: [] };
       }
       const damageDieFormula = `1${cleanDieSize}`;
@@ -421,7 +421,7 @@ function registerSocketHandlers() {
       html += `
       <div style="display: flex; justify-content: center; text-align: center; font-size: 0.9em; margin-top: 5px;">
         <div style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; background-color: #f8f9fa;">
-          <p style="margin: 0; font-weight: 600; font-size: 0.9em;">Results (${damageDiceCount}${cleanDieSize})</p>
+          <p style="margin: 0; font-weight: 600; font-size: 0.9em;">Results (${damageDiceCount > 0 && cleanDieSize ? `${damageDiceCount}${cleanDieSize}` : 'Flat Dmg'})</p>
           <span style="font-weight: bold; font-size: 1.5em;">${finalCombinedDieResult}</span>
         </div>
       </div>`;
@@ -472,7 +472,7 @@ function registerSocketHandlers() {
     const criticalTotal = finalGWFTotal + totalMaxDiceCrit + resolvedExtraCrit + critOnlyDamageTotal;
 
     const finalRolls = [attackRoll1, ...extraRolls, ...allDieRolls, ...allAdditionalDamageRolls];
-    const baseDamageFormulaSummary = `${damageDiceCount}${cleanDieSize}`;
+    const baseDamageFormulaSummary = damageDiceCount > 0 && cleanDieSize ? `${damageDiceCount}${cleanDieSize}` : "Flat Dmg";
     const baseDamageFlavor = `${damageType.charAt(0).toUpperCase() + damageType.slice(1)} Damage (${baseDamageFormulaSummary})`;
     const normalDamageHTML = _generateDamageDetailsHTML(baseDamageFlavor, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary);
 
@@ -512,7 +512,7 @@ function registerSocketHandlers() {
       criticalBonusHTML = `
       <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Critical Bonus: +${allCriticalTotal}</strong></p>
       <ul style="margin: 0 0 5px; padding-left: 15px; list-style-type: disc; font-size: 0.9em; line-height: 1.4;">
-        <li style="list-style-type: disc;">Weapon Dice (${damageDiceCount}${cleanDieSize} Max): <span style="font-weight: bold;">+${maximizedWeaponDice}</span></li>
+        ${damageDiceCount > 0 && cleanDieSize ? `<li style="list-style-type: disc;">Weapon Dice (${damageDiceCount}${cleanDieSize} Max): <span style="font-weight: bold;">+${maximizedWeaponDice}</span></li>` : ''}
         ${critAdditionalDiceList}
         ${flatBonusLabel}
       </ul>`;
@@ -538,9 +538,13 @@ function registerSocketHandlers() {
     const flatModSign = damageModifier >= 0 ? '+' : '';
     const baseDamageTypeDisplay = damageType.toUpperCase() === 'BPS' ? 'BPS' : (damageType.charAt(0).toUpperCase() + damageType.slice(1));
 
+    const weaponDamageLine = damageDiceCount > 0 && cleanDieSize
+      ? `<li style="list-style-type: disc;">Weapon Damage: <strong>${damageDiceCount}${cleanDieSize} (${baseDamageTypeDisplay})</strong></li>`
+      : `<li style="list-style-type: disc;">Base Damage: <strong>Flat (${baseDamageTypeDisplay})</strong></li>`;
+
     let damageDiceSummary = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
     <li style="list-style-type: disc;">Ability Mod (${abilityScore.toUpperCase()}): <strong>${abilityModSign}${abilityMod}</strong></li>
-    <li style="list-style-type: disc;">Weapon Damage: <strong>${damageDiceCount}${cleanDieSize} (${baseDamageTypeDisplay})</strong></li>
+    ${weaponDamageLine}
     ${weaponModifier !== 0 ? `<li style="list-style-type: disc;">Weapon Modifier: <strong>${weaponModSign}${weaponModifier}</strong></li>` : ''}
     ${damageModifier !== 0 ? `<li style="list-style-type: disc;">Other Damage Mod: <strong>${flatModSign}${damageModifier}</strong></li>` : ''}`;
     additionalDamageResults.forEach(c => {
@@ -562,7 +566,9 @@ function registerSocketHandlers() {
     let diceMap = {};
     let flatTotal = damageBonus + flatBonus;
     let otherParts = [];
-    diceMap[rawDie] = damageDiceCount;
+    if (damageDiceCount > 0 && maxDieValue > 0) {
+      diceMap[rawDie] = damageDiceCount;
+    }
 
     additionalDamageResults.forEach(c => {
       if (c.onlyCrit) return;

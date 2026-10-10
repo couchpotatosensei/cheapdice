@@ -1065,11 +1065,14 @@ Click a numbered modifier badge to execute a roll.</div>
       const totalAtk = abilityMod + prof + wepMod + circMod;
       const atkSign = totalAtk >= 0 ? `+${totalAtk}` : `${totalAtk}`;
 
-      const diceCount = Number(config.damageDiceCount) || 1;
-      const dieSize = String(config.damageDieSize || "6").replace(/^d/i, "");
+      const diceCount = Math.max(0, Number(config.damageDiceCount) || 0);
+      const isNoneDie = String(config.damageDieSize || "").toLowerCase() === "none";
+      const dieSize = isNoneDie ? "" : String(config.damageDieSize || "6").replace(/^d/i, "");
       const dmgMod = abilityMod + wepMod + (Number(config.damageModifier) || 0);
       const dmgModSign = dmgMod >= 0 ? `+${dmgMod}` : `${dmgMod}`;
-      const dmgFormula = `${diceCount}d${dieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim();
+      const dmgFormula = diceCount > 0 && dieSize
+        ? `${diceCount}d${dieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim()
+        : `${dmgMod}`;
       const dmgType = (config.damageType || "slashing").toUpperCase();
 
       const tags = [];
@@ -1680,11 +1683,14 @@ Click a numbered modifier badge to execute a roll.</div>
       const totalAtk = abilityMod + prof + wepMod + circMod;
       const atkSign = totalAtk >= 0 ? `+${totalAtk}` : `${totalAtk}`;
 
-      const diceCount = Number(config.damageDiceCount) || 1;
-      const dieSize = String(config.damageDieSize || "6").replace(/^d/i, "");
+      const diceCount = Math.max(0, Number(config.damageDiceCount) || 0);
+      const isNoneDie = String(config.damageDieSize || "").toLowerCase() === "none";
+      const dieSize = isNoneDie ? "" : String(config.damageDieSize || "6").replace(/^d/i, "");
       const dmgMod = abilityMod + wepMod + (Number(config.damageModifier) || 0);
       const dmgModSign = dmgMod >= 0 ? `+${dmgMod}` : `${dmgMod}`;
-      const dmgFormula = `${diceCount}d${dieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim();
+      const dmgFormula = diceCount > 0 && dieSize
+        ? `${diceCount}d${dieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim()
+        : `${dmgMod}`;
       const dmgType = (config.damageType || "slashing").toUpperCase();
 
       const tags = [];
