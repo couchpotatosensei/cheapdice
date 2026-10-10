@@ -16,12 +16,20 @@ export function initElevation() {
 }
 
 function patchChangeLevelBehavior() {
-  // 1. Intercept legacy Dialog rendering
+  // 1. Intercept classic Dialog instances
   Hooks.on("renderDialog", (dialog, html) => {
-    const title = dialog.data?.title?.toLowerCase() ?? "";
+    // Never intercept document creation/configuration forms
+    if (dialog.data?.content?.includes("region-behavior") || dialog.options?.classes?.includes("sheet")) return;
+
+    const title = (dialog.data?.title ?? "").toLowerCase();
     const content = (typeof dialog.data?.content === "string" ? dialog.data.content : "").toLowerCase();
 
-    if (title.includes("level") || (content.includes("level") && content.includes("move"))) {
+    // Specifically target player movement confirmation prompts
+    const isTransitionPrompt = 
+      (title.includes("change level") || title.includes("move token")) &&
+      (content.includes("move to") || content.includes("destination"));
+
+    if (isTransitionPrompt) {
       const confirmBtn = dialog.data.buttons?.yes ?? dialog.data.buttons?.ok;
       if (confirmBtn?.callback) {
         confirmBtn.callback();
@@ -30,14 +38,19 @@ function patchChangeLevelBehavior() {
     }
   });
 
-  // 2. Intercept modern DialogV2 / ApplicationV2 (Foundry v12+)
+  // 2. Intercept modern DialogV2 / ApplicationV2
   Hooks.on("renderApplicationV2", (app, html) => {
-    const title = app.options?.window?.title?.toLowerCase() ?? "";
-    const content = (app.element?.textContent || html?.textContent || "").toLowerCase();
+    // Guard against any configuration sheet, document editor, or behavior creator
+    if (app.options?.classes?.some(c => c.includes("sheet") || c.includes("config"))) return;
+    if (app.document || app.options?.document) return;
 
-    if (title.includes("level") || (content.includes("level") && (content.includes("move") || content.includes("change")))) {
-      const container = app.element || (html instanceof HTMLElement ? html : html?.[0]);
-      const submitBtn = container?.querySelector?.("button[data-action='ok'], button[data-action='yes'], button.confirm");
+    const title = (app.options?.window?.title ?? "").toLowerCase();
+
+    // Target only the specific runtime prompt, not "Create Behavior"
+    const isTransitionPrompt = title.includes("change level") && !title.includes("create") && !title.includes("configure");
+
+    if (isTransitionPrompt) {
+      const submitBtn = html.querySelector("button[data-action='ok'], button[data-action='yes'], button.confirm");
       if (submitBtn) {
         submitBtn.click();
         app.close();
