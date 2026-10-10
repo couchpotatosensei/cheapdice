@@ -1,9 +1,11 @@
 // =============================================================================
-// Region Behavior: Auto-Accept Change Level (Bypass Dialog & Set Relative Elevation 0)
+// Region Behavior: Auto-Confirm Change Level & Force Relative Elevation 0
 // =============================================================================
 
 export function initElevation() {
   CONFIG.Token.movement.defaultSpeed = 14;
+
+  setupChangeLevelBypass();
 
   Hooks.once("ready", () => {
     if (!game.user.isGM && game.settings.get("cheapdice", "featureElevationControl")) {
@@ -17,54 +19,37 @@ export function initElevation() {
   });
 }
 
-// Hook directly into init to ensure the prototype is patched before Region instances are created
-Hooks.once("init", () => {
-  patchChangeLevelBehavior();
-});
+function setupChangeLevelBypass() {
+  // 1. Intercept DialogV2.confirm to auto-approve RegionBehavior level transitions
+  if (foundry.applications?.api?.DialogV2?.confirm) {
+    const originalConfirm = foundry.applications.api.DialogV2.confirm;
 
-function patchChangeLevelBehavior() {
-  const ChangeLevelType = CONFIG.RegionBehavior?.dataModels?.changeLevel;
-  if (!ChangeLevelType?.prototype?._handleRegionEvent) {
-    console.warn("Region Level Automation: _handleRegionEvent not found on ChangeLevel prototype.");
-    return;
+    foundry.applications.api.DialogV2.confirm = function (options = {}) {
+      const dialogId = options.id ?? "";
+
+      // Target dialogs originating specifically from RegionBehavior prompts
+      const isRegionBehaviorPrompt = dialogId.startsWith("dialog-Scene.") && dialogId.includes(".RegionBehavior.");
+
+      if (isRegionBehaviorPrompt) {
+        // Return true immediately so #confirmDialog proceeds without rendering UI
+        return Promise.resolve(true);
+      }
+
+      return originalConfirm.apply(this, arguments);
+    };
   }
 
-  const originalHandleRegionEvent = ChangeLevelType.prototype._handleRegionEvent;
+  // 2. Lock Relative Elevation to 0 on level change updates
+  Hooks.on("preUpdateToken", (tokenDoc, changes, options) => {
+    // When a level transition occurs, Foundry updates token elevation and flags.core.level
+    const destinationLevelId = changes["flags.core.level"] ?? tokenDoc.flags?.core?.level;
 
-  ChangeLevelType.prototype._handleRegionEvent = async function (event) {
-    // Only intercept token movement / entry triggers
-    const isMovementEvent = event.name === "tokenMove" || event.name === "tokenEnter" || event.name === "tokenPreMove";
-    if (!isMovementEvent) {
-      return originalHandleRegionEvent.call(this, event);
+    if (destinationLevelId && changes.elevation !== undefined) {
+      const level = canvas.scene?.levels?.get(destinationLevelId);
+      if (level) {
+        // Snap directly to the bottom floor of the destination level (relative offset = 0)
+        changes.elevation = level.elevation?.bottom ?? level.bottom ?? 0;
+      }
     }
-
-    const token = event.data?.token ?? event.token;
-    if (!token) {
-      return originalHandleRegionEvent.call(this, event);
-    }
-
-    // Resolve target level from the behavior's system data
-    const levelId = this.level ?? this.system?.level;
-    const targetLevel = canvas.scene?.levels?.get(levelId);
-
-    // If destination level cannot be found, fallback to original logic
-    if (!targetLevel) {
-      return originalHandleRegionEvent.call(this, event);
-    }
-
-    // Snap token directly to the base elevation of the target level (relative offset = 0)
-    const baseElevation = targetLevel.elevation?.bottom ?? targetLevel.bottom ?? 0;
-
-    const updates = {
-      elevation: baseElevation
-    };
-
-    if (targetLevel.id) {
-      updates["flags.core.level"] = targetLevel.id;
-    }
-
-    // Apply movement update directly to bypass the confirmation dialog
-    await token.document.update(updates, { animate: false });
-    return;
-  };
+  });
 }
