@@ -569,11 +569,7 @@ export function initTokenHud() {
     );
     colRight.appendChild(actionBtn);
 
-    if (token.actor.type === "npc") {
-      colRight.appendChild(makeButton("Slot 1", "fas fa-square-1", () => runHotbarSlot(46)));
-      colRight.appendChild(makeButton("Slot 2", "fas fa-square-2", () => runHotbarSlot(47)));
-      return;
-    }
+    // (Previously NPCs returned early with only Slot 1 and Slot 2 pointing to 46 and 47)
 
     const leftFlyoutWrapper = document.createElement("div");
     leftFlyoutWrapper.className = "control-icon left-flyout-parent";
