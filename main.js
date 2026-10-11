@@ -56,6 +56,63 @@ Hooks.once("setup", () => {
 });
 
 // -----------------------------------------------------------------------------
+// Hook: ready - Custom Keybindings
+// -----------------------------------------------------------------------------
+Hooks.once("ready", async () => {
+  // Only execute for GM if the setting is enabled
+  if (!game.user.isGM || !game.settings.get(MODULE_ID, SETTINGS.FEATURES.APPLY_CUSTOM_KEYBINDINGS)) return;
+
+  const actionsToClear = [
+    // Elevation (defaults: Q and E)
+    "ascend",
+    "descend",
+
+    // Orthogonal Panning
+    "panUp",
+    "panLeft",
+    "panDown",
+    "panRight",
+
+    // Diagonal Panning (Numpad 1, 3, 7, 9)
+    "panUpLeft",
+    "panUpRight",
+    "panDownLeft",
+    "panDownRight"
+  ];
+
+  const macroPageAssignments = [
+    { action: "swapMacroPage1", key: "Numpad1" },
+    { action: "swapMacroPage2", key: "Numpad2" },
+    { action: "swapMacroPage3", key: "Numpad3" },
+    { action: "swapMacroPage4", key: "Numpad4" },
+    { action: "swapMacroPage5", key: "Numpad5" }
+  ];
+
+  try {
+    // 1. Clear Q, E, and pan actions (skip if already empty)
+    for (const action of actionsToClear) {
+      const current = game.keybindings.get("core", action) || [];
+      if (current.length > 0) {
+        await game.keybindings.set("core", action, []);
+      }
+    }
+
+    // 2. Reassign Numpad 1-5 to Hotbar macro pages (skip if already matching)
+    for (const { action, key } of macroPageAssignments) {
+      const current = game.keybindings.get("core", action) || [];
+      const isAlreadySet = current.length === 1 && current[0].key === key && (!current[0].modifiers || current[0].modifiers.length === 0);
+      if (!isAlreadySet) {
+        await game.keybindings.set("core", action, [{ key, modifiers: [] }]);
+      }
+    }
+
+    console.log(`${MODULE_ID} | Navigation cleared and Numpad 1-5 macro pages applied (GM only).`);
+  } catch (err) {
+    console.error(`${MODULE_ID} | Failed to apply keybind modifications:`, err);
+  }
+});
+
+// -----------------------------------------------------------------------------
 // Orchestration & Feature Initializations
 // -----------------------------------------------------------------------------
 function initializeFeatures() {

@@ -16,6 +16,7 @@ export const SETTINGS = {
     SOCKET_HANDLERS: "featureSocketHandlers",
     ANIMATIONS: "featureAnimations",
     MACRO_GENERATOR: "enableMacroGenerator",
-    CORE_SETTINGS_ENFORCER: "coreSettingsEnforcer"
+    CORE_SETTINGS_ENFORCER: "coreSettingsEnforcer",
+    APPLY_CUSTOM_KEYBINDINGS: "applyCustomKeybindings"
   }
 };

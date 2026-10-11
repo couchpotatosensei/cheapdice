@@ -45,5 +45,14 @@ export function registerSettings() {
     type: Boolean,
     default: true
   });
+
+  game.settings.register(MODULE_ID, SETTINGS.FEATURES.APPLY_CUSTOM_KEYBINDINGS, {
+    name: "Enforce Custom Keybinds",
+    hint: "Automatically overrides default core keybinds and unbinds unwanted keys on launch.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true
+  });
 }
 
