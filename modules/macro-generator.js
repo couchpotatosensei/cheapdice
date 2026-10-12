@@ -6,7 +6,7 @@
 import { MODULE_ID } from "../src/constants.js";
 
 /**
- * All 13 module macros.
+ * All 14 module macros.
  */
 const MODULE_MACROS = [
   {
@@ -32,6 +32,12 @@ game.user.targets.forEach(token => token.setTarget(false, { releaseOthers: false
 canvas.tokens.releaseAll();
 canvas.tokens.activate({ tool: "select" });
 ui.controls.initialize({ control: "token", tool: "select" });`
+  },
+  {
+    name: "Token Info",
+    type: "script",
+    img: "icons/svg/book.svg",
+    command: `game.modules.get("${MODULE_ID}")?.api?.postStatCard?.();`
   },
   {
     name: "Tile Browser",
@@ -294,6 +300,7 @@ export async function generateModuleMacros({ forceHotbar = false } = {}) {
     const hotbarSlotPlan = {
       // Hotbar Page 1
       1: "Token Control Hotkey",
+      2: "Token Info",
       3: "Tile Browser",
       4: "Lighting Script",
       5: "Actor (Shared) Browser",
@@ -321,6 +328,12 @@ export async function generateModuleMacros({ forceHotbar = false } = {}) {
     await game.user.update(hotbarUpdates);
     await game.user.setFlag(MODULE_ID, "hotbarConfigured", true);
     ui.notifications.info("Cheap Dice Macros assigned to Hotbar Page 1 and Page 2.");
+  } else {
+    // If already configured in a previous version, ensure slot 2 is populated with Token Info
+    const tokenInfoMacro = macroMap.get("Token Info");
+    if (tokenInfoMacro && !game.user.hotbar?.[2]) {
+      await game.user.update({ "hotbar.2": tokenInfoMacro.id });
+    }
   }
 }
 
