@@ -1059,7 +1059,8 @@ Click a numbered modifier badge to execute a roll.</div>
       if (!config) return "";
 
       const abilityMod = actor.system.abilities[config.abilityScore]?.mod || 0;
-      const prof = actor.system.attributes.prof || 0;
+      const isProf = config.isProficient !== undefined ? (String(config.isProficient) === "true" || config.isProficient === true) : true;
+      const prof = isProf ? (actor.system.attributes.prof || 0) : 0;
       const wepMod = Number(config.weaponModifier) || 0;
       const circMod = Number(config.attackCircumstanceModifier) || 0;
       const totalAtk = abilityMod + prof + wepMod + circMod;
