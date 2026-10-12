@@ -16,46 +16,23 @@ function getDispositionTheme(actor, token) {
   let glowColor = "rgba(71, 85, 105, 0.15)";
   let headerBg = "#1e293b";
 
-  if (actor?.hasPlayerOwner) {
-    const ownerUser = game.users.find(u => !u.isGM && actor.testUserPermission(u, "OWNER") && u.color);
-    if (ownerUser?.color) {
-      const hex = typeof ownerUser.color === "object" && ownerUser.color.css ? ownerUser.color.css : String(ownerUser.color);
-      const cleanHex = hex.replace("#", "");
-      let r = 0, g = 0, b = 0;
-      if (cleanHex.length === 3) {
-        r = parseInt(cleanHex[0] + cleanHex[0], 16);
-        g = parseInt(cleanHex[1] + cleanHex[1], 16);
-        b = parseInt(cleanHex[2] + cleanHex[2], 16);
-      } else if (cleanHex.length >= 6) {
-        r = parseInt(cleanHex.substring(0, 2), 16);
-        g = parseInt(cleanHex.substring(2, 4), 16);
-        b = parseInt(cleanHex.substring(4, 6), 16);
-      }
-      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
-        borderColor = `rgba(${r}, ${g}, ${b}, 0.8)`;
-        glowColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
-        headerBg = `rgba(${Math.floor(r * 0.4)}, ${Math.floor(g * 0.4)}, ${Math.floor(b * 0.4)}, 0.95)`;
-      }
-    }
-  } else {
-    // Match Foundry token disposition borders
-    if (disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE) {
-      borderColor = "rgba(231, 33, 36, 0.85)";
-      glowColor = "rgba(231, 33, 36, 0.22)";
-      headerBg = "#7f1d1d"; // Dark red
-    } else if (disposition === CONST.TOKEN_DISPOSITIONS.NEUTRAL) {
-      borderColor = "rgba(241, 216, 54, 0.85)";
-      glowColor = "rgba(241, 216, 54, 0.22)";
-      headerBg = "#78350f"; // Amber/brown
-    } else if (disposition === CONST.TOKEN_DISPOSITIONS.FRIENDLY) {
-      borderColor = "rgba(67, 223, 223, 0.85)";
-      glowColor = "rgba(67, 223, 223, 0.22)";
-      headerBg = "#134e4a"; // Deep teal
-    } else if (disposition === CONST.TOKEN_DISPOSITIONS.SECRET) {
-      borderColor = "rgba(166, 18, 211, 0.85)";
-      glowColor = "rgba(166, 18, 211, 0.22)";
-      headerBg = "#581c87"; // Deep purple
-    }
+  // Match Foundry token disposition borders regardless of player ownership
+  if (disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE) {
+    borderColor = "rgba(231, 33, 36, 0.85)";
+    glowColor = "rgba(231, 33, 36, 0.22)";
+    headerBg = "#7f1d1d"; // Dark red
+  } else if (disposition === CONST.TOKEN_DISPOSITIONS.NEUTRAL) {
+    borderColor = "rgba(241, 216, 54, 0.85)";
+    glowColor = "rgba(241, 216, 54, 0.22)";
+    headerBg = "#78350f"; // Amber/brown
+  } else if (disposition === CONST.TOKEN_DISPOSITIONS.FRIENDLY) {
+    borderColor = "rgba(67, 223, 223, 0.85)";
+    glowColor = "rgba(67, 223, 223, 0.22)";
+    headerBg = "#134e4a"; // Deep teal
+  } else if (disposition === CONST.TOKEN_DISPOSITIONS.SECRET) {
+    borderColor = "rgba(166, 18, 211, 0.85)";
+    glowColor = "rgba(166, 18, 211, 0.22)";
+    headerBg = "#581c87"; // Deep purple
   }
 
   return { borderColor, glowColor, headerBg };
@@ -128,49 +105,7 @@ async function handleAttackButtonClick(btn) {
     return ui.notifications.warn("Actor or Item not found.");
   }
 
-  // If the CheapDice socket system is registered, run through the full engine
-  if (globalThis.attackSocket) {
-    const config = {
-      chatCardTitle: itemObj.name,
-      abilityScore: "str",
-      isProficient: false,
-      weaponModifier: totalAttackModifier, // Flat modifier representation
-      attackCircumstanceModifier: 0,
-      damageDiceCount: damageDiceCount,
-      damageDieSize: damageDieSize,
-      damageType: damageType,
-      damageModifier: damageBonus,
-      CRIT_THRESHOLD: 20,
-      HAS_HALFLING_LUCKY: false,
-      GWF_REROLL_THRESHOLD: 0,
-      superAdv: false,
-      additionalDamageComponents: []
-    };
-
-    // If item has secondary damage parts, map them as additional damage components
-    const itemSys = itemObj.system;
-    if (itemSys?.damage?.parts?.length > 1) {
-      for (let i = 1; i < itemSys.damage.parts.length; i++) {
-        const extraPart = itemSys.damage.parts[i];
-        if (extraPart && extraPart[0]) {
-          config.additionalDamageComponents.push({
-            label: extraPart[1] || "Extra",
-            formula: String(extraPart[0]),
-            damageType: extraPart[1] || "untyped"
-          });
-        }
-      }
-    }
-
-    try {
-      await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actorObj.id, game.user.id);
-      return;
-    } catch (err) {
-      console.warn("[CheapDice] Failed to execute runAttackRoll via socket, falling back to local roll:", err);
-    }
-  }
-
-  // Fallback if socketlib is unavailable
+  // Execute attack roll without auto-targeting or Automated Animations
   const CRIT_THRESHOLD = 20;
   const maxDieValue = parseInt(damageDieSize.replace(/d/i, ""), 10) || 4;
   const maximizedWeaponDice = damageDiceCount * maxDieValue;
@@ -477,20 +412,19 @@ export async function postStatCard(targetToken = null) {
     for (const item of attackItems) {
       try {
         const itemSys = item.system;
-        let abilityScore = "str";
         let damageDiceCount = 1;
         let damageDieSize = "d4";
         let damageType = "slashing";
         let rawDamageBonus = "0";
         let rawAttackBonus = "0";
         let isFlatAttack = false;
+        let explicitAbility = null;
 
         if (itemSys.activities && itemSys.activities.size > 0) {
           const activities = Array.from(itemSys.activities.values());
           const act = activities.find((a) => a.attack || a.damage);
           if (act) {
-            abilityScore = act.ability || itemSys.ability || "str";
-            if (abilityScore === "default" || abilityScore === "") abilityScore = "str";
+            explicitAbility = act.ability || itemSys.ability;
 
             if (act.damage?.parts?.length > 0) {
               const part = act.damage.parts[0];
@@ -505,7 +439,7 @@ export async function postStatCard(targetToken = null) {
             }
           }
         } else {
-          abilityScore = item.abilityMod || "str";
+          explicitAbility = item.abilityMod || itemSys.ability;
           if (itemSys.damage?.parts?.length > 0) {
             const dmgPart = itemSys.damage.parts[0];
             const match = String(dmgPart[0] || "").match(/(\d+)d(\d+)/i);
@@ -523,14 +457,65 @@ export async function postStatCard(targetToken = null) {
           }
         }
 
-        const abilityMod = sys.abilities[abilityScore]?.mod || 0;
-        const weaponModifier = await evaluateBonus(rawDamageBonus, abilityMod, pb);
+        // Bulletproof ability resolution:
+        // 1. Honor dnd5e native item.abilityMod if valid
+        // 2. Check explicit activity/item ability setting
+        // 3. Fallback to smart rule heuristics (ranged vs finesse vs spells)
+        let resolvedAbility = explicitAbility;
+        if (!resolvedAbility || resolvedAbility === "default" || resolvedAbility === "none") {
+          resolvedAbility = item.abilityMod;
+        }
+
+        if (!resolvedAbility || resolvedAbility === "default" || resolvedAbility === "none") {
+          const actionType = itemSys.actionType || "";
+          const isRanged = actionType === "rwak" || actionType === "rsak" || String(itemSys.type?.value || "").includes("R");
+          const isSpell = ["msak", "rsak", "save"].includes(actionType) || item.type === "spell";
+          const hasProperty = (prop) => {
+            if (!itemSys.properties) return false;
+            if (itemSys.properties instanceof Set) return itemSys.properties.has(prop);
+            if (Array.isArray(itemSys.properties)) return itemSys.properties.includes(prop);
+            if (typeof itemSys.properties === "object") return Boolean(itemSys.properties[prop]);
+            return false;
+          };
+          const isFinesse = hasProperty("fin");
+
+          if (isSpell) {
+            resolvedAbility = sys.attributes?.spellcasting || "int";
+          } else if (isRanged && !hasProperty("thr")) {
+            resolvedAbility = "dex";
+          } else if (isFinesse) {
+            const strMod = sys.abilities?.str?.mod ?? 0;
+            const dexMod = sys.abilities?.dex?.mod ?? 0;
+            resolvedAbility = dexMod >= strMod ? "dex" : "str";
+          } else {
+            resolvedAbility = "str";
+          }
+        }
+
+        const abilityMod = sys.abilities?.[resolvedAbility]?.mod ?? 0;
+
+        // Resolve weapon damage bonus
+        let weaponModifier = 0;
+        // If rawDamageBonus is a static number (e.g. "+ 2" on NPC sheet), parse it directly
+        const trimmedBonus = rawDamageBonus.trim();
+        if (/^[+\-]?\d+$/.test(trimmedBonus)) {
+          weaponModifier = parseInt(trimmedBonus, 10);
+        } else if (trimmedBonus && trimmedBonus !== "0") {
+          weaponModifier = await evaluateBonus(trimmedBonus, abilityMod, pb);
+        } else {
+          // If no bonus formula specified, default to ability modifier for standard attacks
+          weaponModifier = abilityMod;
+        }
+
+        // Resolve to-hit attack modifier
         const attackCircumstanceModifier = await evaluateBonus(rawAttackBonus, abilityMod, pb);
+        let totalAttackModifier = isFlatAttack
+          ? attackCircumstanceModifier
+          : abilityMod + pb + attackCircumstanceModifier;
 
-        let totalAttackModifier = isFlatAttack ? attackCircumstanceModifier : abilityMod + pb + attackCircumstanceModifier;
-
+        // Highest priority for attack display: if Foundry computed labels.toHit, use it
         if (item.labels?.toHit) {
-          const toHitMatch = String(item.labels.toHit).match(/[\+\-]?\d+/);
+          const toHitMatch = String(item.labels.toHit).match(/^[+\-]?\d+/);
           if (toHitMatch) totalAttackModifier = parseInt(toHitMatch[0], 10);
         }
 

@@ -2,7 +2,7 @@
   "id": "cheapdice",
   "title": "Cheap Dice",
   "description": "This is not actually cheap dice but a custom mod adding QoL settings for my games.",
-  "version": "1.0.64",
+  "version": "1.0.65",
   "socket": true,
   "compatibility": {
     "minimum": "12",
