@@ -131,6 +131,7 @@ export function initTokenHud() {
                     });
                   }
 
+                  rollConfig.targetIds = Array.from(game.user.targets).map(t => t.id);
                   return await globalThis.attackSocket.executeAsGM(handler, rollConfig, token.actor.id, game.user.id);
                 }
               },
@@ -139,6 +140,9 @@ export function initTokenHud() {
             default: "roll"
           }, { width: 310, height: "auto" }).render(true);
         }
+
+        // Capture caller's selected target IDs so GM receives them reliably
+        rollConfig.targetIds = Array.from(game.user.targets).map(t => t.id);
 
         // Direct roll when no extras or GWM exist
         return await globalThis.attackSocket.executeAsGM(handler, rollConfig, token.actor.id, game.user.id);

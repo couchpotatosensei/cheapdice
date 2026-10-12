@@ -207,7 +207,9 @@ function registerSocketHandlers() {
     const rollUser = game.users.get(userId) || game.user;
     const token = actor.getActiveTokens()[0];
     let autoTargetedToken = null;
-    let targetIds = Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
+    let targetIds = Array.isArray(config?.targetIds) && config.targetIds.length > 0
+      ? config.targetIds.filter(Boolean)
+      : Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
 
     const animationsEnabled = game.settings.get("cheapdice", "featureAnimations");
     if (animationsEnabled && targetIds.length === 0 && token) {
@@ -774,7 +776,9 @@ function registerSocketHandlers() {
     const rollUser = game.users.get(userId) || game.user;
     const token = actor.getActiveTokens()[0];
     let autoTargetedToken = null;
-    let targetIds = Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
+    let targetIds = Array.isArray(config?.targetIds) && config.targetIds.length > 0
+      ? config.targetIds.filter(Boolean)
+      : Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
 
     const animationsEnabled = game.settings.get("cheapdice", "featureAnimations");
     // If not self/point/healing and no targets, auto-target nearest hostile for player / non-hostile tokens
@@ -2390,7 +2394,17 @@ async function triggerSequencerAnimation(actor, config, rollUser = null, autoTar
   if (!token) return;
 
   const targetUser = rollUser || game.user;
-  let targets = Array.from(targetUser?.targets || game.user.targets);
+  let targets = [];
+
+  // 1. Resolve explicit target IDs passed from caller
+  if (Array.isArray(config?.targetIds) && config.targetIds.length > 0) {
+    targets = config.targetIds.map(id => canvas.tokens.get(id)).filter(Boolean);
+  }
+
+  // 2. Fall back to user's targeted tokens if empty
+  if (targets.length === 0) {
+    targets = Array.from(targetUser?.targets || game.user.targets);
+  }
 
   if (autoTargetedToken) {
     if (!targets.some(t => t.id === autoTargetedToken.id)) {

@@ -2141,7 +2141,7 @@ if (!globalThis.attackSocket) return ui.notifications.error("SocketLib handler i
 const profiles = window.CustomRolls?.getProfileData(actor, "quickMacroProfiles") || {};
 const config = profiles["${profileKey}"];
 if (!config) return ui.notifications.error("Stored profile not found for ${finalMacroName}.");
-
+config.targetIds = Array.from(game.user.targets).map(t => t.id);
 await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, game.user.id);
 `.trim();
 
