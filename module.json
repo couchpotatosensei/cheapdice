@@ -1,8 +1,13 @@
 {
   "id": "cheapdice",
   "title": "Cheap Dice",
-  "description": "This is not actually cheap dice but a custom mod adding QoL settings for my games.",
-  "version": "1.0.66",
+  "description": "Custom quality-of-life settings and automations.",
+  "version": "1.0.67",
+  "authors": [
+    {
+      "name": "couchpotatosensei"
+    }
+  ],
   "socket": true,
   "compatibility": {
     "minimum": "12",
@@ -32,5 +37,5 @@
     "main.js"
   ],
   "manifest": "https://raw.githubusercontent.com/couchpotatosensei/cheapdice/main/module.json",
-  "download": "https://github.com/couchpotatosensei/cheapdice/archive/refs/heads/main.zip"
+  "download": "https://github.com/couchpotatosensei/cheapdice/releases/latest/download/cheapdice.zip"
 }

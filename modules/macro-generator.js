@@ -268,8 +268,10 @@ export async function generateModuleMacros({ forceHotbar = false } = {}) {
     });
   }
 
-  // 2. Upsert macros and build quick-lookup map by name
+  // 2. Separate into batch creations and updates for high performance
   const macroMap = new Map();
+  const toCreate = [];
+  const toUpdate = [];
 
   for (const macroData of MODULE_MACROS) {
     const existing = game.macros.find(
@@ -286,12 +288,20 @@ export async function generateModuleMacros({ forceHotbar = false } = {}) {
     };
 
     if (existing) {
-      await existing.update(payload);
+      toUpdate.push({ _id: existing.id, ...payload });
       macroMap.set(macroData.name, existing);
     } else {
-      const created = await Macro.create(payload);
-      macroMap.set(macroData.name, created);
+      toCreate.push(payload);
     }
+  }
+
+  if (toUpdate.length > 0) {
+    await Macro.updateDocuments(toUpdate);
+  }
+
+  if (toCreate.length > 0) {
+    const createdDocs = await Macro.createDocuments(toCreate);
+    createdDocs.forEach((doc) => macroMap.set(doc.name, doc));
   }
 
   // 3. Assign slots on Hotbar Page 1 and Page 2 (run once unless forced)

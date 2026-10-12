@@ -238,69 +238,31 @@ export function initTokenAc() {
     if (token?.actor) renderTokenAcBadge(token);
   });
 
-  Hooks.on("renderSceneControls", (controls, html) => {
+  // Official Scene Controls Hook (Native Foundry tool toggle)
+  Hooks.on("getSceneControlButtons", (controls) => {
     if (!game.user.isGM) return;
     if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
-    const root = html instanceof HTMLElement ? html : (html[0] ?? document.getElementById("scene-controls"));
-    if (!root) return;
+    const tokenControls = controls.find((c) => c.name === "token");
+    if (!tokenControls) return;
 
-    const activeLayer = root.querySelector('#scene-controls-layers button[data-control="tokens"][aria-pressed="true"]');
-    if (!activeLayer) return;
-
-    const toolsMenu = root.querySelector('#scene-controls-tools[data-application-part="tools"]')
-      || root.querySelector("#scene-controls-tools");
-    if (!toolsMenu) return;
-
-    toolsMenu.querySelector('li[data-tool="masterToggleAC"]')?.remove();
-
-    const isActive = getGlobalShowAC();
-
-    const li = document.createElement("li");
-    li.dataset.tool = "masterToggleAC";
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "control ui-control tool icon toggle fa-solid fa-shield-halved";
-    btn.dataset.action = "tool";
-    btn.dataset.tool = "masterToggleAC";
-    btn.setAttribute("aria-label", "Master Toggle: Token AC Display");
-    btn.setAttribute("aria-pressed", String(isActive));
-    btn.dataset.tooltip = "Master Toggle: Token AC Display";
-
-    btn.addEventListener("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const currentState = getGlobalShowAC();
-      const newState = !currentState;
-
-      await game.settings.set(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, newState);
-      btn.setAttribute("aria-pressed", String(newState));
-      canvas.tokens?.placeables.forEach(t => renderTokenAcBadge(t));
-    });
-
-    li.appendChild(btn);
-    toolsMenu.appendChild(li);
+    // Avoid duplicate tools
+    if (!tokenControls.tools.some((t) => t.name === "masterToggleAC")) {
+      tokenControls.tools.push({
+        name: "masterToggleAC",
+        title: "Master Toggle: Token AC Display",
+        icon: "fa-solid fa-shield-halved",
+        toggle: true,
+        active: getGlobalShowAC(),
+        onClick: async (toggled) => {
+          await game.settings.set(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, toggled);
+          canvas.tokens?.placeables.forEach((t) => renderTokenAcBadge(t));
+        }
+      });
+    }
   });
 
   Hooks.once("ready", () => {
-    try {
-      game.settings.register(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, {
-        name: "Master AC Display",
-        hint: "Globally display AC badges above tokens.",
-        scope: "world",
-        config: false,
-        type: Boolean,
-        default: false,
-        onChange: () => {
-          canvas.tokens?.placeables.forEach(t => renderTokenAcBadge(t));
-        }
-      });
-    } catch (e) {
-      // Setting already registered
-    }
-
     if (game.user.isGM && ui.controls) {
       ui.controls.render(true);
     }

@@ -1,32 +1,44 @@
-// =============================================================================
-// CLIENT-SIDE DIALOG LAUNCHERS
-// =============================================================================
+import { MODULE_ID, SETTINGS } from "../src/constants.js";
+
+// Helper: Resolve Module Socket
+export function getSocket() {
+  return game.modules.get(MODULE_ID)?.api?.socket || globalThis.attackSocket || null;
+}
+
+// --- Persistent Profile Storage Helpers ---
+export function getProfileData(actor, category) {
+  if (!actor) return null;
+  const store = (game.settings.settings.has("world.customRollProfiles") ? game.settings.get("world", "customRollProfiles") : null)
+    || (game.settings.settings.has(`${MODULE_ID}.${SETTINGS.CUSTOM_ROLL_PROFILES}`) ? game.settings.get(MODULE_ID, SETTINGS.CUSTOM_ROLL_PROFILES) : null)
+    || {};
+  const actorStore = store[actor.id] || store[actor.name] || {};
+  return actorStore[category] ?? null;
+}
+
+export async function setProfileData(actor, category, data) {
+  if (!actor) return;
+  const isWorldSetting = game.settings.settings.has("world.customRollProfiles");
+  const scope = isWorldSetting ? "world" : MODULE_ID;
+  const key = isWorldSetting ? "customRollProfiles" : SETTINGS.CUSTOM_ROLL_PROFILES;
+  const store = foundry.utils.deepClone(game.settings.get(scope, key) || {});
+  if (!store[actor.id]) store[actor.id] = {};
+  store[actor.id][category] = data;
+  store[actor.id]._actorName = actor.name;
+  return await game.settings.set(scope, key, store);
+}
 
 export function initCustomRolls() {
-  if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+  if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.CUSTOM_ROLLS)) return;
 
   window.CustomRolls = window.CustomRolls || {};
+  window.CustomRolls.getProfileData = getProfileData;
+  window.CustomRolls.setProfileData = setProfileData;
 
-
-
-
-
-  // --- Persistent Profile Storage Helpers ---
-  window.CustomRolls.getProfileData = window.CustomRolls.getProfileData || function (actor, category) {
-    if (!actor) return null;
-    const store = game.settings.get("world", "customRollProfiles") || {};
-    const actorStore = store[actor.id] || store[actor.name] || {};
-    return actorStore[category] || null;
-  };
-
-  window.CustomRolls.setProfileData = window.CustomRolls.setProfileData || async function (actor, category, data) {
-    if (!actor) return;
-    const store = foundry.utils.deepClone(game.settings.get("world", "customRollProfiles") || {});
-    if (!store[actor.id]) store[actor.id] = {};
-    store[actor.id][category] = data;
-    store[actor.id]._actorName = actor.name;
-    return await game.settings.set("world", "customRollProfiles", store);
-  };
+  const mod = game.modules.get(MODULE_ID);
+  if (mod?.api) {
+    mod.api.getProfileData = getProfileData;
+    mod.api.setProfileData = setProfileData;
+  }
 
   // --- 3.1 D20 Test Client-Side Dialog Launcher ---
   window.CustomRolls.openD20Dialog = function () {

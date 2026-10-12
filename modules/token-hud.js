@@ -45,6 +45,7 @@ export function initTokenHud() {
 
       // 2. Fallback: DM assigned action on the actor
       const assignedSlots = window.CustomRolls?.getProfileData?.(token.actor, "hudAssignedSlots")
+        || token.actor.getFlag("cheapdice", "hudAssignedSlots")
         || token.actor.getFlag("world", "hudAssignedSlots")
         || {};
       const assignment = assignedSlots[buttonNumber] || assignedSlots[String(buttonNumber)];
@@ -52,6 +53,7 @@ export function initTokenHud() {
       if (assignment?.name) {
         const flagKey = assignment.category === "spells" ? "spellConfigs" : "attackConfigs";
         const configs = window.CustomRolls?.getProfileData?.(token.actor, flagKey)
+          || token.actor.getFlag("cheapdice", flagKey)
           || token.actor.getFlag("world", flagKey)
           || {};
         const config = configs[assignment.name];
@@ -60,7 +62,8 @@ export function initTokenHud() {
           return ui.notifications.warn(`Assigned action "${assignment.name}" not found in actor configurations.`);
         }
 
-        if (!globalThis.attackSocket) {
+        const socket = game.modules.get("cheapdice")?.api?.socket || globalThis.attackSocket;
+        if (!socket) {
           return ui.notifications.error("SocketLib handler is not initialized.");
         }
 

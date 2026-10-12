@@ -18,10 +18,12 @@ function registerSocketHandlers() {
   }
   globalThis.attackSocket = socket;
 
-
-
-  // --- 2.1 Timer Handlers ---
-  let activeTimerDialog = null;
+  // Expose socket on module public API
+  const mod = game.modules.get("cheapdice");
+  if (mod) {
+    mod.api = mod.api || {};
+    mod.api.socket = socket;
+  }
 
   function showTimerDialog(label, endTime) {
     if (activeTimerDialog) activeTimerDialog.close();
@@ -1631,13 +1633,20 @@ function registerSocketHandlers() {
         droppedCandidate = candidateA;
       }
     } else {
-      rollD20Second = await new Roll(dieFormula).evaluate();
+      rollD20Second = await new Roll(fullFormula).evaluate();
     }
 
-    const terms2 = [rollD20Second.terms[0], ...roll1.terms.slice(1)];
-    roll2 = Roll.fromTerms(terms2);
-    roll2._total = roll2._evaluateTotal();
-    roll2._evaluated = true;
+    roll2 = isSuperAdvantage
+      ? await new Roll(fullFormula).evaluate()
+      : rollD20Second;
+
+    if (isSuperAdvantage) {
+      // Re-evaluate roll2 with the kept d20 if needed, or evaluate cleanly:
+      // Constructing from clean terms or evaluating fullFormula preserves Foundry v12-v14 contract
+      const terms2 = [rollD20Second.terms[0], ...roll1.terms.slice(1).map(t => t.clone())];
+      roll2 = Roll.fromTerms(terms2);
+      await roll2.evaluate();
+    }
 
     const d20_1 = roll1.dice[0]?.total ?? 0;
     const d20_2 = rollD20Second.dice[0]?.total ?? 0;
