@@ -243,22 +243,33 @@ export function initTokenAc() {
     if (!game.user.isGM) return;
     if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
-    const tokenControls = controls.find((c) => c.name === "token");
+    // Support both Array (v11/v12) and Object/Collection (v13+)
+    const tokenControls = Array.isArray(controls)
+      ? controls.find((c) => c.name === "token")
+      : controls.token ?? Object.values(controls || {}).find((c) => c?.name === "token");
     if (!tokenControls) return;
 
+    const toolData = {
+      name: "masterToggleAC",
+      title: "Master Toggle: Token AC Display",
+      icon: "fa-solid fa-shield-halved",
+      toggle: true,
+      active: getGlobalShowAC(),
+      onClick: async (toggled) => {
+        await game.settings.set(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, toggled);
+        canvas.tokens?.placeables.forEach((t) => renderTokenAcBadge(t));
+      }
+    };
+
     // Avoid duplicate tools
-    if (!tokenControls.tools.some((t) => t.name === "masterToggleAC")) {
-      tokenControls.tools.push({
-        name: "masterToggleAC",
-        title: "Master Toggle: Token AC Display",
-        icon: "fa-solid fa-shield-halved",
-        toggle: true,
-        active: getGlobalShowAC(),
-        onClick: async (toggled) => {
-          await game.settings.set(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, toggled);
-          canvas.tokens?.placeables.forEach((t) => renderTokenAcBadge(t));
-        }
-      });
+    if (Array.isArray(tokenControls.tools)) {
+      if (!tokenControls.tools.some((t) => t.name === "masterToggleAC")) {
+        tokenControls.tools.push(toolData);
+      }
+    } else if (tokenControls.tools && typeof tokenControls.tools === "object") {
+      if (!tokenControls.tools.masterToggleAC) {
+        tokenControls.tools.masterToggleAC = toolData;
+      }
     }
   });
 
