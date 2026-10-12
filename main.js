@@ -6,6 +6,7 @@
 import { MODULE_ID, SETTINGS } from "./src/constants.js";
 import { registerSettings } from "./scripts/settings.js";
 import { initTokenAc, renderTokenAcBadge, getGlobalShowAC } from "./modules/token-ac.js";
+import { initStatCard, postStatCard } from "./modules/stat-card.js";
 import { initTokenHud } from "./modules/token-hud.js";
 import { initElevation } from "./modules/elevation.js";
 import { initSockets } from "./modules/socket-handlers.js";
@@ -42,7 +43,8 @@ Hooks.once("init", () => {
   if (module) {
     module.api = {
       renderTokenAcBadge,
-      getGlobalShowAC
+      getGlobalShowAC,
+      postStatCard
     };
   }
 });
@@ -52,6 +54,7 @@ Hooks.once("init", () => {
 // -----------------------------------------------------------------------------
 Hooks.once("setup", () => {
   registerCustomRollProfilesSetting();
+  initStatCard();
   initializeFeatures();
 });
 
