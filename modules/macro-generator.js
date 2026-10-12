@@ -247,6 +247,15 @@ else pack.render(true, { focus: true });`
   }
   renderInspector();
 })();`
+  },
+  {
+    name: "Set Elevation (Region/Token)",
+    type: "script",
+    img: "icons/svg/up.svg",
+    command: `// Works inside Region Behavior scripts (using triggering token in 'event')
+// or standalone by selecting one or more tokens on the canvas.
+const targetElevation = 0;
+await game.modules.get("${MODULE_ID}")?.api?.setRegionElevation?.(typeof event !== "undefined" ? event : undefined, targetElevation);`
   }
 ];
 

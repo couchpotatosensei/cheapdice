@@ -82,3 +82,37 @@ function setupChangeLevelBypass() {
     }
   });
 }
+
+/**
+ * Sets elevation for the triggering token in a Region Behavior script,
+ * or for the currently controlled tokens if run manually outside a region event.
+ *
+ * @param {object} [event] - The RegionEvent passed to Execute Script behavior (optional)
+ * @param {number} [targetElevation=0] - The elevation to set
+ */
+export async function setRegionElevation(event, targetElevation = 0) {
+  const tokenDoc = event?.data?.token ?? canvas.tokens.controlled[0]?.document;
+
+  if (tokenDoc) {
+    if (tokenDoc.elevation !== targetElevation) {
+      await tokenDoc.update({ elevation: targetElevation });
+    }
+    return;
+  }
+
+  const selectedTokens = canvas.tokens.controlled;
+  if (!selectedTokens.length) {
+    ui.notifications.warn("Please select at least one token.");
+    return;
+  }
+
+  const updates = selectedTokens
+    .filter(t => t.document.elevation !== targetElevation)
+    .map(t => ({ _id: t.id, elevation: targetElevation }));
+
+  if (updates.length) {
+    await canvas.scene.updateEmbeddedDocuments("Token", updates);
+  }
+}
+
+globalThis.setRegionElevation = setRegionElevation;

@@ -8,7 +8,7 @@ import { registerSettings } from "./scripts/settings.js";
 import { initTokenAc, renderTokenAcBadge, getGlobalShowAC } from "./modules/token-ac.js";
 import { initStatCard, postStatCard } from "./modules/stat-card.js";
 import { initTokenHud } from "./modules/token-hud.js";
-import { initElevation } from "./modules/elevation.js";
+import { initElevation, setRegionElevation } from "./modules/elevation.js";
 import { initSockets } from "./modules/socket-handlers.js";
 import { initCustomRolls } from "./modules/custom-rolls.js";
 import { initActionEditors } from "./modules/action-editors.js";
@@ -32,6 +32,7 @@ Hooks.once("init", () => {
       renderTokenAcBadge,
       getGlobalShowAC,
       postStatCard,
+      setRegionElevation,
       customRolls: window.CustomRolls
     };
   }
