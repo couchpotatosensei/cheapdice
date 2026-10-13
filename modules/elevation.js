@@ -115,4 +115,32 @@ export async function setRegionElevation(event, targetElevation = 0) {
   }
 }
 
+export async function toggleRegionElevation(event, elevationA = 0, elevationB = 10) {
+  const tokenDoc = event?.data?.token ?? canvas.tokens.controlled[0]?.document;
+
+  if (tokenDoc) {
+    const currentElevation = Number(tokenDoc.elevation ?? 0);
+    const targetElevation = currentElevation === Number(elevationA) ? Number(elevationB) : Number(elevationA);
+    await tokenDoc.update({ elevation: targetElevation });
+    return;
+  }
+
+  const selectedTokens = canvas.tokens.controlled;
+  if (!selectedTokens.length) {
+    ui.notifications.warn("Please select at least one token.");
+    return;
+  }
+
+  const updates = selectedTokens.map(t => {
+    const currentElevation = Number(t.document.elevation ?? 0);
+    const targetElevation = currentElevation === Number(elevationA) ? Number(elevationB) : Number(elevationA);
+    return { _id: t.id, elevation: targetElevation };
+  });
+
+  if (updates.length) {
+    await canvas.scene.updateEmbeddedDocuments("Token", updates);
+  }
+}
+
 globalThis.setRegionElevation = setRegionElevation;
+globalThis.toggleRegionElevation = toggleRegionElevation;
