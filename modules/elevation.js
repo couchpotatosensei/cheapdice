@@ -95,31 +95,9 @@ export async function setRegionElevation(event, targetElevation = 0) {
   const rawDoc = event?.data?.token ?? canvas.tokens.controlled[0]?.document;
   const tokenDoc = rawDoc ? (canvas.scene?.tokens?.get(rawDoc.id) ?? rawDoc) : null;
 
-  // If scene has Levels, locate matching level
-  const levels = canvas.scene?.levels;
-  let matchingLevelId = null;
-  if (levels?.size) {
-    for (const level of levels.values()) {
-      const bottom = Number(level.elevation?.bottom ?? level.bottom ?? 0);
-      const top = Number(level.elevation?.top ?? level.top ?? Infinity);
-      if (elev >= bottom && elev < top) {
-        matchingLevelId = level.id;
-        break;
-      }
-    }
-  }
-
-  const buildUpdateData = (doc) => {
-    const data = { elevation: elev };
-    if (matchingLevelId && doc.flags?.core?.level !== matchingLevelId) {
-      data["flags.core.level"] = matchingLevelId;
-    }
-    return data;
-  };
-
   if (tokenDoc) {
-    if (Number(tokenDoc.elevation) !== elev || (matchingLevelId && tokenDoc.flags?.core?.level !== matchingLevelId)) {
-      await tokenDoc.update(buildUpdateData(tokenDoc), { animate: false });
+    if (Number(tokenDoc.elevation) !== elev) {
+      await tokenDoc.update({ elevation: elev });
     }
     return;
   }
@@ -133,17 +111,13 @@ export async function setRegionElevation(event, targetElevation = 0) {
   const updates = selectedTokens
     .map(t => {
       const doc = canvas.scene?.tokens?.get(t.id) ?? t.document;
-      const data = buildUpdateData(doc);
-      return { _id: t.id, ...data, prev: Number(doc.elevation) };
+      return { _id: t.id, elevation: elev, prev: Number(doc.elevation) };
     })
     .filter(u => u.prev !== u.elevation)
-    .map(u => {
-      const { prev, ...clean } = u;
-      return clean;
-    });
+    .map(({ _id, elevation }) => ({ _id, elevation }));
 
   if (updates.length) {
-    await canvas.scene.updateEmbeddedDocuments("Token", updates, { animate: false });
+    await canvas.scene.updateEmbeddedDocuments("Token", updates);
   }
 }
 
