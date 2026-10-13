@@ -70,9 +70,9 @@ function setupChangeLevelBypass() {
     foundry.applications.api.DialogV2.confirm._changeLevelPatched = true;
   }
 
-  // 2. Lock Relative Elevation to 0 on level change updates
+  // 2. Lock Relative Elevation to 0 only when changing levels actively
   Hooks.on("preUpdateToken", (tokenDoc, changes, options) => {
-    const destinationLevelId = changes["flags.core.level"] ?? tokenDoc.flags?.core?.level;
+    const destinationLevelId = changes["flags.core.level"];
 
     if (destinationLevelId && changes.elevation !== undefined) {
       const level = canvas.scene?.levels?.get(destinationLevelId);
@@ -115,13 +115,31 @@ export async function setRegionElevation(event, targetElevation = 0) {
   }
 }
 
+/**
+ * Toggles elevation between two points (e.g. stairs between elevation A and B).
+ * Uses midpoint threshold so tokens approaching from intermediate elevations toggle reliably.
+ *
+ * @param {object} [event] - The RegionEvent passed to Execute Script behavior (optional)
+ * @param {number} [elevationA=0] - The lower/starting elevation
+ * @param {number} [elevationB=10] - The upper/target elevation
+ */
 export async function toggleRegionElevation(event, elevationA = 0, elevationB = 10) {
   const tokenDoc = event?.data?.token ?? canvas.tokens.controlled[0]?.document;
+  const numA = Number(elevationA);
+  const numB = Number(elevationB);
+  const midpoint = (numA + numB) / 2;
+
+  const calculateTarget = (current) => {
+    const curr = Number(current ?? 0);
+    // If at or closer to A, step up to B; otherwise step down to A
+    return curr < midpoint ? numB : numA;
+  };
 
   if (tokenDoc) {
-    const currentElevation = Number(tokenDoc.elevation ?? 0);
-    const targetElevation = currentElevation === Number(elevationA) ? Number(elevationB) : Number(elevationA);
-    await tokenDoc.update({ elevation: targetElevation });
+    const targetElevation = calculateTarget(tokenDoc.elevation);
+    if (tokenDoc.elevation !== targetElevation) {
+      await tokenDoc.update({ elevation: targetElevation });
+    }
     return;
   }
 
@@ -131,11 +149,13 @@ export async function toggleRegionElevation(event, elevationA = 0, elevationB = 
     return;
   }
 
-  const updates = selectedTokens.map(t => {
-    const currentElevation = Number(t.document.elevation ?? 0);
-    const targetElevation = currentElevation === Number(elevationA) ? Number(elevationB) : Number(elevationA);
-    return { _id: t.id, elevation: targetElevation };
-  });
+  const updates = selectedTokens
+    .map(t => {
+      const targetElevation = calculateTarget(t.document.elevation);
+      return { _id: t.id, elevation: targetElevation, prev: t.document.elevation };
+    })
+    .filter(u => u.prev !== u.elevation)
+    .map(({ _id, elevation }) => ({ _id, elevation }));
 
   if (updates.length) {
     await canvas.scene.updateEmbeddedDocuments("Token", updates);
