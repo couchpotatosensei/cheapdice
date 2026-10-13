@@ -256,18 +256,6 @@ else pack.render(true, { focus: true });`
 // or standalone by selecting one or more tokens on the canvas.
 const targetElevation = 0;
 await game.modules.get("${MODULE_ID}")?.api?.setRegionElevation?.(typeof event !== "undefined" ? event : undefined, targetElevation);`
-  },
-  {
-    name: "Toggle Elevation (Two-Way Stairs)",
-    type: "script",
-    img: "icons/svg/up.svg",
-    command: `// Two-Way Stairs: toggles between elevation A and B
-// Works inside Region Behavior scripts (using triggering token in 'event')
-// or standalone by selecting one or more tokens on the canvas.
-const elevationA = 0;
-const elevationB = 10;
-await (game.modules.get("${MODULE_ID}")?.api?.toggleRegionElevation?.(typeof event !== "undefined" ? event : undefined, elevationA, elevationB)
-  ?? globalThis.toggleRegionElevation?.(typeof event !== "undefined" ? event : undefined, elevationA, elevationB));`
   }
 ];
 
