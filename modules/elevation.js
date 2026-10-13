@@ -119,7 +119,7 @@ export async function setRegionElevation(event, targetElevation = 0) {
 
   if (tokenDoc) {
     if (Number(tokenDoc.elevation) !== elev || (matchingLevelId && tokenDoc.flags?.core?.level !== matchingLevelId)) {
-      await tokenDoc.update(buildUpdateData(tokenDoc));
+      await tokenDoc.update(buildUpdateData(tokenDoc), { animate: false });
     }
     return;
   }
@@ -143,7 +143,7 @@ export async function setRegionElevation(event, targetElevation = 0) {
     });
 
   if (updates.length) {
-    await canvas.scene.updateEmbeddedDocuments("Token", updates);
+    await canvas.scene.updateEmbeddedDocuments("Token", updates, { animate: false });
   }
 }
 
