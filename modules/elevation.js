@@ -124,16 +124,18 @@ export async function setRegionElevation(event, targetElevation = 0) {
  * @param {number} [elevationB=10] - The upper/target elevation
  */
 export async function toggleRegionElevation(event, elevationA = 0, elevationB = 10) {
-  const tokenDoc = event?.data?.token ?? canvas.tokens.controlled[0]?.document;
   const numA = Number(elevationA);
   const numB = Number(elevationB);
   const midpoint = (numA + numB) / 2;
 
   const calculateTarget = (current) => {
     const curr = Number(current ?? 0);
-    // If at or closer to A, step up to B; otherwise step down to A
     return curr < midpoint ? numB : numA;
   };
+
+  // 1. Identify target token document
+  const rawDoc = event?.data?.token ?? canvas.tokens.controlled[0]?.document;
+  const tokenDoc = rawDoc ? (canvas.scene?.tokens?.get(rawDoc.id) ?? rawDoc) : null;
 
   if (tokenDoc) {
     const targetElevation = calculateTarget(tokenDoc.elevation);
@@ -143,6 +145,7 @@ export async function toggleRegionElevation(event, elevationA = 0, elevationB = 
     return;
   }
 
+  // 2. Fallback to multiple selected tokens
   const selectedTokens = canvas.tokens.controlled;
   if (!selectedTokens.length) {
     ui.notifications.warn("Please select at least one token.");
@@ -151,8 +154,9 @@ export async function toggleRegionElevation(event, elevationA = 0, elevationB = 
 
   const updates = selectedTokens
     .map(t => {
-      const targetElevation = calculateTarget(t.document.elevation);
-      return { _id: t.id, elevation: targetElevation, prev: t.document.elevation };
+      const doc = canvas.scene?.tokens?.get(t.id) ?? t.document;
+      const targetElevation = calculateTarget(doc.elevation);
+      return { _id: t.id, elevation: targetElevation, prev: doc.elevation };
     })
     .filter(u => u.prev !== u.elevation)
     .map(({ _id, elevation }) => ({ _id, elevation }));
