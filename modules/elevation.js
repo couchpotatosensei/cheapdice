@@ -91,11 +91,13 @@ function setupChangeLevelBypass() {
  * @param {number} [targetElevation=0] - The elevation to set
  */
 export async function setRegionElevation(event, targetElevation = 0) {
-  const tokenDoc = event?.data?.token ?? canvas.tokens.controlled[0]?.document;
+  const elev = Number(targetElevation ?? 0);
+  const rawDoc = event?.data?.token ?? canvas.tokens.controlled[0]?.document;
+  const tokenDoc = rawDoc ? (canvas.scene?.tokens?.get(rawDoc.id) ?? rawDoc) : null;
 
   if (tokenDoc) {
-    if (tokenDoc.elevation !== targetElevation) {
-      await tokenDoc.update({ elevation: targetElevation });
+    if (Number(tokenDoc.elevation) !== elev) {
+      await tokenDoc.update({ elevation: elev });
     }
     return;
   }
@@ -107,8 +109,12 @@ export async function setRegionElevation(event, targetElevation = 0) {
   }
 
   const updates = selectedTokens
-    .filter(t => t.document.elevation !== targetElevation)
-    .map(t => ({ _id: t.id, elevation: targetElevation }));
+    .map(t => {
+      const doc = canvas.scene?.tokens?.get(t.id) ?? t.document;
+      return { _id: t.id, elevation: elev, prev: Number(doc.elevation) };
+    })
+    .filter(u => u.prev !== u.elevation)
+    .map(({ _id, elevation }) => ({ _id, elevation }));
 
   if (updates.length) {
     await canvas.scene.updateEmbeddedDocuments("Token", updates);
