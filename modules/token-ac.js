@@ -243,11 +243,16 @@ export function initTokenAc() {
     if (!game.user.isGM) return;
     if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.TOKEN_AC)) return;
 
-    // Support both Array (v11/v12) and Object/Collection (v13+)
+    // Support both Array (v11/v12: 'token') and Object/Collection (v13/v14: 'tokens' or 'token')
     const tokenControls = Array.isArray(controls)
-      ? controls.find((c) => c.name === "token")
-      : controls.token ?? Object.values(controls || {}).find((c) => c?.name === "token");
+      ? controls.find((c) => c.name === "token" || c.name === "tokens")
+      : controls.tokens ?? controls.token ?? Object.values(controls || {}).find((c) => c?.name === "token" || c?.name === "tokens");
     if (!tokenControls) return;
+
+    const handleToggle = async (active) => {
+      await game.settings.set(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, active);
+      canvas.tokens?.placeables.forEach((t) => renderTokenAcBadge(t));
+    };
 
     const toolData = {
       name: "masterToggleAC",
@@ -256,8 +261,11 @@ export function initTokenAc() {
       toggle: true,
       active: getGlobalShowAC(),
       onClick: async (toggled) => {
-        await game.settings.set(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, toggled);
-        canvas.tokens?.placeables.forEach((t) => renderTokenAcBadge(t));
+        await handleToggle(toggled);
+      },
+      onChange: async (event, active) => {
+        const state = typeof active === "boolean" ? active : !getGlobalShowAC();
+        await handleToggle(state);
       }
     };
 
