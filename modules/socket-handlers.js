@@ -1675,21 +1675,20 @@ function registerSocketHandlers() {
         rollD20Second = candidateB;
         droppedCandidate = candidateA;
       }
-
-      // Construct roll2 preserving the actual kept Die term so dice tooltip expands cleanly
-      const cloneTerm = (t) => {
-        if (typeof t.clone === "function") return t.clone();
-        if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
-        return RollTerm.fromJSON(JSON.stringify(t));
-      };
-      const terms2 = [cloneTerm(rollD20Second.terms[0]), ...roll1.terms.slice(1).map(cloneTerm)];
-      roll2 = Roll.fromTerms(terms2);
-      if (!roll2._evaluated) {
-        await roll2.evaluate();
-      }
     } else {
-      rollD20Second = await new Roll(fullFormula).evaluate();
-      roll2 = rollD20Second;
+      rollD20Second = await new Roll(dieFormula).evaluate();
+    }
+
+    // Construct roll2 reusing evaluated modifier terms from roll1 so extra dice (e.g. 1d4) are only rolled once
+    const cloneTerm = (t) => {
+      if (typeof t.clone === "function") return t.clone();
+      if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
+      return RollTerm.fromJSON(JSON.stringify(t));
+    };
+    const terms2 = [cloneTerm(rollD20Second.terms[0]), ...roll1.terms.slice(1).map(cloneTerm)];
+    roll2 = Roll.fromTerms(terms2);
+    if (!roll2._evaluated) {
+      await roll2.evaluate();
     }
 
     let d20_1 = roll1.dice[0]?.total ?? 0;

@@ -1844,7 +1844,7 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; height: 100%; box-sizing: border-box; min-height: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px;">
           <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
-            Tracking Stuff
+            <i class="fas fa-arrows-rotate" style="margin-right: 3px;"></i> Recharge
           </span>
           <div style="display: flex; gap: 3px;">
             <button type="button" id="btn-recharge-dawn-all" title="Roll recharge for all Daily/Dawn items" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 4px; border: 1px solid #e5a50a; background: #fffbe6; color: #9c6c03; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;">
@@ -2587,19 +2587,19 @@ Click a numbered modifier badge to execute a roll.</div>
       <!-- LEFT SIDEBAR: Persistent (~245px) -->
       <div id="dialog-sidebar-left" style="width: 245px; min-width: 245px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
-        <!-- Actor Portrait Hero Card & Side-by-Side Init/Conc -->
-        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 80px; height: 80px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 3px rgba(0,0,0,0.12);" />
-          <div style="display: flex; gap: 4px; width: 100%;">
-            <div class="sheet-entry-row" data-key="init" data-type="init" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
-              <span class="entry-label" style="font-size: 0.68em; font-weight: 700; color: #235d6e;">Init</span>
-              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+        <!-- Actor Portrait (Left) & Stacked Init/Conc (Right) -->
+        <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+            <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
+              <span class="entry-label" style="font-size: 0.7em; font-weight: 700; color: #235d6e; white-space: nowrap;">Initiative</span>
+              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 46px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${d20Data.formattedInit}
               </button>
             </div>
-            <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
-              <span class="entry-label" style="font-size: 0.68em; font-weight: 700; color: #a34848;">Conc</span>
-              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 28px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+            <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
+              <span class="entry-label" style="font-size: 0.7em; font-weight: 700; color: #a34848; white-space: nowrap;">Concentration</span>
+              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 30px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${d20Data.formattedConc}
               </button>
             </div>
