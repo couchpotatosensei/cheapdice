@@ -703,12 +703,20 @@ function registerSocketHandlers() {
       </div>
     </details>`;
 
-    const extraDamageBadges = activeComponents.map(c => `
-      <span style="background: #f1f3f5; border: 1px solid #ced4da; border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 600; color: #495057;">${c.label}</span>
-    `).join("");
+    const perkBadges = [];
+    if (CRIT_THRESHOLD && CRIT_THRESHOLD < 20) perkBadges.push(`Crit ${CRIT_THRESHOLD}+`);
+    if (isSuperAdv) perkBadges.push("Super Adv");
+    if (isLucky) perkBadges.push("Lucky");
+    if (gwfThreshold > 0) perkBadges.push(`GWF ≤${gwfThreshold}`);
+    if (rawCritBonus !== "") perkBadges.push("Crit Bonus Dmg");
 
-    const tagsBlock = extraDamageBadges
-      ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 5px;">${extraDamageBadges}</div>`
+    const allBadgesHtml = [
+      ...perkBadges.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.35); border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 600; color: #4b5d88;">${t}</span>`),
+      ...activeComponents.map(c => `<span style="background: #f1f3f5; border: 1px solid #ced4da; border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 600; color: #495057;">${c.label}</span>`)
+    ].join("");
+
+    const tagsBlock = allBadgesHtml
+      ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 5px;">${allBadgesHtml}</div>`
       : "";
 
     const chatContent = `
@@ -913,7 +921,7 @@ function registerSocketHandlers() {
 
     if (explodeModifier && resolutionMethod !== "auto" && !isHealingType) tags.push(`Explode [${explodeModifier}]`);
     if (chaosJump && !isHealingType) tags.push("Chaos Jump");
-    if (superAdv && resolutionMethod === "attack") tags.push("Elven Acc.");
+    if (superAdv && resolutionMethod === "attack") tags.push("Super Adv");
 
     const tagsHtml = tags.map(t => {
       const isConc = t === "Concentration";

@@ -1084,7 +1084,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
       const tags = [];
       tags.push(`Crit: ${config.CRIT_THRESHOLD || 20}+`);
-      if (config.superAdv) tags.push("Elven Acc.");
+      if (config.superAdv) tags.push("Super Adv");
       if (config.HAS_HALFLING_LUCKY) tags.push("Halfling Lucky");
       if (Number(config.GWF_REROLL_THRESHOLD) > 0) tags.push(`GWF (≤${config.GWF_REROLL_THRESHOLD})`);
 
@@ -1467,7 +1467,7 @@ Click a numbered modifier badge to execute a roll.</div>
       const explodeCond = (cfg.explodeCondition || (cfg.explodingDice ? "x" : "")).trim();
       if (explodeCond && !isHealing && cfg.resolutionMethod !== "auto") tags.push(`Explode [${explodeCond}]`);
       if (cfg.chaosJump && !isHealing) tags.push("Chaos Jump");
-      if (cfg.superAdv && cfg.resolutionMethod === "attack") tags.push("Elven Acc.");
+      if (cfg.superAdv && cfg.resolutionMethod === "attack") tags.push("Super Adv");
       if (cfg.isCantripScale && !cfg.isMultiAttack) tags.push("Cantrip Scale");
 
       const tagsHtml = tags.map(t => {
@@ -2324,7 +2324,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
-      if (!config) return { atkSign: "+0", dmgFormula: "1d6", dmgType: "SLASHING", tags: [] };
+      if (!config) return { atkSign: "+0", dmgFormula: "1d6", dmgType: "SLASHING", tags: [], totalAtk: 0, dmgMod: 0, diceCount: 1, dieSize: "6" };
       const abilityMod = actor.system.abilities[config.abilityScore]?.mod || 0;
       const prof = actor.system.attributes.prof || 0;
       const wepMod = Number(config.weaponModifier) || 0;
@@ -2344,11 +2344,12 @@ Click a numbered modifier badge to execute a roll.</div>
 
       const tags = [];
       if (config.CRIT_THRESHOLD && config.CRIT_THRESHOLD < 20) tags.push(`Crit ${config.CRIT_THRESHOLD}+`);
-      if (config.superAdv) tags.push("Elven Acc.");
+      if (config.superAdv) tags.push("Super Adv");
       if (config.HAS_HALFLING_LUCKY) tags.push("Lucky");
       if (Number(config.GWF_REROLL_THRESHOLD) > 0) tags.push(`GWF ≤${config.GWF_REROLL_THRESHOLD}`);
+      if (config.extraCriticalBonus && String(config.extraCriticalBonus).trim() !== "") tags.push("Crit Bonus Dmg");
 
-      return { atkSign, dmgFormula, dmgType, tags };
+      return { atkSign, dmgFormula, dmgType, tags, totalAtk, dmgMod, diceCount, dieSize };
     }
 
     function getSlotInfo(lvl) {
@@ -2541,18 +2542,11 @@ Click a numbered modifier badge to execute a roll.</div>
 
     function getSelectedWeaponInspectorHtml() {
       const config = attacks[selectedWeaponKey];
-      if (!config) {
-        return `
-          <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 0.85em; font-style: italic;">
-            Select a weapon from the list.
-          </div>
-        `;
-      }
-      const d = getWeaponDetails(config);
-      const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
+      const d = config ? getWeaponDetails(config) : null;
+      const tagsHtml = d ? d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ") : "";
 
       let gwmHtml = "";
-      if (config.hasGWM) {
+      if (config?.hasGWM) {
         gwmHtml = `
           <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #a34848; cursor: pointer; padding: 3px 6px; background: rgba(163, 72, 72, 0.08); border-radius: 3px; border: 1px solid rgba(163, 72, 72, 0.25);">
             <span>GWM / Sharpshooter (-5 / +10)</span>
@@ -2561,7 +2555,7 @@ Click a numbered modifier badge to execute a roll.</div>
         `;
       }
 
-      const extras = config.additionalDamageComponents || [];
+      const extras = config?.additionalDamageComponents || [];
       let extrasHtml = "";
       if (extras.length > 0) {
         extrasHtml = `
@@ -2569,11 +2563,11 @@ Click a numbered modifier badge to execute a roll.</div>
             <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
               Optional Damage
             </div>
-            <div id="weapon-extras-scroll" style="max-height: 125px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;">
+            <div id="weapon-extras-scroll" style="max-height: 122px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;">
               ${extras.map((ex, i) => `
                 <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; cursor: pointer; padding: 3px 5px; background: #fff; border: 1px solid #d8dee6; border-radius: 3px;">
                   <span><strong>${ex.label}</strong> <small style="color: #666;">(${ex.formula})</small></span>
-                  <input type="checkbox" class="extra-dmg-toggle" data-index="${i}" style="margin: 0;">
+                  <input type="checkbox" class="extra-dmg-toggle" data-index="${i}" ${ex.isActive ? 'checked' : ''} style="margin: 0;">
                 </label>
               `).join("")}
             </div>
@@ -2582,21 +2576,53 @@ Click a numbered modifier badge to execute a roll.</div>
       }
 
       return `
-        <!-- Weapon Overview Card -->
-        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px;">
-            <span style="font-weight: 700; font-size: 0.85em; color: #2b3a4a;">${selectedWeaponKey}</span>
-            <span style="font-size: 0.72em; font-weight: 700; color: #555;">${d.dmgType}</span>
+        <!-- Weapon Overview Card (Static space taking remainder) -->
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 6px 8px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <div style="border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px; flex-shrink: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">${selectedWeaponKey || "Weapon Overview"}</span>
+              ${config ? `<span style="font-size: 0.7em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(114, 137, 218, 0.3);">${d.dmgType}</span>` : ""}
+            </div>
+            <div style="font-size: 0.7em; color: #777;">${config ? "Attack & Damage Overview" : "Information Pane"}</div>
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span>Atk: <strong style="color: #2b3a4a;">${d.atkSign}</strong></span>
-            <span>Dmg: <strong style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
+          <div style="font-size: 0.78em; line-height: 1.4; color: #444; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 4px;">
+            ${config ? `
+              <div style="display: flex; flex-direction: column; gap: 3px; margin-top: 2px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="color: #555; font-size: 0.85em;">Attack:</span>
+                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 0.95em;">1d20 ${d.atkSign}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="color: #555; font-size: 0.85em;">Damage:</span>
+                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 0.95em;">${d.dmgFormula} <small style="font-weight: normal; color: #666;">(${d.dmgType.toLowerCase()})</small></strong>
+                </div>
+              </div>
+              ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+
+              <!-- Live Estimated Formula Totals -->
+              <div id="weapon-live-formula-section" style="margin-top: auto; padding-top: 4px; border-top: 1px dashed #bcc5d3;">
+                <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">
+                  Estimated Roll Formula
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="color: #555; font-size: 0.76em;">Total Atk:</span>
+                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 0.82em;">1d20 ${d.atkSign}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1px;">
+                  <span style="color: #555; font-size: 0.76em;">Total Dmg:</span>
+                  <strong id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 0.82em; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;" title="${d.dmgFormula} ${d.dmgType.toLowerCase()}">${d.dmgFormula} ${d.dmgType.toLowerCase()}</strong>
+                </div>
+              </div>
+            ` : `
+              <div style="color: #888; font-style: italic; margin-top: 6px;">
+                Select a weapon from the list to inspect its attack notation, modifiers, and optional damage components.
+              </div>
+            `}
           </div>
-          ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
         </div>
 
         <!-- Extra Modifiers Card (Side-by-Side) -->
-        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
           <div style="display: flex; gap: 6px;">
             <div style="flex: 1;">
               <label for="weapon-extra-atk" style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">EXTRA ATK MOD</label>
@@ -2609,17 +2635,17 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
         </div>
 
-        <!-- Optional Damage & GWM -->
-        ${gwmHtml || extrasHtml ? `
-          <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0;">
+        <!-- Optional Damage & GWM Card -->
+        ${(gwmHtml || extrasHtml) ? `
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
             ${gwmHtml}
             ${extrasHtml}
           </div>
         ` : ''}
 
         <!-- Pinned Roll Attack Button -->
-        <div style="margin-top: auto; padding-top: 6px;">
-          <button type="button" id="btn-roll-weapon-now" style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <div style="margin-top: auto; padding-top: 4px; flex-shrink: 0;">
+          <button type="button" id="btn-roll-weapon-now" ${!config ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <i class="fas fa-dice-d20"></i> Roll Attack
           </button>
         </div>
@@ -2958,15 +2984,83 @@ Click a numbered modifier badge to execute a roll.</div>
           inspectorSpell.css("display", mode === "spell" ? "flex" : "none");
         }
 
+        function updateWeaponOverviewTotals() {
+          const config = attacks[selectedWeaponKey];
+          if (!config) return;
+          const d = getWeaponDetails(config);
+
+          let atkMod = d.totalAtk;
+          let dmgMod = d.dmgMod;
+          let atkSuffix = "";
+
+          // Check GWM toggle
+          const isGWM = html.find("#gwm-toggle").is(":checked");
+          if (config.hasGWM && isGWM) {
+            atkMod -= 5;
+            dmgMod += 10;
+          }
+
+          // Check extra attack input
+          const extraAtk = (html.find("#weapon-extra-atk").val() || "").trim();
+          if (extraAtk) {
+            atkSuffix = extraAtk.startsWith("+") || extraAtk.startsWith("-") ? ` ${extraAtk}` : ` + ${extraAtk}`;
+          }
+
+          // Check extra damage input
+          const extraDmg = (html.find("#weapon-extra-dmg").val() || "").trim();
+
+          // Check optional damage toggles
+          const activeExtras = [];
+          if (config.additionalDamageComponents) {
+            html.find(".extra-dmg-toggle:checked").each(function () {
+              const idx = $(this).data("index");
+              const comp = config.additionalDamageComponents[idx];
+              if (comp) {
+                activeExtras.push(`${comp.formula} <small style="color: #666;">(${comp.label || comp.damageType || ""})</small>`);
+              }
+            });
+          }
+
+          // Format total attack string
+          const atkSign = atkMod >= 0 ? `+ ${atkMod}` : `- ${Math.abs(atkMod)}`;
+          const totalAtkStr = `1d20 ${atkSign}${atkSuffix}`;
+
+          // Format total damage string
+          const dmgModSign = dmgMod >= 0 ? `+ ${dmgMod}` : `- ${Math.abs(dmgMod)}`;
+          let totalDmgStr = "";
+          if (d.diceCount > 0 && d.dieSize) {
+            totalDmgStr = `${d.diceCount}d${d.dieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim();
+          } else {
+            totalDmgStr = `${dmgMod}`;
+          }
+          totalDmgStr += ` ${d.dmgType.toLowerCase()}`;
+
+          if (extraDmg) {
+            totalDmgStr += ` + ${extraDmg}`;
+          }
+          if (activeExtras.length > 0) {
+            totalDmgStr += ` + ${activeExtras.join(" + ")}`;
+          }
+
+          html.find("#preview-total-atk").text(totalAtkStr);
+          html.find("#preview-total-dmg").html(totalDmgStr).attr("title", totalDmgStr.replace(/<[^>]+>/g, ""));
+        }
+
         btnWeapon.on("click", () => setTab("weapon"));
         btnSpell.on("click", () => setTab("spell"));
         btnD20.on("click", () => setTab("d20"));
         setTab(currentMode);
+        updateWeaponOverviewTotals();
+
+        // Live formula updates on keystroke and checkbox changes
+        html.on("input", "#weapon-extra-atk, #weapon-extra-dmg", updateWeaponOverviewTotals);
+        html.on("change", "#gwm-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
 
         html.on("click", ".weapon-card", function () {
           selectedWeaponKey = $(this).data("key");
           updateCardStyles();
           html.find("#inspector-weapon").html(getSelectedWeaponInspectorHtml());
+          updateWeaponOverviewTotals();
         });
 
         html.on("click", ".spell-card", function () {
