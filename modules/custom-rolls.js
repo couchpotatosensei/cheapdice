@@ -2201,7 +2201,7 @@ Click a numbered modifier badge to execute a roll.</div>
   }
 
   // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
-  window.CustomRolls.openActionDialog = function (initialMode = "weapon") {
+  window.CustomRolls.openActionDialog = function (initialMode = "d20") {
     if (!getSetting("featureCustomRolls")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
@@ -2543,20 +2543,25 @@ Click a numbered modifier badge to execute a roll.</div>
         
         <!-- Tabs Header -->
         <div style="display: flex; gap: 6px; border-bottom: 2px solid #7289da; padding-bottom: 6px; flex-shrink: 0;">
+          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
+            <i class="fas fa-dice-d20"></i> Checks & Saves
+          </button>
           <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
             <i class="fas fa-sword"></i> Weapons (${attackNames.length})
           </button>
           <button type="button" id="tab-btn-spell" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
             <i class="fas fa-magic"></i> Spells (${spellKeys.length})
           </button>
-          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
-            <i class="fas fa-dice-d20"></i> Checks & Saves
-          </button>
         </div>
 
         <!-- Tab Body Container (Height fixed to 480px) -->
         <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
           
+          <!-- D20 Checks & Saves Section -->
+          <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
+            ${d20Data.html}
+          </div>
+
           <!-- Weapons Section -->
           <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
             <div id="weapon-cards-container" style="flex: 1; min-height: 0; max-height: 310px; overflow-y: auto; padding-right: 4px;">
@@ -2585,11 +2590,6 @@ Click a numbered modifier badge to execute a roll.</div>
                 <i class="fas fa-magic"></i> Cast Spell
               </button>
             </div>
-          </div>
-
-          <!-- D20 Checks & Saves Section -->
-          <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
-            ${d20Data.html}
           </div>
 
         </div>
