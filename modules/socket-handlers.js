@@ -1672,6 +1672,20 @@ function registerSocketHandlers() {
       d20_2 = Math.max(10, d20_2);
     }
 
+    // Helper to detect Halfling Lucky rerolls on a roll object
+    const getHalflingReroll = (rollObj) => {
+      const results = rollObj?.dice?.[0]?.results || [];
+      const rerolled = results.find(r => r.rerolled || r.active === false);
+      const active = results.find(r => r.active !== false);
+      if (rerolled && active) {
+        return { original: rerolled.result, final: active.result };
+      }
+      return null;
+    };
+
+    const reroll1 = isHalflingLuck ? getHalflingReroll(roll1) : null;
+    const reroll2 = isHalflingLuck ? getHalflingReroll(rollD20Second) : null;
+
     let rHtml1 = await roll1.render();
     let rHtml2 = await roll2.render();
 
@@ -1681,9 +1695,26 @@ function registerSocketHandlers() {
     if (d20_2 === 20) rHtml2 = rHtml2.replace('dice-total', 'dice-total critical');
     else if (d20_2 === 1) rHtml2 = rHtml2.replace('dice-total', 'dice-total fumble');
 
+    const renderHalflingRerollBox = (reroll) => {
+      if (!reroll) return "";
+      return `<div style="padding: 2px 4px; margin: 3px 0 0; border: 1px solid #17a2b8; border-radius: 3px; background-color: #e0f7fa; font-size: 0.75em; text-align: center;">
+        <span style="font-weight: 600; color: #117a8b;">Halfling Lucky:</span> <span style="color: #dc3545;">Rolled ${reroll.original}</span> &rarr; <span style="font-weight: bold; color: #007bff;">${reroll.final}</span>
+      </div>`;
+    };
+
+    if (reroll1) rHtml1 += renderHalflingRerollBox(reroll1);
+    if (reroll2) rHtml2 += renderHalflingRerollBox(reroll2);
+
     if (isSuperAdvantage && droppedCandidate) {
-      const keptRaw = rollD20Second.dice[0]?.results?.[0]?.result ?? d20_2;
-      const droppedRaw = droppedCandidate.dice[0]?.results?.[0]?.result ?? (droppedCandidate.dice[0]?.total ?? droppedCandidate.total);
+      // Use the active result (post-reroll) as the natural roll
+      const getActiveResult = (rollObj, fallback) => {
+        const results = rollObj?.dice?.[0]?.results || [];
+        const activeItem = results.find(r => r.active !== false);
+        return activeItem ? activeItem.result : fallback;
+      };
+
+      const keptRaw = getActiveResult(rollD20Second, d20_2);
+      const droppedRaw = getActiveResult(droppedCandidate, droppedCandidate.dice[0]?.total ?? droppedCandidate.total);
       const droppedVal = applyReliableTalent ? Math.max(10, (droppedCandidate.dice[0]?.total ?? droppedCandidate.total)) : (droppedCandidate.dice[0]?.total ?? droppedCandidate.total);
 
       const keptDisplay = (applyReliableTalent && keptRaw < 10) ? `${keptRaw} → ${d20_2}` : `${d20_2}`;
