@@ -1636,24 +1636,15 @@ function registerSocketHandlers() {
         rollD20Second = candidateB;
         droppedCandidate = candidateA;
       }
+
+      // Construct roll2 with the kept d20 candidate's roll term plus modifiers
+      const keptD20Term = rollD20Second.terms[0];
+      const modifierFormula = formulaSuffix.trim();
+      const secondFormula = modifierFormula ? `${keptD20Term.total} ${modifierFormula}` : `${keptD20Term.total}`;
+      roll2 = await new Roll(secondFormula).evaluate();
     } else {
       rollD20Second = await new Roll(fullFormula).evaluate();
-    }
-
-    roll2 = isSuperAdvantage
-      ? await new Roll(fullFormula).evaluate()
-      : rollD20Second;
-
-    if (isSuperAdvantage) {
-      // Re-evaluate roll2 using the kept d20 candidate's formula or clone rollTerm safely
-      const cloneTerm = (t) => {
-        if (typeof t.clone === "function") return t.clone();
-        if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
-        return RollTerm.fromJSON(JSON.stringify(t));
-      };
-      const terms2 = [rollD20Second.terms[0], ...roll1.terms.slice(1).map(cloneTerm)];
-      roll2 = Roll.fromTerms(terms2);
-      await roll2.evaluate();
+      roll2 = rollD20Second;
     }
 
     const d20_1 = roll1.dice[0]?.total ?? 0;
