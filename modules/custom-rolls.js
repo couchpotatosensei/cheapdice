@@ -1797,34 +1797,122 @@ Click a numbered modifier badge to execute a roll.</div>
     if (!actor) return [];
     const isLR = restType === "lr";
     const isSR = restType === "sr";
+    const isDawn = restType === "dawn";
 
     const updates = {};
     const itemUpdates = [];
     const rechargeChatLines = [];
 
-    // 1. Check Class Resources (primary, secondary, tertiary)
-    const resources = actor.system.resources || {};
-    for (const slot of ["primary", "secondary", "tertiary"]) {
-      const res = resources[slot];
-      if (res && res.label && typeof res.max === "number" && res.max > 0) {
-        const shouldReset = isLR ? (res.lr || res.sr || (!res.lr && !res.sr)) : (isSR && res.sr);
-        if (shouldReset && res.value < res.max) {
-          updates[`system.resources.${slot}.value`] = res.max;
-          rechargeChatLines.push(`• <strong>${res.label}</strong>: Reset to ${res.max}/${res.max}`);
+    const trackers = actor.getFlag("world", "trackingStuff") || [];
+    let trackersModified = false;
+    const handledItemIds = new Set();
+    const handledResourceSlots = new Set();
+
+    // 1. Process all active Trackers configured in trackingStuff
+    for (const t of trackers) {
+      const reset = String(t.resetOn || "lr").toLowerCase();
+      let shouldRecharge = false;
+      if (isLR) {
+        shouldRecharge = (reset === "lr" || reset === "sr" || reset === "dawn" || reset === "day");
+      } else if (isSR) {
+        shouldRecharge = (reset === "sr");
+      } else if (isDawn) {
+        shouldRecharge = (reset === "dawn" || reset === "day");
+      }
+
+      if (!shouldRecharge) continue;
+
+      if (t.type === "item" && t.itemRefId) {
+        handledItemIds.add(t.itemRefId);
+        const item = actor.items.get(t.itemRefId);
+        if (item) {
+          const uses = item.system.uses;
+          const cur = Number(uses?.value ?? t.value ?? 0);
+          const max = Number(uses?.max ?? t.max ?? 0);
+          if (cur < max) {
+            const formula = (t.rechargeFormula || "").trim();
+            if (formula) {
+              try {
+                const roll = new Roll(formula);
+                await roll.evaluate();
+                const newVal = Math.min(max, cur + roll.total);
+                itemUpdates.push({ _id: item.id, "system.uses.value": newVal });
+                t.value = newVal;
+                trackersModified = true;
+                rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+              } catch (err) {
+                console.error("Recharge formula error", err);
+              }
+            } else {
+              itemUpdates.push({ _id: item.id, "system.uses.value": max });
+              t.value = max;
+              trackersModified = true;
+              rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
+            }
+          }
+        }
+      } else if (t.type === "resource" && t.resourceSlot) {
+        handledResourceSlots.add(t.resourceSlot);
+        const res = actor.system.resources?.[t.resourceSlot];
+        const cur = Number(res?.value ?? t.value ?? 0);
+        const max = Number(res?.max ?? t.max ?? 0);
+        if (cur < max) {
+          const formula = (t.rechargeFormula || "").trim();
+          if (formula) {
+            try {
+              const roll = new Roll(formula);
+              await roll.evaluate();
+              const newVal = Math.min(max, cur + roll.total);
+              updates[`system.resources.${t.resourceSlot}.value`] = newVal;
+              t.value = newVal;
+              trackersModified = true;
+              rechargeChatLines.push(`• <strong>${t.label}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+            } catch (e) {}
+          } else {
+            updates[`system.resources.${t.resourceSlot}.value`] = max;
+            t.value = max;
+            trackersModified = true;
+            rechargeChatLines.push(`• <strong>${t.label}</strong>: Reset to ${max}/${max}`);
+          }
+        }
+      } else if (t.type === "custom") {
+        const cur = Number(t.value ?? 0);
+        const max = Number(t.max ?? 0);
+        if (cur < max) {
+          const formula = (t.rechargeFormula || "").trim();
+          if (formula) {
+            try {
+              const roll = new Roll(formula);
+              await roll.evaluate();
+              const newVal = Math.min(max, cur + roll.total);
+              t.value = newVal;
+              trackersModified = true;
+              rechargeChatLines.push(`• <strong>${t.label}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+            } catch (e) {}
+          } else {
+            t.value = max;
+            trackersModified = true;
+            rechargeChatLines.push(`• <strong>${t.label}</strong>: Reset to ${max}/${max}`);
+          }
         }
       }
     }
 
-    // 2. Check Items with Uses
+    // 2. Also check any actor items not explicitly in trackers
     for (const item of actor.items) {
+      if (handledItemIds.has(item.id)) continue;
       const uses = item.system.uses;
       if (uses && typeof uses.max === "number" && uses.max > 0) {
         const per = String(uses.per || "").toLowerCase();
-        const shouldReset = isLR ? (per === "lr" || per === "sr" || per === "day") : (isSR && per === "sr");
-        if (shouldReset && uses.value < uses.max) {
-          itemUpdates.push({ _id: item.id, "system.uses.value": uses.max });
-          rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${uses.max}/${uses.max}`);
-        } else if (isLR && (per === "charges" || per === "day")) {
+        let shouldRecharge = false;
+        if (isLR) {
+          shouldRecharge = (per === "lr" || per === "sr" || per === "day" || per === "dawn" || per === "charges");
+        } else if (isSR) {
+          shouldRecharge = (per === "sr");
+        } else if (isDawn) {
+          shouldRecharge = (per === "day" || per === "dawn" || per === "charges");
+        }
+        if (shouldRecharge && uses.value < uses.max) {
           let formula = "";
           if (uses.recovery && Array.isArray(uses.recovery)) {
             const formRec = uses.recovery.find(r => r.formula);
@@ -1834,7 +1922,7 @@ Click a numbered modifier badge to execute a roll.</div>
             const m = item.system.description.value.match(/regains?\s+(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+expended\s+charges/i);
             if (m) formula = m[1].trim();
           }
-          if (formula && uses.value < uses.max) {
+          if (formula) {
             try {
               const roll = new Roll(formula);
               await roll.evaluate();
@@ -1843,36 +1931,26 @@ Click a numbered modifier badge to execute a roll.</div>
               const newVal = Math.min(max, cur + roll.total);
               itemUpdates.push({ _id: item.id, "system.uses.value": newVal });
               rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-            } catch (err) {
-              console.error("Error evaluating recharge formula for item", item.name, err);
-            }
+            } catch (err) {}
+          } else {
+            itemUpdates.push({ _id: item.id, "system.uses.value": uses.max });
+            rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${uses.max}/${uses.max}`);
           }
         }
       }
     }
 
-    // 3. Custom Trackers in Flag
-    const trackers = actor.getFlag("world", "trackingStuff") || [];
-    let trackersModified = false;
-    for (const t of trackers) {
-      if (t.type === "custom") {
-        const shouldReset = isLR ? (t.resetOn === "lr" || t.resetOn === "sr" || t.resetOn === "dawn") : (isSR && t.resetOn === "sr");
-        if (shouldReset && t.value < t.max) {
-          if (t.rechargeFormula && (t.resetOn === "dawn" || isLR)) {
-            try {
-              const roll = new Roll(t.rechargeFormula);
-              await roll.evaluate();
-              const cur = Number(t.value) || 0;
-              const max = Number(t.max) || 0;
-              t.value = Math.min(max, cur + roll.total);
-              rechargeChatLines.push(`• <strong>${t.label}</strong>: Regained ${roll.total} charges via <code>${t.rechargeFormula}</code> (now ${t.value}/${max})`);
-              trackersModified = true;
-            } catch (e) {}
-          } else {
-            t.value = t.max;
-            rechargeChatLines.push(`• <strong>${t.label}</strong>: Reset to ${t.max}/${t.max}`);
-            trackersModified = true;
-          }
+    // 3. Class resources not explicitly in trackers
+    for (const slot of ["primary", "secondary", "tertiary"]) {
+      if (handledResourceSlots.has(slot)) continue;
+      const res = actor.system.resources?.[slot];
+      if (res && res.label && typeof res.max === "number" && res.max > 0) {
+        let shouldReset = false;
+        if (isLR) shouldReset = (res.lr || res.sr || (!res.lr && !res.sr));
+        else if (isSR) shouldReset = Boolean(res.sr);
+        if (shouldReset && res.value < res.max) {
+          updates[`system.resources.${slot}.value`] = res.max;
+          rechargeChatLines.push(`• <strong>${res.label}</strong>: Reset to ${res.max}/${res.max}`);
         }
       }
     }
@@ -1949,20 +2027,14 @@ Click a numbered modifier badge to execute a roll.</div>
 
       return trackers.map(t => {
         const live = getLiveTracker(t);
-        const hasRecharge = Boolean(live.rechargeFormula);
         return `
-          <div class="tracking-chip" data-id="${t.id}" style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #c0c6ce; border-radius: 4px; padding: 2px 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); width: 100%; box-sizing: border-box; gap: 4px;">
-            <span style="font-weight: 700; font-size: 0.72em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;" title="${live.label}">${live.label}</span>
-            <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;">
-              <button type="button" class="btn-chip-dec" data-id="${t.id}" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">-</button>
-              <input type="number" class="chip-val-input" data-id="${t.id}" min="0" max="${live.max}" value="${live.value}" style="width: 26px; height: 16px; line-height: 14px; text-align: center; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; border-radius: 2px; background: #fafbfc; color: #1e293b; margin: 0;" />
-              <span style="font-size: 0.70em; font-weight: 700; color: #64748b; line-height: 16px;">/${live.max}</span>
-              <button type="button" class="btn-chip-inc" data-id="${t.id}" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">+</button>
-              ${hasRecharge ? `
-                <button type="button" class="btn-chip-recharge" data-id="${t.id}" title="Recharge (${live.rechargeFormula})" style="height: 16px; line-height: 12px; font-size: 0.65em; font-weight: 700; padding: 0 3px; border: 1px solid #7289da; background: #f0f4ff; color: #3b5998; border-radius: 2px; cursor: pointer;">
-                  <i class="fas fa-rotate"></i>
-                </button>
-              ` : ''}
+          <div class="tracking-chip" data-id="${t.id}" style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #c0c6ce; border-radius: 4px; padding: 3px 6px; min-height: 24px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); width: 100%; box-sizing: border-box; gap: 6px;">
+            <span style="font-weight: 600; font-size: 0.80em; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; line-height: 18px;" title="${live.label}">${live.label}</span>
+            <div style="display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;">
+              <input type="number" class="chip-val-input" data-id="${t.id}" min="0" max="${live.max}" value="${live.value}" style="width: 28px; height: 18px; line-height: 16px; text-align: center; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; border-radius: 2px; background: #fafbfc; color: #1e293b; margin: 0;" />
+              <span style="font-size: 0.78em; font-weight: 600; color: #475569; line-height: 18px; margin-right: 2px;">/${live.max}</span>
+              <button type="button" class="btn-chip-dec" data-id="${t.id}" title="Decrease" style="width: 20px; height: 18px; line-height: 16px; font-weight: 700; font-size: 0.85em; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 2px; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">-</button>
+              <button type="button" class="btn-chip-inc" data-id="${t.id}" title="Increase" style="width: 20px; height: 18px; line-height: 16px; font-weight: 700; font-size: 0.85em; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 2px; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">+</button>
             </div>
           </div>
         `;
@@ -1973,16 +2045,22 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; height: 100%; box-sizing: border-box; min-height: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px;">
           <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
-            <i class="fas fa-arrows-rotate" style="margin-right: 3px;"></i> Recharge
+            Tracking Stuff
           </span>
-          <div style="display: flex; gap: 3px;">
-            <button type="button" id="btn-recharge-dawn-all" title="Roll recharge for all Daily/Dawn items" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 4px; border: 1px solid #e5a50a; background: #fffbe6; color: #9c6c03; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;">
-              <i class="fas fa-sun"></i> Dawn
-            </button>
-            <button type="button" id="btn-open-add-tracker" title="Manage active trackers or add new ones" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 5px; border: 1px solid #7289da; background: #f0f4ff; color: #4054b2; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center;">
-              Manage
-            </button>
-          </div>
+        </div>
+        <div style="display: flex; gap: 3px; width: 100%;">
+          <button type="button" id="btn-recharge-sr" title="Short Rest Recharge" style="flex: 1; font-size: 0.68em; font-weight: 700; height: 20px; padding: 0 2px; border: 1px solid #2b7489; background: #eef7fa; color: #1e5a6a; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 2px;">
+            <i class="fas fa-rotate"></i> SR
+          </button>
+          <button type="button" id="btn-recharge-lr" title="Long Rest Recharge" style="flex: 1; font-size: 0.68em; font-weight: 700; height: 20px; padding: 0 2px; border: 1px solid #388e3c; background: #f1f8f2; color: #256029; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 2px;">
+            <i class="fas fa-rotate"></i> LR
+          </button>
+          <button type="button" id="btn-recharge-dawn-all" title="Roll recharge for all Daily/Dawn items" style="flex: 1.1; font-size: 0.68em; font-weight: 700; height: 20px; padding: 0 2px; border: 1px solid #e5a50a; background: #fffbe6; color: #9c6c03; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 2px;">
+            <i class="fas fa-sun"></i> Dawn
+          </button>
+          <button type="button" id="btn-open-add-tracker" title="Manage active trackers or add new ones" style="flex: 1.2; font-size: 0.68em; font-weight: 700; height: 20px; padding: 0 2px; border: 1px solid #7289da; background: #f0f4ff; color: #4054b2; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+            Manage
+          </button>
         </div>
         <div id="tracking-chips-container" style="display: flex; flex-direction: column; gap: 3px; max-height: 340px; overflow-y: auto; padding-right: 2px; min-height: 0; flex: 1;">
           ${renderChips()}
@@ -2049,51 +2127,53 @@ Click a numbered modifier badge to execute a roll.</div>
               $(this).trigger("change");
             }
           });
-
-          containerHtml.find('.btn-chip-recharge').off('click').on('click', async function (e) {
-            e.stopPropagation();
-            const id = $(this).data('id');
-            const t = trackers.find(x => x.id === id);
-            if (!t) return;
-            const live = getLiveTracker(t);
-            if (!live.rechargeFormula) return;
-
-            try {
-              const roll = new Roll(live.rechargeFormula);
-              await roll.evaluate();
-              const newVal = Math.min(live.max, live.value + roll.total);
-
-              if (t.type === "item" && t.itemRefId) {
-                const item = actor.items.get(t.itemRefId);
-                if (item) await item.update({ "system.uses.value": newVal });
-              } else if (t.type === "resource" && t.resourceSlot) {
-                await actor.update({ [`system.resources.${t.resourceSlot}.value`]: newVal });
-              } else {
-                t.value = newVal;
-                await actor.setFlag("world", "trackingStuff", trackers);
-              }
-
-              containerHtml.find(`.chip-val-input[data-id="${t.id}"]`).val(newVal);
-              containerHtml.find(`.chip-val-display[data-id="${t.id}"]`).text(`${newVal} / ${live.max}`);
-
-              await ChatMessage.create({
-                user: game.user.id,
-                speaker: ChatMessage.getSpeaker({ actor }),
-                content: `<div style="font-size: 0.85em; padding: 4px 6px; border-left: 3px solid #7289da; background: rgba(0,0,0,0.02); border-radius: 3px;">
-                  <strong>${actor.name}</strong> recharged <strong>${live.label}</strong>:<br>
-                  Rolled <code>${roll.result}</code> = <strong>+${roll.total}</strong> charges.
-                  <span style="color: #28a745; font-weight: bold;">(Now ${newVal} / ${live.max})</span>
-                </div>`,
-                rolls: [roll],
-                sound: CONFIG.sounds.dice
-              });
-            } catch (err) {
-              ui.notifications.error(`Failed to evaluate recharge formula: ${err.message}`);
-            }
-          });
         };
 
         bindChipEvents();
+
+        // Short Rest button handler
+        containerHtml.find('#btn-recharge-sr').off('click').on('click', async function () {
+          const lines = await rechargeActorTrackers(actor, "sr");
+          refreshChips();
+          if (lines && lines.length > 0) {
+            await ChatMessage.create({
+              user: game.user.id,
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #2b7489; background: #eef7fa; border-radius: 4px; color: #1a2d36;">
+                <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #1e5a6a;">
+                  <i class="fas fa-rotate"></i> ${actor.name}: Short Rest Recharge Completed
+                </div>
+                <div style="margin-top: 4px;">
+                  ${lines.join("<br>")}
+                </div>
+              </div>`
+            });
+          } else {
+            ui.notifications.info(`${actor.name}: No Short Rest items needed recharging.`);
+          }
+        });
+
+        // Long Rest button handler
+        containerHtml.find('#btn-recharge-lr').off('click').on('click', async function () {
+          const lines = await rechargeActorTrackers(actor, "lr");
+          refreshChips();
+          if (lines && lines.length > 0) {
+            await ChatMessage.create({
+              user: game.user.id,
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #388e3c; background: #f1f8f2; border-radius: 4px; color: #1d331f;">
+                <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #256029;">
+                  <i class="fas fa-rotate"></i> ${actor.name}: Long Rest Recharge Completed
+                </div>
+                <div style="margin-top: 4px;">
+                  ${lines.join("<br>")}
+                </div>
+              </div>`
+            });
+          } else {
+            ui.notifications.info(`${actor.name}: No Long Rest items needed recharging.`);
+          }
+        });
 
         // Dawn button handler
         containerHtml.find('#btn-recharge-dawn-all').off('click').on('click', async function () {
@@ -2103,9 +2183,13 @@ Click a numbered modifier badge to execute a roll.</div>
             await ChatMessage.create({
               user: game.user.id,
               speaker: ChatMessage.getSpeaker({ actor }),
-              content: `<div style="font-size: 0.85em; padding: 6px; border-left: 3px solid #e5a50a; background: #fffbe6; border-radius: 4px;">
-                <strong>${actor.name}: Dawn Recharge Completed</strong><br>
-                ${lines.join("<br>")}
+              content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #e5a50a; background: #fffbe6; border-radius: 4px; color: #3b2c05;">
+                <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #9c6c03;">
+                  <i class="fas fa-sun"></i> ${actor.name}: Dawn Recharge Completed
+                </div>
+                <div style="margin-top: 4px;">
+                  ${lines.join("<br>")}
+                </div>
               </div>`
             });
           } else {
@@ -2123,7 +2207,7 @@ Click a numbered modifier badge to execute a roll.</div>
             const r = resources[slot];
             if (r && r.label && typeof r.max === "number" && r.max > 0) {
               const id = `resource_${slot}`;
-              const isAdded = trackers.some(x => x.id === id);
+              const isAdded = trackers.some(x => x.id === id || (x.type === "resource" && x.resourceSlot === slot));
               available.push({
                 id,
                 type: "resource",
@@ -2142,7 +2226,7 @@ Click a numbered modifier badge to execute a roll.</div>
             const u = it.system.uses;
             if (u && typeof u.max === "number" && u.max > 0) {
               const id = `item_${it.id}`;
-              const isAdded = trackers.some(x => x.id === id);
+              const isAdded = trackers.some(x => x.id === id || (x.type === "item" && x.itemRefId === it.id));
 
               let formula = "";
               if (u.recovery && Array.isArray(u.recovery)) {
@@ -2173,30 +2257,30 @@ Click a numbered modifier badge to execute a roll.</div>
 
           function renderActiveTrackersList() {
             if (!trackers || trackers.length === 0) {
-              return `<div style="font-size: 0.76em; color: #888; font-style: italic; padding: 4px;">No active trackers. Add one below.</div>`;
+              return `<div style="font-size: 0.82em; color: #888; font-style: italic; padding: 8px;">No active trackers. Add one below.</div>`;
             }
             return trackers.map(t => {
               const live = getLiveTracker(t);
               return `
-                <div class="manage-tracker-row" data-id="${t.id}" style="border: 1px solid #d2d7df; border-radius: 4px; padding: 5px; background: #fafbfc; margin-bottom: 5px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 4px;">
-                    <strong style="font-size: 0.82em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;" title="${live.label}">${live.label}</strong>
-                    <button type="button" class="btn-manage-remove" data-id="${t.id}" title="Remove Tracker" style="height: 20px; font-size: 0.70em; font-weight: 700; padding: 0 6px; border: 1px solid #dc3545; background: #fff5f5; color: #dc3545; border-radius: 3px; cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px;">
+                <div class="manage-tracker-row" data-id="${t.id}" style="border: 1px solid #d2d7df; border-radius: 4px; padding: 6px 8px; background: #fafbfc; margin-bottom: 6px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; gap: 6px;">
+                    <strong style="font-size: 0.86em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;" title="${live.label}">${live.label}</strong>
+                    <button type="button" class="btn-manage-remove" data-id="${t.id}" title="Remove Tracker" style="height: 22px; line-height: 20px; font-size: 0.76em; font-weight: 600; padding: 0 8px; border: 1px solid #e07a7a; background: #fff5f5; color: #c82333; border-radius: 4px; cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;">
                       <i class="fas fa-trash"></i> Remove
                     </button>
                   </div>
-                  <div style="display: grid; grid-template-columns: 65px 1fr 1fr; gap: 4px; align-items: center;">
+                  <div style="display: grid; grid-template-columns: 75px 1fr 1fr; gap: 6px; align-items: center;">
                     <div>
-                      <label style="font-size: 0.66em; color: #666; font-weight: 700; display: block; margin-bottom: 1px;">MAX</label>
-                      <input type="number" class="manage-input-max" data-id="${t.id}" min="1" value="${live.max}" style="height: 22px; font-size: 0.78em; padding: 1px 3px; border: 1px solid #ccc; border-radius: 2px; width: 100%; box-sizing: border-box;" />
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">MAX</label>
+                      <input type="number" class="manage-input-max" data-id="${t.id}" min="1" value="${live.max}" style="height: 24px; font-size: 0.82em; padding: 2px 5px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;" />
                     </div>
                     <div>
-                      <label style="font-size: 0.66em; color: #666; font-weight: 700; display: block; margin-bottom: 1px;">RECHARGE</label>
-                      <input type="text" class="manage-input-recharge" data-id="${t.id}" placeholder="e.g. 1d6+1" value="${t.rechargeFormula || ''}" style="height: 22px; font-size: 0.78em; padding: 1px 3px; border: 1px solid #ccc; border-radius: 2px; width: 100%; box-sizing: border-box;" />
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">RECHARGE</label>
+                      <input type="text" class="manage-input-recharge" data-id="${t.id}" placeholder="e.g. 1d6+1" value="${t.rechargeFormula || ''}" style="height: 24px; font-size: 0.82em; padding: 2px 5px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;" />
                     </div>
                     <div>
-                      <label style="font-size: 0.66em; color: #666; font-weight: 700; display: block; margin-bottom: 1px;">RESET</label>
-                      <select class="manage-select-reset" data-id="${t.id}" style="height: 22px; font-size: 0.74em; border: 1px solid #ccc; border-radius: 2px; width: 100%; box-sizing: border-box;">
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">RESET</label>
+                      <select class="manage-select-reset" data-id="${t.id}" style="height: 24px; font-size: 0.80em; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;">
                         <option value="lr" ${(t.resetOn || 'lr') === 'lr' ? 'selected' : ''}>Long Rest</option>
                         <option value="sr" ${t.resetOn === 'sr' ? 'selected' : ''}>Short Rest</option>
                         <option value="dawn" ${t.resetOn === 'dawn' ? 'selected' : ''}>Dawn</option>
@@ -2210,57 +2294,57 @@ Click a numbered modifier badge to execute a roll.</div>
           }
 
           const availableRowsHtml = available.length === 0
-            ? `<div style="font-size: 0.78em; color: #888; font-style: italic; padding: 4px;">No trackable abilities found on your character sheet.</div>`
+            ? `<div style="font-size: 0.82em; color: #888; font-style: italic; padding: 8px;">No trackable abilities found on your character sheet.</div>`
             : available.map(a => `
-              <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 6px; border-bottom: 1px solid #f0f0f0;">
-                <div style="font-size: 0.8em; color: #2b3a4a;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; border-bottom: 1px solid #f0f0f0;">
+                <div style="font-size: 0.84em; color: #2b3a4a;">
                   <strong>${a.label}</strong> <small style="color: #666;">(${a.value}/${a.max}${a.rechargeFormula ? ` • 🔄 ${a.rechargeFormula}` : ''})</small>
                 </div>
-                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 700; height: 20px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 700; height: 20px; padding: 0 6px; border-radius: 3px; border: 1px solid #7289da; background: #7289da; color: #fff;"'}>
-                  ${a.isAdded ? 'Added' : 'Add'}
+                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #ccc; background: #eee; color: #777;"' : 'style="cursor:pointer; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;"'}>
+                  ${a.isAdded ? '<i class="fas fa-check"></i> Added' : '<i class="fas fa-plus"></i> Add'}
                 </button>
               </div>
             `).join('');
 
           const modalContent = `
-            <div style="display: flex; flex-direction: column; gap: 8px; font-family: inherit; max-height: 520px; overflow-y: auto; padding-right: 2px;">
+            <div style="display: flex; flex-direction: column; gap: 10px; font-family: inherit; max-height: 640px; overflow-y: auto; padding-right: 2px;">
               <div>
-                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 3px;">
-                  <i class="fas fa-sliders" style="margin-right: 3px;"></i> ACTIVE TRACKERS (EDIT & REMOVE)
+                <label style="font-weight: 700; font-size: 0.78em; color: #3b4d6b; display: block; margin-bottom: 4px; letter-spacing: 0.3px;">
+                  <i class="fas fa-sliders" style="margin-right: 4px;"></i> ACTIVE TRACKERS (EDIT & REMOVE)
                 </label>
-                <div id="manage-active-trackers-container" style="max-height: 180px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px; padding: 4px;">
+                <div id="manage-active-trackers-container" style="max-height: 250px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px; padding: 6px;">
                   ${renderActiveTrackersList()}
                 </div>
               </div>
 
-              <div style="border-top: 1px solid #e0e0e0; padding-top: 6px;">
-                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 3px;">
-                  <i class="fas fa-file-lines" style="margin-right: 3px;"></i> FROM YOUR CHARACTER SHEET
+              <div style="border-top: 1px solid #e0e0e0; padding-top: 8px;">
+                <label style="font-weight: 700; font-size: 0.78em; color: #3b4d6b; display: block; margin-bottom: 4px; letter-spacing: 0.3px;">
+                  <i class="fas fa-file-lines" style="margin-right: 4px;"></i> FROM YOUR CHARACTER SHEET
                 </label>
-                <div style="max-height: 140px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px;">
+                <div style="max-height: 180px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px;">
                   ${availableRowsHtml}
                 </div>
               </div>
 
-              <div style="border-top: 1px solid #e0e0e0; padding-top: 6px;">
-                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 4px;">
-                  <i class="fas fa-plus" style="margin-right: 3px;"></i> CREATE CUSTOM COUNTER
+              <div style="border-top: 1px solid #e0e0e0; padding-top: 8px;">
+                <label style="font-weight: 700; font-size: 0.78em; color: #3b4d6b; display: block; margin-bottom: 6px; letter-spacing: 0.3px;">
+                  <i class="fas fa-plus" style="margin-right: 4px;"></i> CREATE CUSTOM COUNTER
                 </label>
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 4px; margin-bottom: 4px;">
-                  <input type="text" id="new-custom-name" placeholder="Counter Name (e.g. Grit, Torches)" style="height: 24px; font-size: 0.8em; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px;" />
-                  <input type="number" id="new-custom-max" placeholder="Max" value="3" min="1" style="height: 24px; font-size: 0.8em; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px;" />
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 6px; margin-bottom: 6px;">
+                  <input type="text" id="new-custom-name" placeholder="Counter Name (e.g. Grit, Torches)" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
+                  <input type="number" id="new-custom-max" placeholder="Max" value="3" min="1" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px;">
-                  <select id="new-custom-reset" style="height: 24px; font-size: 0.78em; border: 1px solid #ccc; border-radius: 3px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                  <select id="new-custom-reset" style="height: 26px; font-size: 0.82em; border: 1px solid #ccc; border-radius: 3px;">
                     <option value="lr">Reset on Long Rest</option>
                     <option value="sr">Reset on Short Rest</option>
                     <option value="dawn">Daily at Dawn</option>
                     <option value="none">Manual Only</option>
                   </select>
-                  <input type="text" id="new-custom-formula" placeholder="Recharge (e.g. 1d6+1)" style="height: 24px; font-size: 0.8em; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px;" />
+                  <input type="text" id="new-custom-formula" placeholder="Recharge (e.g. 1d6+1)" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
                 </div>
-                <button type="button" id="btn-submit-new-custom" style="width: 100%; height: 24px; font-weight: 700; font-size: 0.8em; background: #28a745; color: #fff; border: 1px solid #218838; border-radius: 3px; cursor: pointer;">
-                  Create Custom Tracker
+                <button type="button" id="btn-submit-new-custom" style="width: 100%; height: 26px; line-height: 24px; font-weight: 600; font-size: 0.82em; background: #28a745; color: #fff; border: 1px solid #218838; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
+                  <i class="fas fa-plus-circle"></i> Create Custom Tracker
                 </button>
               </div>
             </div>
@@ -2324,9 +2408,9 @@ Click a numbered modifier badge to execute a roll.</div>
                   modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
                   bindActiveTrackerEvents();
 
-                  const addBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${id}"]`);
+                  const addBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${id}"], .btn-add-trackable-item[data-id="resource_${t.resourceSlot}"]`);
                   if (addBtn.length) {
-                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.74em; font-weight: 700; height: 20px; padding: 0 6px; border-radius: 3px; border: 1px solid #7289da; background: #7289da; color: #fff;').text('Add');
+                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;').html('<i class="fas fa-plus"></i> Add');
                   }
                 });
               };
@@ -2336,7 +2420,7 @@ Click a numbered modifier badge to execute a roll.</div>
               modalHtml.find('.btn-add-trackable-item').on('click', async function () {
                 const id = $(this).data('id');
                 const itemData = available.find(x => x.id === id);
-                if (!itemData || trackers.some(x => x.id === id)) return;
+                if (!itemData || trackers.some(x => x.id === id || (itemData.resourceSlot && x.resourceSlot === itemData.resourceSlot) || (itemData.itemRefId && x.itemRefId === itemData.itemRefId))) return;
 
                 trackers.push({
                   id: itemData.id,
@@ -2351,7 +2435,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 });
 
                 await actor.setFlag("world", "trackingStuff", trackers);
-                $(this).prop('disabled', true).css({ opacity: 0.5, background: '#eee', color: '#777' }).text('Added');
+                $(this).prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #ccc; background: #eee; color: #777;').html('<i class="fas fa-check"></i> Added');
                 refreshChips();
                 modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
                 bindActiveTrackerEvents();
@@ -2374,7 +2458,7 @@ Click a numbered modifier badge to execute a roll.</div>
                   }
                 }
 
-                const newId = `custom_${Date.now()}`;
+                const newId = targetSlot ? `resource_${targetSlot}` : `custom_${Date.now()}`;
                 if (targetSlot) {
                   await actor.update({
                     [`system.resources.${targetSlot}`]: {
@@ -2396,6 +2480,10 @@ Click a numbered modifier badge to execute a roll.</div>
                     rechargeFormula: formula,
                     resetOn
                   });
+                  const availBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${newId}"]`);
+                  if (availBtn.length) {
+                    availBtn.prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #ccc; background: #eee; color: #777;').html('<i class="fas fa-check"></i> Added');
+                  }
                 } else {
                   trackers.push({
                     id: newId,
@@ -2418,7 +2506,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 ui.notifications.info(`Added "${name}" to Tracking Stuff!`);
               });
             }
-          }, { width: 420 }).render(true);
+          }, { width: 540 }).render(true);
         });
       }
     };
