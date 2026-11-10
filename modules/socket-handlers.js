@@ -1884,6 +1884,11 @@ function registerSocketHandlers() {
 
       await actor.update(updates);
 
+      // Recharges Tracking Stuff, class resources, and magic items on Long Rest
+      if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
+        await window.CustomRolls.rechargeActorTrackers(actor, "lr");
+      }
+
       summaryRows.push(`
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 2px; border-bottom: 1px dotted #ccc; font-size: 0.85em;">
           <strong style="color: #2b3a4a;">${actor.name}</strong>

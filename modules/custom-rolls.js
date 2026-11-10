@@ -40,6 +40,15 @@ export function initCustomRolls() {
     mod.api.setProfileData = setProfileData;
   }
 
+  // Hook into D&D 5e rest completion to auto-recharge tracking stuff
+  Hooks.on("dnd5e.restCompleted", async (actor, data) => {
+    if (!actor || !actor.isOwner) return;
+    const restType = (data?.longRest || data?.restType === "long") ? "lr" : "sr";
+    if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
+      await window.CustomRolls.rechargeActorTrackers(actor, restType);
+    }
+  });
+
   // --- 3.1 D20 Test Client-Side Dialog Launcher ---
   window.CustomRolls.openD20Dialog = function () {
     if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
@@ -1644,6 +1653,521 @@ Click a numbered modifier badge to execute a roll.</div>
     }, { width: 400 }).render(true);
   };
 
+  // =========================================================================
+  // TRACKING STUFF: RECHARGE & RESOURCE ENGINE
+  // =========================================================================
+  async function rechargeActorTrackers(actor, restType = "lr") {
+    if (!actor) return [];
+    const isLR = restType === "lr";
+    const isSR = restType === "sr";
+
+    const updates = {};
+    const itemUpdates = [];
+    const rechargeChatLines = [];
+
+    // 1. Check Class Resources (primary, secondary, tertiary)
+    const resources = actor.system.resources || {};
+    for (const slot of ["primary", "secondary", "tertiary"]) {
+      const res = resources[slot];
+      if (res && res.label && typeof res.max === "number" && res.max > 0) {
+        const shouldReset = isLR ? (res.lr || res.sr || (!res.lr && !res.sr)) : (isSR && res.sr);
+        if (shouldReset && res.value < res.max) {
+          updates[`system.resources.${slot}.value`] = res.max;
+          rechargeChatLines.push(`• <strong>${res.label}</strong>: Reset to ${res.max}/${res.max}`);
+        }
+      }
+    }
+
+    // 2. Check Items with Uses
+    for (const item of actor.items) {
+      const uses = item.system.uses;
+      if (uses && typeof uses.max === "number" && uses.max > 0) {
+        const per = String(uses.per || "").toLowerCase();
+        const shouldReset = isLR ? (per === "lr" || per === "sr" || per === "day") : (isSR && per === "sr");
+        if (shouldReset && uses.value < uses.max) {
+          itemUpdates.push({ _id: item.id, "system.uses.value": uses.max });
+          rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${uses.max}/${uses.max}`);
+        } else if (isLR && (per === "charges" || per === "day")) {
+          let formula = "";
+          if (uses.recovery && Array.isArray(uses.recovery)) {
+            const formRec = uses.recovery.find(r => r.formula);
+            if (formRec) formula = formRec.formula;
+          }
+          if (!formula && item.system.description?.value) {
+            const m = item.system.description.value.match(/regains?\s+(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+expended\s+charges/i);
+            if (m) formula = m[1].trim();
+          }
+          if (formula && uses.value < uses.max) {
+            try {
+              const roll = new Roll(formula);
+              await roll.evaluate();
+              const cur = Number(uses.value) || 0;
+              const max = Number(uses.max) || 0;
+              const newVal = Math.min(max, cur + roll.total);
+              itemUpdates.push({ _id: item.id, "system.uses.value": newVal });
+              rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+            } catch (err) {
+              console.error("Error evaluating recharge formula for item", item.name, err);
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Custom Trackers in Flag
+    const trackers = actor.getFlag("world", "trackingStuff") || [];
+    let trackersModified = false;
+    for (const t of trackers) {
+      if (t.type === "custom") {
+        const shouldReset = isLR ? (t.resetOn === "lr" || t.resetOn === "sr" || t.resetOn === "dawn") : (isSR && t.resetOn === "sr");
+        if (shouldReset && t.value < t.max) {
+          if (t.rechargeFormula && (t.resetOn === "dawn" || isLR)) {
+            try {
+              const roll = new Roll(t.rechargeFormula);
+              await roll.evaluate();
+              const cur = Number(t.value) || 0;
+              const max = Number(t.max) || 0;
+              t.value = Math.min(max, cur + roll.total);
+              rechargeChatLines.push(`• <strong>${t.label}</strong>: Regained ${roll.total} charges via <code>${t.rechargeFormula}</code> (now ${t.value}/${max})`);
+              trackersModified = true;
+            } catch (e) {}
+          } else {
+            t.value = t.max;
+            rechargeChatLines.push(`• <strong>${t.label}</strong>: Reset to ${t.max}/${t.max}`);
+            trackersModified = true;
+          }
+        }
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await actor.update(updates);
+    }
+    if (itemUpdates.length > 0) {
+      await actor.updateEmbeddedDocuments("Item", itemUpdates);
+    }
+    if (trackersModified) {
+      await actor.setFlag("world", "trackingStuff", trackers);
+    }
+
+    return rechargeChatLines;
+  }
+  window.CustomRolls.rechargeActorTrackers = rechargeActorTrackers;
+
+  function getTrackingStuffHelper(actor) {
+    let trackers = actor.getFlag("world", "trackingStuff");
+    if (!Array.isArray(trackers)) {
+      trackers = [];
+      const res = actor.system.resources || {};
+      for (const slot of ["primary", "secondary", "tertiary"]) {
+        const r = res[slot];
+        if (r && r.label && typeof r.max === "number" && r.max > 0) {
+          trackers.push({
+            id: `resource_${slot}`,
+            type: "resource",
+            resourceSlot: slot,
+            label: r.label,
+            value: r.value ?? r.max,
+            max: r.max,
+            resetOn: r.sr ? "sr" : (r.lr ? "lr" : "none")
+          });
+        }
+      }
+    }
+
+    function getLiveTracker(t) {
+      if (t.type === "item" && t.itemRefId) {
+        const it = actor.items.get(t.itemRefId);
+        if (it) {
+          return {
+            label: it.name,
+            value: it.system.uses?.value ?? t.value ?? 0,
+            max: it.system.uses?.max ?? t.max ?? 0,
+            rechargeFormula: t.rechargeFormula
+          };
+        }
+      } else if (t.type === "resource" && t.resourceSlot) {
+        const r = actor.system.resources?.[t.resourceSlot];
+        if (r && r.label) {
+          return {
+            label: r.label,
+            value: r.value ?? t.value ?? 0,
+            max: r.max ?? t.max ?? 0,
+            rechargeFormula: t.rechargeFormula
+          };
+        }
+      }
+      return {
+        label: t.label,
+        value: t.value ?? 0,
+        max: t.max ?? 0,
+        rechargeFormula: t.rechargeFormula
+      };
+    }
+
+    function renderChips() {
+      if (!trackers || trackers.length === 0) {
+        return `<span style="font-size: 0.74em; color: #888; font-style: italic;">No active trackers. Click <strong>+ Add</strong> to track abilities, charges, or pools.</span>`;
+      }
+
+      return trackers.map(t => {
+        const live = getLiveTracker(t);
+        const hasRecharge = Boolean(live.rechargeFormula);
+        return `
+          <div class="tracking-chip" data-id="${t.id}" style="display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 1px solid #c0c6ce; border-radius: 4px; padding: 2px 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+            <span style="font-weight: 700; font-size: 0.76em; color: #2b3a4a; white-space: nowrap;">${live.label}</span>
+            <div style="display: inline-flex; align-items: center; gap: 2px; background: rgba(0,0,0,0.03); border-radius: 3px; padding: 1px 3px;">
+              <button type="button" class="btn-chip-dec" data-id="${t.id}" style="width: 18px; height: 18px; line-height: 14px; font-weight: 700; font-size: 0.82em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">-</button>
+              <span class="chip-val-display" data-id="${t.id}" style="font-size: 0.75em; font-weight: 700; min-width: 32px; text-align: center; color: #1e293b;">${live.value} / ${live.max}</span>
+              <button type="button" class="btn-chip-inc" data-id="${t.id}" style="width: 18px; height: 18px; line-height: 14px; font-weight: 700; font-size: 0.82em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">+</button>
+            </div>
+            ${hasRecharge ? `
+              <button type="button" class="btn-chip-recharge" data-id="${t.id}" title="Recharge (${live.rechargeFormula})" style="height: 18px; line-height: 14px; font-size: 0.7em; font-weight: 700; padding: 0 4px; border: 1px solid #7289da; background: #f0f4ff; color: #3b5998; border-radius: 2px; cursor: pointer;">
+                <i class="fas fa-rotate"></i> ${live.rechargeFormula}
+              </button>
+            ` : ''}
+            <button type="button" class="btn-chip-remove" data-id="${t.id}" title="Remove Tracker" style="background: transparent; border: none; color: #dc3545; font-size: 0.76em; cursor: pointer; padding: 0 2px;">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    const htmlContent = `
+      <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px;">
+          <span style="font-weight: 700; font-size: 0.72em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
+            <i class="fas fa-boxes-stacked" style="margin-right: 4px;"></i> Tracking Stuff
+          </span>
+          <div style="display: flex; gap: 4px;">
+            <button type="button" id="btn-recharge-dawn-all" title="Roll recharge for all Daily/Dawn items" style="font-size: 0.7em; font-weight: 700; height: 20px; padding: 0 6px; border: 1px solid #e5a50a; background: #fffbe6; color: #9c6c03; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+              <i class="fas fa-sun"></i> Dawn
+            </button>
+            <button type="button" id="btn-open-add-tracker" title="Add trackable feature or custom counter" style="font-size: 0.7em; font-weight: 700; height: 20px; padding: 0 6px; border: 1px solid #7289da; background: #f0f4ff; color: #4054b2; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+              <i class="fas fa-plus"></i> Add
+            </button>
+          </div>
+        </div>
+        <div id="tracking-chips-container" style="display: flex; flex-wrap: wrap; gap: 6px; padding-top: 2px;">
+          ${renderChips()}
+        </div>
+      </div>
+    `;
+
+    return {
+      html: htmlContent,
+      setupEvents: (containerHtml) => {
+        const refreshChips = () => {
+          containerHtml.find('#tracking-chips-container').html(renderChips());
+          bindChipEvents();
+        };
+
+        const updateVal = async (t, delta) => {
+          const live = getLiveTracker(t);
+          const newVal = Math.clamp(live.value + delta, 0, live.max);
+          if (newVal === live.value) return;
+
+          if (t.type === "item" && t.itemRefId) {
+            const item = actor.items.get(t.itemRefId);
+            if (item) await item.update({ "system.uses.value": newVal });
+          } else if (t.type === "resource" && t.resourceSlot) {
+            await actor.update({ [`system.resources.${t.resourceSlot}.value`]: newVal });
+          } else {
+            t.value = newVal;
+            await actor.setFlag("world", "trackingStuff", trackers);
+          }
+          containerHtml.find(`.tracker-val-display[data-id="${t.id}"], .chip-val-display[data-id="${t.id}"]`).text(`${newVal} / ${live.max}`);
+        };
+
+        const bindChipEvents = () => {
+          containerHtml.find('.btn-chip-dec').off('click').on('click', function (e) {
+            e.stopPropagation();
+            const id = $(this).data('id');
+            const t = trackers.find(x => x.id === id);
+            if (t) updateVal(t, -1);
+          });
+
+          containerHtml.find('.btn-chip-inc').off('click').on('click', function (e) {
+            e.stopPropagation();
+            const id = $(this).data('id');
+            const t = trackers.find(x => x.id === id);
+            if (t) updateVal(t, 1);
+          });
+
+          containerHtml.find('.btn-chip-recharge').off('click').on('click', async function (e) {
+            e.stopPropagation();
+            const id = $(this).data('id');
+            const t = trackers.find(x => x.id === id);
+            if (!t) return;
+            const live = getLiveTracker(t);
+            if (!live.rechargeFormula) return;
+
+            try {
+              const roll = new Roll(live.rechargeFormula);
+              await roll.evaluate();
+              const newVal = Math.min(live.max, live.value + roll.total);
+
+              if (t.type === "item" && t.itemRefId) {
+                const item = actor.items.get(t.itemRefId);
+                if (item) await item.update({ "system.uses.value": newVal });
+              } else if (t.type === "resource" && t.resourceSlot) {
+                await actor.update({ [`system.resources.${t.resourceSlot}.value`]: newVal });
+              } else {
+                t.value = newVal;
+                await actor.setFlag("world", "trackingStuff", trackers);
+              }
+
+              containerHtml.find(`.chip-val-display[data-id="${t.id}"]`).text(`${newVal} / ${live.max}`);
+
+              await ChatMessage.create({
+                user: game.user.id,
+                speaker: ChatMessage.getSpeaker({ actor }),
+                content: `<div style="font-size: 0.85em; padding: 4px 6px; border-left: 3px solid #7289da; background: rgba(0,0,0,0.02); border-radius: 3px;">
+                  <strong>${actor.name}</strong> recharged <strong>${live.label}</strong>:<br>
+                  Rolled <code>${roll.result}</code> = <strong>+${roll.total}</strong> charges.
+                  <span style="color: #28a745; font-weight: bold;">(Now ${newVal} / ${live.max})</span>
+                </div>`,
+                rolls: [roll],
+                sound: CONFIG.sounds.dice
+              });
+            } catch (err) {
+              ui.notifications.error(`Failed to evaluate recharge formula: ${err.message}`);
+            }
+          });
+
+          containerHtml.find('.btn-chip-remove').off('click').on('click', async function (e) {
+            e.stopPropagation();
+            const id = $(this).data('id');
+            const t = trackers.find(x => x.id === id);
+            if (!t) return;
+
+            if (t.type === "resource" && t.isCustom && t.resourceSlot) {
+              await actor.update({ [`system.resources.${t.resourceSlot}`]: { label: "", value: 0, max: 0 } });
+            }
+
+            trackers = trackers.filter(x => x.id !== id);
+            await actor.setFlag("world", "trackingStuff", trackers);
+            refreshChips();
+          });
+        };
+
+        bindChipEvents();
+
+        // Dawn button handler
+        containerHtml.find('#btn-recharge-dawn-all').off('click').on('click', async function () {
+          const lines = await rechargeActorTrackers(actor, "dawn");
+          refreshChips();
+          if (lines && lines.length > 0) {
+            await ChatMessage.create({
+              user: game.user.id,
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content: `<div style="font-size: 0.85em; padding: 6px; border-left: 3px solid #e5a50a; background: #fffbe6; border-radius: 4px;">
+                <strong>${actor.name}: Dawn Recharge Completed</strong><br>
+                ${lines.join("<br>")}
+              </div>`
+            });
+          } else {
+            ui.notifications.info(`${actor.name}: No daily items needed recharging.`);
+          }
+        });
+
+        // Add to Tracking Stuff Modal
+        containerHtml.find('#btn-open-add-tracker').off('click').on('click', function () {
+          const available = [];
+
+          // 1. Resources
+          const resources = actor.system.resources || {};
+          for (const slot of ["primary", "secondary", "tertiary"]) {
+            const r = resources[slot];
+            if (r && r.label && typeof r.max === "number" && r.max > 0) {
+              const id = `resource_${slot}`;
+              const isAdded = trackers.some(x => x.id === id);
+              available.push({
+                id,
+                type: "resource",
+                resourceSlot: slot,
+                label: r.label,
+                value: r.value ?? r.max,
+                max: r.max,
+                isAdded,
+                resetOn: r.sr ? "sr" : (r.lr ? "lr" : "none")
+              });
+            }
+          }
+
+          // 2. Items with uses
+          for (const it of actor.items) {
+            const u = it.system.uses;
+            if (u && typeof u.max === "number" && u.max > 0) {
+              const id = `item_${it.id}`;
+              const isAdded = trackers.some(x => x.id === id);
+
+              let formula = "";
+              if (u.recovery && Array.isArray(u.recovery)) {
+                const fr = u.recovery.find(r => r.formula);
+                if (fr) formula = fr.formula;
+              }
+              if (!formula && it.system.description?.value) {
+                const m = it.system.description.value.match(/regains?\s+(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+expended\s+charges/i);
+                if (m) formula = m[1].trim();
+              }
+
+              const per = String(u.per || "").toLowerCase();
+              const resetOn = per === "sr" ? "sr" : (per === "lr" ? "lr" : (formula || per === "day" ? "dawn" : "none"));
+
+              available.push({
+                id,
+                type: "item",
+                itemRefId: it.id,
+                label: it.name,
+                value: u.value ?? u.max,
+                max: u.max,
+                rechargeFormula: formula,
+                resetOn,
+                isAdded
+              });
+            }
+          }
+
+          const availableRowsHtml = available.length === 0
+            ? `<div style="font-size: 0.78em; color: #888; font-style: italic; padding: 4px;">No trackable abilities found on your character sheet.</div>`
+            : available.map(a => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 6px; border-bottom: 1px solid #f0f0f0;">
+                <div style="font-size: 0.8em; color: #2b3a4a;">
+                  <strong>${a.label}</strong> <small style="color: #666;">(${a.value}/${a.max}${a.rechargeFormula ? ` • 🔄 ${a.rechargeFormula}` : ''})</small>
+                </div>
+                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 700; height: 20px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 700; height: 20px; padding: 0 6px; border-radius: 3px; border: 1px solid #7289da; background: #7289da; color: #fff;"'}>
+                  ${a.isAdded ? 'Added' : 'Add'}
+                </button>
+              </div>
+            `).join('');
+
+          const modalContent = `
+            <div style="display: flex; flex-direction: column; gap: 8px; font-family: inherit;">
+              <div>
+                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 3px;">FROM YOUR CHARACTER SHEET</label>
+                <div style="max-height: 180px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px;">
+                  ${availableRowsHtml}
+                </div>
+              </div>
+
+              <div style="border-top: 1px solid #e0e0e0; padding-top: 6px;">
+                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 4px;">CREATE CUSTOM COUNTER</label>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 4px; margin-bottom: 4px;">
+                  <input type="text" id="new-custom-name" placeholder="Counter Name (e.g. Grit, Torches)" style="height: 24px; font-size: 0.8em; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px;" />
+                  <input type="number" id="new-custom-max" placeholder="Max" value="3" min="1" style="height: 24px; font-size: 0.8em; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px;" />
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px;">
+                  <select id="new-custom-reset" style="height: 24px; font-size: 0.78em; border: 1px solid #ccc; border-radius: 3px;">
+                    <option value="lr">Reset on Long Rest</option>
+                    <option value="sr">Reset on Short Rest</option>
+                    <option value="dawn">Daily at Dawn</option>
+                    <option value="none">Manual Only</option>
+                  </select>
+                  <input type="text" id="new-custom-formula" placeholder="Recharge (e.g. 1d6+1)" style="height: 24px; font-size: 0.8em; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px;" />
+                </div>
+                <button type="button" id="btn-submit-new-custom" style="width: 100%; height: 24px; font-weight: 700; font-size: 0.8em; background: #28a745; color: #fff; border: 1px solid #218838; border-radius: 3px; cursor: pointer;">
+                  Create Custom Tracker
+                </button>
+              </div>
+            </div>
+          `;
+
+          const addDialog = new Dialog({
+            title: `${actor.name}: Add to Tracking Stuff`,
+            content: modalContent,
+            buttons: {
+              close: { label: "Done" }
+            },
+            default: "close",
+            render: (modalHtml) => {
+              modalHtml.find('.btn-add-trackable-item').on('click', async function () {
+                const id = $(this).data('id');
+                const itemData = available.find(x => x.id === id);
+                if (!itemData || trackers.some(x => x.id === id)) return;
+
+                trackers.push({
+                  id: itemData.id,
+                  type: itemData.type,
+                  itemRefId: itemData.itemRefId,
+                  resourceSlot: itemData.resourceSlot,
+                  label: itemData.label,
+                  value: itemData.value,
+                  max: itemData.max,
+                  rechargeFormula: itemData.rechargeFormula || "",
+                  resetOn: itemData.resetOn || "lr"
+                });
+
+                await actor.setFlag("world", "trackingStuff", trackers);
+                $(this).prop('disabled', true).css({ opacity: 0.5, background: '#eee', color: '#777' }).text('Added');
+                refreshChips();
+              });
+
+              modalHtml.find('#btn-submit-new-custom').on('click', async function () {
+                const name = modalHtml.find('#new-custom-name').val()?.trim();
+                const max = Number(modalHtml.find('#new-custom-max').val()) || 1;
+                const resetOn = modalHtml.find('#new-custom-reset').val() || "lr";
+                const formula = modalHtml.find('#new-custom-formula').val()?.trim() || "";
+
+                if (!name) return ui.notifications.warn("Please enter a counter name.");
+
+                const res = actor.system.resources || {};
+                let targetSlot = null;
+                for (const slot of ["primary", "secondary", "tertiary"]) {
+                  if (!res[slot] || !res[slot].label) {
+                    targetSlot = slot;
+                    break;
+                  }
+                }
+
+                const newId = `custom_${Date.now()}`;
+                if (targetSlot) {
+                  await actor.update({
+                    [`system.resources.${targetSlot}`]: {
+                      label: name,
+                      value: max,
+                      max: max,
+                      sr: resetOn === "sr",
+                      lr: resetOn === "lr"
+                    }
+                  });
+                  trackers.push({
+                    id: newId,
+                    type: "resource",
+                    resourceSlot: targetSlot,
+                    isCustom: true,
+                    label: name,
+                    value: max,
+                    max: max,
+                    rechargeFormula: formula,
+                    resetOn
+                  });
+                } else {
+                  trackers.push({
+                    id: newId,
+                    type: "custom",
+                    isCustom: true,
+                    label: name,
+                    value: max,
+                    max: max,
+                    rechargeFormula: formula,
+                    resetOn
+                  });
+                }
+
+                await actor.setFlag("world", "trackingStuff", trackers);
+                refreshChips();
+                addDialog.close();
+                ui.notifications.info(`Added "${name}" to Tracking Stuff!`);
+              });
+            }
+          }, { width: 380 }).render(true);
+        });
+      }
+    };
+  }
+
   // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
   window.CustomRolls.openActionDialog = function (initialMode = "weapon") {
     if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
@@ -1677,6 +2201,7 @@ Click a numbered modifier badge to execute a roll.</div>
     let selectedSpellKey = spellKeys[0] || null;
 
     const d20Data = getD20V2Data(actor);
+    const trackingHelper = getTrackingStuffHelper(actor);
 
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
@@ -1965,6 +2490,11 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column;">
         ${d20Data.html}
       </div>
+
+      <!-- Tracking Stuff Persistent Footer -->
+      <div id="section-tracking-stuff" style="margin-top: 6px; border-top: 2px solid #7289da; padding-top: 6px;">
+        ${trackingHelper.html}
+      </div>
     </div>
   `;
 
@@ -2069,8 +2599,9 @@ Click a numbered modifier badge to execute a roll.</div>
         const secD20 = html.find("#section-d20");
         const execBtn = html.find(".dialog-button.execute");
 
-        // Initialize D20 event handlers
+        // Initialize D20 event handlers and Tracking Stuff
         d20Data.setupEvents(html);
+        trackingHelper.setupEvents(html);
 
         function updateCardStyles() {
           html.find(".weapon-card").each(function () {
