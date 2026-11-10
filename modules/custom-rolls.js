@@ -2425,7 +2425,7 @@ Click a numbered modifier badge to execute a roll.</div>
   }
 
   // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
-  window.CustomRolls.openActionDialog = function (initialMode = "d20") {
+  window.CustomRolls.openActionDialog = async function (initialMode = "d20") {
     if (!getSetting("featureCustomRolls")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
