@@ -634,53 +634,51 @@ export function initCustomRolls() {
     `;
     }).join('');
 
-    const renderSidebarAbilityCol = (keys) => keys.map(key => {
-      const score = getNumericValue(actor.system.abilities?.[key]?.value, 10);
-      const mod = getNumericValue(actor.system.abilities?.[key]?.mod, 0);
-      const name = ABILITIES[key];
-      return `
-        <div class="ability-card" data-key="${key}" data-type="check" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 3px; cursor: pointer;">
-          <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88;">${key.toUpperCase()}</span>
-          <span style="font-size: 0.72em; color: #666; font-weight: 600;">${score}</span>
-          <button type="button" class="roll-btn-v2" data-type="check" data-key="${key}" title="Roll ${name} Check" style="width: 26px; height: 18px; font-weight: 700; font-size: 0.72em; padding: 0; border-radius: 2px; border: 1px solid #c0c6ce; background: #fff; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-            ${formatSign(mod)}
-          </button>
+    const renderSidebarAbilityCol = (keys) => {
+      const header = `
+        <div style="display: flex; justify-content: flex-end; gap: 2px; padding-right: 1px; margin-bottom: 2px; font-size: 0.6em; font-weight: 700; color: #777;">
+          <span style="width: 24px; text-align: center;">Mod</span>
+          <span style="width: 24px; text-align: center;">Save</span>
         </div>
       `;
-    }).join('');
+      const rows = keys.map(key => {
+        const score = getNumericValue(actor.system.abilities?.[key]?.value, 10);
+        const mod = getNumericValue(actor.system.abilities?.[key]?.mod, 0);
+        const saveObj = actor.system.abilities?.[key]?.save;
+        const modObj = actor.system.abilities?.[key]?.mod;
+        const saveMod = getNumericValue(saveObj, getNumericValue(modObj, 0));
+        const isProf = Boolean(actor.system.abilities?.[key]?.proficient || actor.system.abilities?.[key]?.prof);
+        const profMarker = getProfMarker(isProf ? 1 : 0);
+        const name = ABILITIES[key];
+        return `
+          <div class="ability-card" data-key="${key}" data-type="check" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 3px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 3px; margin-bottom: 2px; cursor: pointer;">
+            <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; white-space: nowrap;">
+              ${profMarker}${key.toUpperCase()}&nbsp;<span style="color: #666; font-weight: 600;">${score}</span>
+            </span>
+            <div style="display: flex; gap: 2px; align-items: center;">
+              <button type="button" class="roll-btn-v2" data-type="check" data-key="${key}" title="Roll ${name} Check" style="width: 24px; height: 18px; font-weight: 700; font-size: 0.7em; padding: 0; border-radius: 2px; border: 1px solid #c0c6ce; background: #fff; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                ${formatSign(mod)}
+              </button>
+              <button type="button" class="roll-btn-v2" data-type="save" data-key="${key}" title="Roll ${name} Save" style="width: 24px; height: 18px; font-weight: 700; font-size: 0.7em; padding: 0; border-radius: 2px; border: 1px solid ${isProf ? '#2b7489' : '#c0c6ce'}; background: ${isProf ? '#f0f8fa' : '#fff'}; cursor: pointer; color: ${isProf ? '#2b7489' : '#2b3a4a'}; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                ${formatSign(saveMod)}
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      return `${header}${rows}`;
+    };
 
     const sidebarAbilitiesHtml = `
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-        <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="display: flex; flex-direction: column;">
           ${renderSidebarAbilityCol(["str", "dex", "con"])}
         </div>
-        <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="display: flex; flex-direction: column;">
           ${renderSidebarAbilityCol(["int", "wis", "cha"])}
         </div>
       </div>
     `;
-
-    // Saving Throws: Col 1 (STR, DEX, CON), Col 2 (INT, WIS, CHA)
-    const saveCol1Keys = ["str", "dex", "con"];
-    const saveCol2Keys = ["int", "wis", "cha"];
-
-    const buildSaveColHtml = (keys) => keys.map(key => {
-      const name = ABILITIES[key];
-      const saveObj = actor.system.abilities?.[key]?.save;
-      const modObj = actor.system.abilities?.[key]?.mod;
-      const saveMod = getNumericValue(saveObj, getNumericValue(modObj, 0));
-      const isProf = Boolean(actor.system.abilities?.[key]?.proficient || actor.system.abilities?.[key]?.prof);
-      const profIcon = getProfMarker(isProf ? 1 : 0);
-
-      return `
-      <div class="save-row" data-key="${key}" data-type="save" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; border-radius: 3px; background: #fff; border: 1px solid #e5e5e5; cursor: pointer; margin-bottom: 2px;">
-        <span style="font-size: 0.74em; color: #333; display: flex; align-items: center;">${profIcon}${key.toUpperCase()}</span>
-        <button type="button" class="roll-btn-v2" data-type="save" data-key="${key}" title="Roll ${name} Save" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d2d7df; background: #fafafa; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
-          ${formatSign(saveMod)}
-        </button>
-      </div>
-    `;
-    }).join('');
 
     // Initiative and Concentration values
     const conMod = getNumericValue(actor.system.abilities?.con?.mod, 0);
@@ -795,75 +793,41 @@ export function initCustomRolls() {
     const dialogHtml = `
     <div style="display: flex; gap: 8px; font-family: inherit; height: 480px; box-sizing: border-box;">
       
-      <!-- LEFT + CENTER CONTAINER: Saves, Tools, and Skills -->
-      <div style="flex: 2.1; display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 100%;">
+      <!-- LEFT COLUMN: Skills & Tools in a Single Stack -->
+      <div style="flex: 1.15; min-width: 220px; display: flex; flex-direction: column; gap: 6px; min-height: 0; height: 100%;">
+        
+        <!-- Skills Section (Scrollable, full font size) -->
+        <div style="display: flex; flex-direction: column; min-height: 0; flex: 1.2;">
+          <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">SKILLS</label>
+          <div style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 1px 3px; max-height: 220px; overflow-y: auto;">
+            ${standardSkillsHtml}
+            ${customSkillsList.join('')}
+          </div>
+        </div>
 
-        <!-- Two Sub-Columns: [Utilities + Saves + Tools] and [Skills] -->
-        <div style="display: flex; gap: 8px; flex: 1; min-height: 0;">
-          
-          <!-- LEFT SUB-COLUMN: Initiative, Concentration, Saves, Tools -->
-          <div style="flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; padding-right: 2px;">
-            
-            <!-- Initiative & Concentration -->
-            <div style="display: flex; flex-direction: column; gap: 2px;">
-              <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;">
-                <span class="entry-label" style="font-size: 0.72em; font-weight: 600; color: #235d6e;">Initiative</span>
-                <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; height: 18px; font-size: 0.72em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
-                  ${formatSign(totalInitMod)} .${dexScore}
-                </button>
-              </div>
-              <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;">
-                <span class="entry-label" style="font-size: 0.72em; font-weight: 600; color: #a34848;">Concentration</span>
-                <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 30px; height: 18px; font-size: 0.72em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
-                  ${formatSign(conSaveTotal)}
-                </button>
-              </div>
-            </div>
-
-            <!-- Saving Throws -->
-            <div style="margin-top: 2px;">
-              <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">SAVING THROWS</label>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px;">
-                <div>${buildSaveColHtml(saveCol1Keys)}</div>
-                <div>${buildSaveColHtml(saveCol2Keys)}</div>
-              </div>
-            </div>
-
-            <!-- Tools Section -->
-            <div style="margin-top: 2px; display: flex; flex-direction: column;">
-              <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">TOOLS</label>
-              <div id="tools-list-container-v2" style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 140px; overflow-y: auto;">
-                ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
+        <!-- Tools Section (Directly underneath Skills) -->
+        <div style="display: flex; flex-direction: column; flex-shrink: 0; border-top: 1px solid #e5e5e5; padding-top: 4px;">
+          <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">TOOLS</label>
+          <div id="tools-list-container-v2" style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 110px; overflow-y: auto;">
+            ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
         ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
         : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
-              </div>
-
-              <div id="other-tools-container-v2" style="margin-top: 2px;">
-                <label style="font-weight: 700; font-size: 0.65em; color: #777; display: block; margin-bottom: 1px;">OTHER TOOLS</label>
-                <div style="display: flex; flex-direction: column; gap: 3px;">
-                  <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box;">
-                    <option value="">-- Choose Tool --</option>
-                    ${nonProficientToolsHtml.join('')}
-                  </select>
-                  <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-                    Roll Selected Tool
-                  </button>
-                </div>
-              </div>
-            </div>
-
           </div>
 
-          <!-- RIGHT SUB-COLUMN: Skills Column -->
-          <div style="flex: 1.05; min-width: 170px; display: flex; flex-direction: column; border-left: 1px solid #e5e5e5; padding-left: 8px; min-height: 0;">
-            <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">SKILLS</label>
-            <div style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 1px 3px; max-height: 440px; overflow-y: auto;">
-              ${standardSkillsHtml}
-              ${customSkillsList.join('')}
+          <div id="other-tools-container-v2">
+            <label style="font-weight: 700; font-size: 0.65em; color: #777; display: block; margin-bottom: 1px;">OTHER TOOLS</label>
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+              <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box;">
+                <option value="">-- Choose Tool --</option>
+                ${nonProficientToolsHtml.join('')}
+              </select>
+              <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                Roll Selected Tool
+              </button>
             </div>
           </div>
-
         </div>
+
       </div>
 
       <!-- RIGHT COLUMN: Descriptions & Modifiers (Shifted to start at the very top) -->
@@ -914,6 +878,11 @@ Click a numbered modifier badge to execute a roll.</div>
     return {
       html: dialogHtml,
       sidebarAbilitiesHtml: sidebarAbilitiesHtml,
+      totalInitMod,
+      dexScore,
+      conSaveTotal,
+      formattedInit: `${totalInitMod >= 0 ? '+' : ''}${totalInitMod} .${dexScore}`,
+      formattedConc: `${conSaveTotal >= 0 ? '+' : ''}${conSaveTotal}`,
       setupEvents: (html) => {
         const descTitle = html.find('#desc-title-v2');
         const descSubtitle = html.find('#desc-subtitle-v2');
@@ -2611,18 +2580,32 @@ Click a numbered modifier badge to execute a roll.</div>
       <!-- LEFT SIDEBAR: Persistent (~215px) -->
       <div id="dialog-sidebar-left" style="width: 215px; min-width: 215px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #d2d7df; padding-right: 8px; height: 100%;">
         
-        <!-- Actor Portrait & Name Hero Header -->
-        <div style="display: flex; flex-direction: column; align-items: center; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 6px 4px; flex-shrink: 0;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 72px; height: 72px; border-radius: 6px; border: 1px solid #b5bec8; object-fit: cover; object-position: top; box-shadow: 0 1px 3px rgba(0,0,0,0.12);" />
-          <div style="font-weight: 700; font-size: 0.88em; color: #2b3a4a; margin-top: 4px; text-align: center; max-width: 195px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${actor.name}">
-            ${actor.name}
+        <!-- Actor Portrait, Name, Init & Concentration Header -->
+        <div style="display: flex; gap: 6px; align-items: center; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px; flex-shrink: 0;">
+          <img src="${portraitSrc}" alt="${actor.name}" style="width: 52px; height: 52px; border-radius: 4px; border: 1px solid #b5bec8; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+            <div style="font-weight: 700; font-size: 0.8em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${actor.name}">
+              ${actor.name}
+            </div>
+            <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 1px 3px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 2px; cursor: pointer;" title="Roll Initiative">
+              <span class="entry-label" style="font-size: 0.66em; font-weight: 600; color: #235d6e;">Init</span>
+              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; height: 16px; font-size: 0.66em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                ${d20Data.formattedInit}
+              </button>
+            </div>
+            <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 1px 3px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 2px; cursor: pointer;" title="Roll Concentration">
+              <span class="entry-label" style="font-size: 0.66em; font-weight: 600; color: #a34848;">Conc</span>
+              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 28px; height: 16px; font-size: 0.66em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                ${d20Data.formattedConc}
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Ability Scores (2-Col Grid) -->
-        <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px; flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase;">
-            <i class="fas fa-hand-fist" style="margin-right: 3px;"></i> Ability Scores
+        <!-- Ability Scores & Saves (2-Col Grid) -->
+        <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px 3px; flex-shrink: 0;">
+          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 2px; text-transform: uppercase;">
+            <i class="fas fa-hand-fist" style="margin-right: 3px;"></i> Ability Scores & Saves
           </div>
           ${d20Data.sidebarAbilitiesHtml}
         </div>
@@ -2632,29 +2615,6 @@ Click a numbered modifier badge to execute a roll.</div>
           ${trackingHelper.html}
         </div>
 
-        ${game.user.isGM ? `
-        <!-- GM Tools Panel -->
-        <div style="background: rgba(114, 137, 218, 0.08); border: 1px dashed #7289da; border-radius: 4px; padding: 4px; margin-top: auto; flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.66em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; display: flex; align-items: center; justify-content: space-between;">
-            <span><i class="fas fa-crown" style="color: #d97706; margin-right: 3px;"></i> GM Tools</span>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px;">
-            <button type="button" id="btn-gm-d20-presets" title="Open D20 Modifier Presets" style="height: 22px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
-              <i class="fas fa-sliders" style="color: #4b5d88;"></i> Presets
-            </button>
-            <button type="button" id="btn-gm-action-editor" title="Open Action Editor" style="height: 22px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
-              <i class="fas fa-pen-to-square" style="color: #2b7489;"></i> Actions
-            </button>
-            <button type="button" id="btn-gm-action-generator" title="Generate Actions from Sheet" style="height: 22px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
-              <i class="fas fa-wand-magic-sparkles" style="color: #7289da;"></i> Generate
-            </button>
-            <button type="button" id="btn-gm-storage-inspector" title="Open Persistent Storage Inspector" style="height: 22px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
-              <i class="fas fa-database" style="color: #d97706;"></i> Storage
-            </button>
-          </div>
-        </div>
-        ` : ''}
-
       </div>
 
       <!-- RIGHT PANEL: Tabs & Sections (~635px) -->
@@ -2663,7 +2623,7 @@ Click a numbered modifier badge to execute a roll.</div>
         <!-- Tabs Header -->
         <div style="display: flex; gap: 6px; border-bottom: 2px solid #7289da; padding-bottom: 6px; flex-shrink: 0;">
           <button type="button" id="tab-btn-d20" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
-            <i class="fas fa-dice-d20"></i> Checks & Saves
+            <i class="fas fa-dice-d20"></i> Skills & Tools
           </button>
           <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
             <i class="fas fa-sword"></i> Weapons (${attackNames.length})
@@ -2737,12 +2697,49 @@ Click a numbered modifier badge to execute a roll.</div>
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
 
-        // GM Tool Buttons
+        // GM Tools Header Button in Dialog Title Bar
         if (game.user.isGM) {
-          html.find("#btn-gm-d20-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.());
-          html.find("#btn-gm-action-editor").on("click", () => window.CustomRolls?.openActionEditor?.());
-          html.find("#btn-gm-action-generator").on("click", () => window.CustomRolls?.openActionGenerator?.());
-          html.find("#btn-gm-storage-inspector").on("click", () => window.CustomRolls?.openStorageInspector?.());
+          const header = html.closest(".app").find(".window-header");
+          if (header.find(".gm-tools-header-btn").length === 0) {
+            const btn = $(`
+              <a class="header-button gm-tools-header-btn" title="GM Tools" style="cursor: pointer; margin-right: 4px;">
+                <i class="fas fa-crown" style="color: #d97706;"></i> GM Tools
+              </a>
+            `);
+            btn.on("click", (ev) => {
+              ev.preventDefault();
+              new Dialog({
+                title: `${actor.name}: GM Tools`,
+                content: `
+                  <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
+                    <button type="button" id="gm-menu-presets" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                      <i class="fas fa-sliders" style="color: #4b5d88; width: 16px;"></i> Presets
+                    </button>
+                    <button type="button" id="gm-menu-actions" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                      <i class="fas fa-pen-to-square" style="color: #2b7489; width: 16px;"></i> Action Editor
+                    </button>
+                    <button type="button" id="gm-menu-generator" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                      <i class="fas fa-wand-magic-sparkles" style="color: #7289da; width: 16px;"></i> Generate Actions
+                    </button>
+                    <button type="button" id="gm-menu-storage" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                      <i class="fas fa-database" style="color: #d97706; width: 16px;"></i> Storage Inspector
+                    </button>
+                  </div>
+                `,
+                buttons: {
+                  close: { label: "Close" }
+                },
+                default: "close",
+                render: (subHtml) => {
+                  subHtml.find("#gm-menu-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.());
+                  subHtml.find("#gm-menu-actions").on("click", () => window.CustomRolls?.openActionEditor?.());
+                  subHtml.find("#gm-menu-generator").on("click", () => window.CustomRolls?.openActionGenerator?.());
+                  subHtml.find("#gm-menu-storage").on("click", () => window.CustomRolls?.openStorageInspector?.());
+                }
+              }, { width: 260 }).render(true);
+            });
+            header.find(".close").before(btn);
+          }
         }
 
         // Persistent Weapon Roll Handler (Keeps dialog open)
