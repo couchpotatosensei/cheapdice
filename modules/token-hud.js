@@ -316,9 +316,9 @@ export function initTokenHud() {
         if (dispIcon) dispIcon.style.color = currentMeta.color;
         flyoutMenu.appendChild(dispositionBtn);
 
-        // Button 2: D20 Test (Updated to V2 Dialog)
+        // Button 2: D20 Test (Dice Stuff)
         const d20Btn = makeButton(
-          "Roll D20 (V2)",
+          "Dice Stuff",
           "docs/assets/fvtt.png",
           (e) => {
             e.preventDefault();
@@ -408,7 +408,7 @@ export function initTokenHud() {
     root.querySelector('.control-icon[data-action="target"]')?.remove();
 
     const d20Btn = makeButton(
-      "Roll D20",
+      "Dice Stuff",
       "docs/assets/fvtt.png",
       () => {
         window.CustomRolls?.openD20DialogV2();

@@ -1937,7 +1937,7 @@ Click a numbered modifier badge to execute a roll.</div>
           <i class="fas fa-magic"></i> Spells (${spellKeys.length})
         </button>
         <button type="button" id="tab-btn-d20" style="flex: 1; padding: 6px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="fas fa-dice-d20"></i> Checks & Saves
+          <i class="fas fa-dice-d20"></i> Dice Stuff
         </button>
       </div>
 
@@ -1969,7 +1969,7 @@ Click a numbered modifier badge to execute a roll.</div>
   `;
 
     new Dialog({
-      title: `${actor.name}: Actions & Checks`,
+      title: `${actor.name}: Actions & Dice Stuff`,
       content: content,
       buttons: {
         execute: {
