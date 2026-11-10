@@ -1645,9 +1645,13 @@ function registerSocketHandlers() {
       : rollD20Second;
 
     if (isSuperAdvantage) {
-      // Re-evaluate roll2 with the kept d20 if needed, or evaluate cleanly:
-      // Constructing from clean terms or evaluating fullFormula preserves Foundry v12-v14 contract
-      const terms2 = [rollD20Second.terms[0], ...roll1.terms.slice(1).map(t => t.clone())];
+      // Re-evaluate roll2 using the kept d20 candidate's formula or clone rollTerm safely
+      const cloneTerm = (t) => {
+        if (typeof t.clone === "function") return t.clone();
+        if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
+        return RollTerm.fromJSON(JSON.stringify(t));
+      };
+      const terms2 = [rollD20Second.terms[0], ...roll1.terms.slice(1).map(cloneTerm)];
       roll2 = Roll.fromTerms(terms2);
       await roll2.evaluate();
     }
