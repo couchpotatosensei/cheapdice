@@ -496,17 +496,17 @@ export function initActionEditors() {
   // =========================================================================
   // VERSION 2: D20 PRESET MODIFIER EDITOR (DISTINCT V2 DIALOG THEME)
   // =========================================================================
-  window.CustomRolls.openD20PresetEditorV2 = function () {
+  window.CustomRolls.openD20PresetEditorV2 = function (targetActor = null) {
     if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
+    const actor = targetActor || token?.actor;
 
-    if (!token) {
+    if (!actor) {
       return ui.notifications.warn("Please select your token first.");
     }
 
-    const actor = token.actor;
-    if (!actor || !actor.isOwner) {
+    if (!actor.isOwner && !game.user.isGM) {
       return ui.notifications.warn("You don't have permissions to use this token.");
     }
 
@@ -970,11 +970,11 @@ export function initActionEditors() {
 
 
   // --- 4.2 Unified Action Generator (Weapons & Spells) ---
-  window.CustomRolls.openActionGenerator = async function () {
+  window.CustomRolls.openActionGenerator = async function (targetActor = null) {
     if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
-    const actor = token?.actor;
+    const actor = targetActor || token?.actor;
     if (!actor) {
       return ui.notifications.warn("Please select your token first.");
     }
@@ -1887,16 +1887,24 @@ export function initActionEditors() {
   };
 
   // --- 4.3 Unified Action Editor & Manager (Weapons & Spells) ---
-  window.CustomRolls.openActionEditor = function (initialCategory = "weapons") {
+  window.CustomRolls.openActionEditor = function (initialCategory = "weapons", targetActor = null) {
     if (!getSetting("featurePresetEditors")) return;
 
+    // Support flexible argument order if targetActor passed as first arg
+    let category = initialCategory;
+    let explicitActor = targetActor;
+    if (typeof initialCategory === "object" && initialCategory?.documentName === "Actor") {
+      explicitActor = initialCategory;
+      category = "weapons";
+    }
+
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
-    const actor = token?.actor;
+    const actor = explicitActor || token?.actor;
     if (!actor) {
       return ui.notifications.warn("Please select your token first.");
     }
 
-    let activeCategory = initialCategory;
+    let activeCategory = category;
 
     const DAMAGE_TYPES = [
       { label: "Acid", value: "acid" },

@@ -796,28 +796,32 @@ export function initCustomRolls() {
       <!-- LEFT COLUMN: Skills & Tools in a Single Stack -->
       <div style="flex: 1.15; min-width: 220px; display: flex; flex-direction: column; gap: 6px; min-height: 0; height: 100%;">
         
-        <!-- Skills Section (Scrollable, full font size) -->
-        <div style="display: flex; flex-direction: column; min-height: 0; flex: 1.2;">
-          <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">SKILLS</label>
-          <div style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 1px 3px; max-height: 220px; overflow-y: auto;">
+        <!-- Skills Section Card -->
+        <div style="display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+            Skills
+          </div>
+          <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; max-height: 200px; overflow-y: auto;">
             ${standardSkillsHtml}
             ${customSkillsList.join('')}
           </div>
         </div>
 
-        <!-- Tools Section (Directly underneath Skills) -->
-        <div style="display: flex; flex-direction: column; flex-shrink: 0; border-top: 1px solid #e5e5e5; padding-top: 4px;">
-          <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">TOOLS</label>
-          <div id="tools-list-container-v2" style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 110px; overflow-y: auto;">
+        <!-- Tools Section Card (Directly below Skills, expands downward) -->
+        <div style="display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+            Tools
+          </div>
+          <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 120px; overflow-y: auto;">
             ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
         ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
         : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
           </div>
 
           <div id="other-tools-container-v2">
-            <label style="font-weight: 700; font-size: 0.65em; color: #777; display: block; margin-bottom: 1px;">OTHER TOOLS</label>
+            <div style="font-weight: 700; font-size: 0.64em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
             <div style="display: flex; flex-direction: column; gap: 3px;">
-              <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box;">
+              <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box; background: #fff;">
                 <option value="">-- Choose Tool --</option>
                 ${nonProficientToolsHtml.join('')}
               </select>
@@ -830,12 +834,12 @@ export function initCustomRolls() {
 
       </div>
 
-      <!-- RIGHT COLUMN: Descriptions & Modifiers (Shifted to start at the very top) -->
-      <div style="flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid #d2d7df; padding-left: 8px; min-height: 0; overflow-y: auto;">
+      <!-- RIGHT COLUMN: Descriptions & Modifiers -->
+      <div style="flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid #bcc5d3; padding-left: 8px; min-height: 0; overflow-y: auto;">
         
-        <!-- Live Description Box (Starts at top) -->
-        <div style="flex: 1; display: flex; flex-direction: column; background: rgba(0,0,0,0.02); border-radius: 4px; padding: 6px 8px; border: 1px solid #e2e6ea; min-height: 160px;">
-          <div style="border-bottom: 1px solid #d2d7df; padding-bottom: 3px; margin-bottom: 4px;">
+        <!-- Live Description Box Card -->
+        <div style="flex: 1; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 6px 8px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05); min-height: 150px;">
+          <div style="border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px;">
             <div id="desc-title-v2" style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">D20 Test Overview</div>
             <div id="desc-subtitle-v2" style="font-size: 0.72em; color: #777;">Information Pane</div>
           </div>
@@ -844,30 +848,33 @@ export function initCustomRolls() {
 Click a numbered modifier badge to execute a roll.</div>
         </div>
 
-        <!-- Presets Section -->
-        <div id="preset-modifiers-section-v2" style="display: none; flex-direction: column; gap: 2px; background: rgba(0,0,0,0.02); border: 1px dashed #c0c6ce; border-radius: 4px; padding: 3px 5px;">
-          <label style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px;">PRESET MODIFIERS (V2)</label>
-          <div id="preset-list-v2" style="display: flex; flex-direction: column; gap: 2px;"></div>
-        </div>
+        <!-- Modifiers Card -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 5px;">
+          <!-- Presets Section -->
+          <div id="preset-modifiers-section-v2" style="display: none; flex-direction: column; gap: 2px; background: #fff; border: 1px dashed #c0c6ce; border-radius: 4px; padding: 3px 5px;">
+            <label style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px;">PRESET MODIFIERS (V2)</label>
+            <div id="preset-list-v2" style="display: flex; flex-direction: column; gap: 2px;"></div>
+          </div>
 
-        <div>
-          <label for="other-modifier-v2" style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">EXTRA MODIFIER</label>
-          <input type="text" id="other-modifier-v2" name="other-modifier-v2" value="" placeholder="e.g. 1d4, +2" style="width: 100%; height: 24px; border-radius: 4px; border: 1px solid #ccc; padding: 1px 4px; font-size: 0.8em;" />
-        </div>
+          <div>
+            <label for="other-modifier-v2" style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">EXTRA MODIFIER</label>
+            <input type="text" id="other-modifier-v2" name="other-modifier-v2" value="" placeholder="e.g. 1d4, +2" style="width: 100%; height: 24px; border-radius: 4px; border: 1px solid #ccc; padding: 1px 4px; font-size: 0.8em; background: #fff;" />
+          </div>
 
-        <div style="display: flex; flex-direction: column; gap: 3px; border-top: 1px solid #e0e0e0; padding-top: 4px;">
-          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #1e7e34; font-weight: 600;">
-            <span>Super Advantage</span>
-            <input type="checkbox" id="super-advantage-v2" name="super-advantage-v2" style="margin: 0;">
-          </label>
-          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
-            <span>Reliable Talent (Min 10)</span>
-            <input type="checkbox" id="reliable-talent-v2" name="reliable-talent-v2" style="margin: 0;">
-          </label>
-          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
-            <span>Halfling Luck (Reroll 1s)</span>
-            <input type="checkbox" id="halfling-luck-v2" name="halfling-luck-v2" style="margin: 0;">
-          </label>
+          <div style="display: flex; flex-direction: column; gap: 3px; border-top: 1px solid #e0e6ed; padding-top: 4px;">
+            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #1e7e34; font-weight: 600;">
+              <span>Super Advantage</span>
+              <input type="checkbox" id="super-advantage-v2" name="super-advantage-v2" style="margin: 0;">
+            </label>
+            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
+              <span>Reliable Talent (Min 10)</span>
+              <input type="checkbox" id="reliable-talent-v2" name="reliable-talent-v2" style="margin: 0;">
+            </label>
+            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
+              <span>Halfling Luck (Reroll 1s)</span>
+              <input type="checkbox" id="halfling-luck-v2" name="halfling-luck-v2" style="margin: 0;">
+            </label>
+          </div>
         </div>
 
       </div>
@@ -1834,10 +1841,10 @@ Click a numbered modifier badge to execute a roll.</div>
     }
 
     const htmlContent = `
-      <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 5px; height: 100%; box-sizing: border-box; min-height: 0;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px;">
+      <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; height: 100%; box-sizing: border-box; min-height: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px;">
           <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
-            <i class="fas fa-boxes-stacked" style="margin-right: 3px;"></i> Tracking Stuff
+            Tracking Stuff
           </span>
           <div style="display: flex; gap: 3px;">
             <button type="button" id="btn-recharge-dawn-all" title="Roll recharge for all Daily/Dawn items" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 4px; border: 1px solid #e5a50a; background: #fffbe6; color: #9c6c03; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;">
@@ -2577,25 +2584,22 @@ Click a numbered modifier badge to execute a roll.</div>
     const content = `
     <div style="display: flex; gap: 10px; font-family: inherit; height: 520px; box-sizing: border-box; padding: 2px;">
       
-      <!-- LEFT SIDEBAR: Persistent (~215px) -->
-      <div id="dialog-sidebar-left" style="width: 215px; min-width: 215px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #d2d7df; padding-right: 8px; height: 100%;">
+      <!-- LEFT SIDEBAR: Persistent (~245px) -->
+      <div id="dialog-sidebar-left" style="width: 245px; min-width: 245px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
-        <!-- Actor Portrait, Name, Init & Concentration Header -->
-        <div style="display: flex; gap: 6px; align-items: center; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px; flex-shrink: 0;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 52px; height: 52px; border-radius: 4px; border: 1px solid #b5bec8; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
-          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
-            <div style="font-weight: 700; font-size: 0.8em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${actor.name}">
-              ${actor.name}
-            </div>
-            <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 1px 3px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 2px; cursor: pointer;" title="Roll Initiative">
-              <span class="entry-label" style="font-size: 0.66em; font-weight: 600; color: #235d6e;">Init</span>
-              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; height: 16px; font-size: 0.66em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+        <!-- Actor Portrait Hero Card & Side-by-Side Init/Conc -->
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <img src="${portraitSrc}" alt="${actor.name}" style="width: 80px; height: 80px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 3px rgba(0,0,0,0.12);" />
+          <div style="display: flex; gap: 4px; width: 100%;">
+            <div class="sheet-entry-row" data-key="init" data-type="init" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
+              <span class="entry-label" style="font-size: 0.68em; font-weight: 700; color: #235d6e;">Init</span>
+              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${d20Data.formattedInit}
               </button>
             </div>
-            <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 1px 3px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 2px; cursor: pointer;" title="Roll Concentration">
-              <span class="entry-label" style="font-size: 0.66em; font-weight: 600; color: #a34848;">Conc</span>
-              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 28px; height: 16px; font-size: 0.66em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+            <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
+              <span class="entry-label" style="font-size: 0.68em; font-weight: 700; color: #a34848;">Conc</span>
+              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 28px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${d20Data.formattedConc}
               </button>
             </div>
@@ -2603,9 +2607,9 @@ Click a numbered modifier badge to execute a roll.</div>
         </div>
 
         <!-- Ability Scores & Saves (2-Col Grid) -->
-        <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px 3px; flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 2px; text-transform: uppercase;">
-            <i class="fas fa-hand-fist" style="margin-right: 3px;"></i> Ability Scores & Saves
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase;">
+            Ability Scores & Saves
           </div>
           ${d20Data.sidebarAbilitiesHtml}
         </div>
@@ -2679,7 +2683,7 @@ Click a numbered modifier badge to execute a roll.</div>
   `;
 
     new Dialog({
-      title: `${actor.name}: Dice Stuff`,
+      title: `Dice Stuff: ${actor.name}`,
       content: content,
       buttons: {
         close: { label: "Close" }
@@ -2709,7 +2713,7 @@ Click a numbered modifier badge to execute a roll.</div>
             btn.on("click", (ev) => {
               ev.preventDefault();
               new Dialog({
-                title: `${actor.name}: GM Tools`,
+                title: `Dice Stuff: GM Tools (${actor.name})`,
                 content: `
                   <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
                     <button type="button" id="gm-menu-presets" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
@@ -2731,9 +2735,9 @@ Click a numbered modifier badge to execute a roll.</div>
                 },
                 default: "close",
                 render: (subHtml) => {
-                  subHtml.find("#gm-menu-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.());
-                  subHtml.find("#gm-menu-actions").on("click", () => window.CustomRolls?.openActionEditor?.());
-                  subHtml.find("#gm-menu-generator").on("click", () => window.CustomRolls?.openActionGenerator?.());
+                  subHtml.find("#gm-menu-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.(actor));
+                  subHtml.find("#gm-menu-actions").on("click", () => window.CustomRolls?.openActionEditor?.("weapons", actor));
+                  subHtml.find("#gm-menu-generator").on("click", () => window.CustomRolls?.openActionGenerator?.(actor));
                   subHtml.find("#gm-menu-storage").on("click", () => window.CustomRolls?.openStorageInspector?.());
                 }
               }, { width: 260 }).render(true);
@@ -2884,7 +2888,7 @@ Click a numbered modifier badge to execute a roll.</div>
         });
       }
     }, {
-      width: 860,
+      width: 890,
       height: "auto",
       resizable: true
     }).render(true);
