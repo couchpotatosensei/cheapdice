@@ -1812,15 +1812,20 @@ Click a numbered modifier badge to execute a roll.</div>
     for (const t of trackers) {
       const reset = String(t.resetOn || "lr").toLowerCase();
       let shouldRecharge = false;
+      const isReset1 = reset.includes("reset_1");
+      const isReset0 = reset.includes("reset_0");
+
       if (isLR) {
-        shouldRecharge = (reset === "lr" || reset === "sr" || reset === "dawn" || reset === "day");
+        shouldRecharge = (reset.startsWith("lr") || reset.startsWith("sr") || reset.startsWith("dawn") || reset === "day");
       } else if (isSR) {
-        shouldRecharge = (reset === "sr");
+        shouldRecharge = reset.startsWith("sr");
       } else if (isDawn) {
-        shouldRecharge = (reset === "dawn" || reset === "day");
+        shouldRecharge = (reset.startsWith("dawn") || reset === "day");
       }
 
       if (!shouldRecharge) continue;
+
+      const trackerLabel = t.label || t.name || (t.resourceSlot ? `Resource: ${t.resourceSlot}` : "Tracker");
 
       if (t.type === "item" && t.itemRefId) {
         handledItemIds.add(t.itemRefId);
@@ -1829,7 +1834,15 @@ Click a numbered modifier badge to execute a roll.</div>
           const uses = item.system.uses;
           const cur = Number(uses?.value ?? t.value ?? 0);
           const max = Number(uses?.max ?? t.max ?? 0);
-          if (cur < max) {
+          if (isReset1 || isReset0) {
+            const targetVal = isReset1 ? 1 : 0;
+            if (cur !== targetVal) {
+              itemUpdates.push({ _id: item.id, "system.uses.value": targetVal });
+              t.value = targetVal;
+              trackersModified = true;
+              rechargeChatLines.push(`• <strong>${item.name}</strong>: Reset to ${targetVal}/${max}`);
+            }
+          } else if (cur < max) {
             const formula = (t.rechargeFormula || "").trim();
             if (formula) {
               try {
@@ -1856,7 +1869,15 @@ Click a numbered modifier badge to execute a roll.</div>
         const res = actor.system.resources?.[t.resourceSlot];
         const cur = Number(res?.value ?? t.value ?? 0);
         const max = Number(res?.max ?? t.max ?? 0);
-        if (cur < max) {
+        if (isReset1 || isReset0) {
+          const targetVal = isReset1 ? 1 : 0;
+          if (cur !== targetVal) {
+            updates[`system.resources.${t.resourceSlot}.value`] = targetVal;
+            t.value = targetVal;
+            trackersModified = true;
+            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Reset to ${targetVal}/${max}`);
+          }
+        } else if (cur < max) {
           const formula = (t.rechargeFormula || "").trim();
           if (formula) {
             try {
@@ -1866,19 +1887,26 @@ Click a numbered modifier badge to execute a roll.</div>
               updates[`system.resources.${t.resourceSlot}.value`] = newVal;
               t.value = newVal;
               trackersModified = true;
-              rechargeChatLines.push(`• <strong>${t.label}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+              rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
             } catch (e) {}
           } else {
             updates[`system.resources.${t.resourceSlot}.value`] = max;
             t.value = max;
             trackersModified = true;
-            rechargeChatLines.push(`• <strong>${t.label}</strong>: Reset to ${max}/${max}`);
+            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Restored to ${max}/${max}`);
           }
         }
       } else if (t.type === "custom") {
         const cur = Number(t.value ?? 0);
         const max = Number(t.max ?? 0);
-        if (cur < max) {
+        if (isReset1 || isReset0) {
+          const targetVal = isReset1 ? 1 : 0;
+          if (cur !== targetVal) {
+            t.value = targetVal;
+            trackersModified = true;
+            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Reset to ${targetVal}/${max}`);
+          }
+        } else if (cur < max) {
           const formula = (t.rechargeFormula || "").trim();
           if (formula) {
             try {
@@ -1887,12 +1915,12 @@ Click a numbered modifier badge to execute a roll.</div>
               const newVal = Math.min(max, cur + roll.total);
               t.value = newVal;
               trackersModified = true;
-              rechargeChatLines.push(`• <strong>${t.label}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+              rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
             } catch (e) {}
           } else {
             t.value = max;
             trackersModified = true;
-            rechargeChatLines.push(`• <strong>${t.label}</strong>: Reset to ${max}/${max}`);
+            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Restored to ${max}/${max}`);
           }
         }
       }
@@ -1993,27 +2021,25 @@ Click a numbered modifier badge to execute a roll.</div>
     function getLiveTracker(t) {
       if (t.type === "item" && t.itemRefId) {
         const it = actor.items.get(t.itemRefId);
-        if (it) {
-          return {
-            label: it.name,
-            value: it.system.uses?.value ?? t.value ?? 0,
-            max: it.system.uses?.max ?? t.max ?? 0,
-            rechargeFormula: t.rechargeFormula
-          };
-        }
+        const name = it?.name || t.label || t.name || "Item";
+        return {
+          label: name,
+          value: it?.system?.uses?.value ?? t.value ?? 0,
+          max: it?.system?.uses?.max ?? t.max ?? 0,
+          rechargeFormula: t.rechargeFormula
+        };
       } else if (t.type === "resource" && t.resourceSlot) {
         const r = actor.system.resources?.[t.resourceSlot];
-        if (r && r.label) {
-          return {
-            label: r.label,
-            value: r.value ?? t.value ?? 0,
-            max: r.max ?? t.max ?? 0,
-            rechargeFormula: t.rechargeFormula
-          };
-        }
+        const resLabel = r?.label?.trim() || t.label?.trim() || t.name?.trim() || (t.resourceSlot.charAt(0).toUpperCase() + t.resourceSlot.slice(1) + " Resource");
+        return {
+          label: resLabel,
+          value: r?.value ?? t.value ?? 0,
+          max: r?.max ?? t.max ?? 0,
+          rechargeFormula: t.rechargeFormula
+        };
       }
       return {
-        label: t.label,
+        label: t.label || t.name || "Custom Tracker",
         value: t.value ?? 0,
         max: t.max ?? 0,
         rechargeFormula: t.rechargeFormula
@@ -2261,13 +2287,12 @@ Click a numbered modifier badge to execute a roll.</div>
             }
             return trackers.map(t => {
               const live = getLiveTracker(t);
+              const label = live.label || t.label || t.name || (t.resourceSlot ? `Resource: ${t.resourceSlot}` : "Tracker");
               return `
                 <div class="manage-tracker-row" data-id="${t.id}" style="border: 1px solid #d2d7df; border-radius: 4px; padding: 6px 8px; background: #fafbfc; margin-bottom: 6px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; gap: 6px;">
-                    <strong style="font-size: 0.86em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;" title="${live.label}">${live.label}</strong>
-                    <button type="button" class="btn-manage-remove" data-id="${t.id}" title="Remove Tracker" style="height: 22px; line-height: 20px; font-size: 0.76em; font-weight: 600; padding: 0 8px; border: 1px solid #e07a7a; background: #fff5f5; color: #c82333; border-radius: 4px; cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;">
-                      <i class="fas fa-trash"></i> Remove
-                    </button>
+                  <div style="margin-bottom: 5px;">
+                    <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">NAME</label>
+                    <input type="text" class="manage-input-name" data-id="${t.id}" value="${label}" style="height: 24px; font-size: 0.82em; font-weight: 600; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box; color: #2b3a4a;" />
                   </div>
                   <div style="display: grid; grid-template-columns: 75px 1fr 1fr; gap: 6px; align-items: center;">
                     <div>
@@ -2275,18 +2300,35 @@ Click a numbered modifier badge to execute a roll.</div>
                       <input type="number" class="manage-input-max" data-id="${t.id}" min="1" value="${live.max}" style="height: 24px; font-size: 0.82em; padding: 2px 5px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;" />
                     </div>
                     <div>
-                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">RECHARGE</label>
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">FORMULA</label>
                       <input type="text" class="manage-input-recharge" data-id="${t.id}" placeholder="e.g. 1d6+1" value="${t.rechargeFormula || ''}" style="height: 24px; font-size: 0.82em; padding: 2px 5px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;" />
                     </div>
                     <div>
-                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">RESET</label>
-                      <select class="manage-select-reset" data-id="${t.id}" style="height: 24px; font-size: 0.80em; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;">
-                        <option value="lr" ${(t.resetOn || 'lr') === 'lr' ? 'selected' : ''}>Long Rest</option>
-                        <option value="sr" ${t.resetOn === 'sr' ? 'selected' : ''}>Short Rest</option>
-                        <option value="dawn" ${t.resetOn === 'dawn' ? 'selected' : ''}>Dawn</option>
-                        <option value="none" ${t.resetOn === 'none' ? 'selected' : ''}>Manual</option>
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">RECHARGE / RESET</label>
+                      <select class="manage-select-reset" data-id="${t.id}" style="height: 24px; font-size: 0.78em; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;">
+                        <optgroup label="Recharge (to Max)">
+                          <option value="lr" ${(t.resetOn || 'lr') === 'lr' ? 'selected' : ''}>Recharge: Long Rest</option>
+                          <option value="sr" ${t.resetOn === 'sr' ? 'selected' : ''}>Recharge: Short Rest</option>
+                          <option value="dawn" ${t.resetOn === 'dawn' ? 'selected' : ''}>Recharge: Dawn</option>
+                        </optgroup>
+                        <optgroup label="Reset (Count Up)">
+                          <option value="lr_reset_1" ${t.resetOn === 'lr_reset_1' ? 'selected' : ''}>Reset to 1 (Long Rest)</option>
+                          <option value="lr_reset_0" ${t.resetOn === 'lr_reset_0' ? 'selected' : ''}>Reset to 0 (Long Rest)</option>
+                          <option value="sr_reset_1" ${t.resetOn === 'sr_reset_1' ? 'selected' : ''}>Reset to 1 (Short Rest)</option>
+                          <option value="sr_reset_0" ${t.resetOn === 'sr_reset_0' ? 'selected' : ''}>Reset to 0 (Short Rest)</option>
+                          <option value="dawn_reset_1" ${t.resetOn === 'dawn_reset_1' ? 'selected' : ''}>Reset to 1 (Dawn)</option>
+                          <option value="dawn_reset_0" ${t.resetOn === 'dawn_reset_0' ? 'selected' : ''}>Reset to 0 (Dawn)</option>
+                        </optgroup>
+                        <optgroup label="Manual">
+                          <option value="none" ${t.resetOn === 'none' ? 'selected' : ''}>Manual Only</option>
+                        </optgroup>
                       </select>
                     </div>
+                  </div>
+                  <div style="display: flex; justify-content: flex-end; margin-top: 5px;">
+                    <button type="button" class="btn-manage-remove" data-id="${t.id}" title="Remove Tracker" style="height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 6px; border: 1px solid #e07a7a; background: #fff5f5; color: #c82333; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                      Remove
+                    </button>
                   </div>
                 </div>
               `;
@@ -2300,8 +2342,8 @@ Click a numbered modifier badge to execute a roll.</div>
                 <div style="font-size: 0.84em; color: #2b3a4a;">
                   <strong>${a.label}</strong> <small style="color: #666;">(${a.value}/${a.max}${a.rechargeFormula ? ` • 🔄 ${a.rechargeFormula}` : ''})</small>
                 </div>
-                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #ccc; background: #eee; color: #777;"' : 'style="cursor:pointer; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;"'}>
-                  ${a.isAdded ? '<i class="fas fa-check"></i> Added' : '<i class="fas fa-plus"></i> Add'}
+                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;"'}>
+                  ${a.isAdded ? 'Added' : 'Add'}
                 </button>
               </div>
             `).join('');
@@ -2310,16 +2352,7 @@ Click a numbered modifier badge to execute a roll.</div>
             <div style="display: flex; flex-direction: column; gap: 10px; font-family: inherit; max-height: 640px; overflow-y: auto; padding-right: 2px;">
               <div>
                 <label style="font-weight: 700; font-size: 0.78em; color: #3b4d6b; display: block; margin-bottom: 4px; letter-spacing: 0.3px;">
-                  <i class="fas fa-sliders" style="margin-right: 4px;"></i> ACTIVE TRACKERS (EDIT & REMOVE)
-                </label>
-                <div id="manage-active-trackers-container" style="max-height: 250px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px; padding: 6px;">
-                  ${renderActiveTrackersList()}
-                </div>
-              </div>
-
-              <div style="border-top: 1px solid #e0e0e0; padding-top: 8px;">
-                <label style="font-weight: 700; font-size: 0.78em; color: #3b4d6b; display: block; margin-bottom: 4px; letter-spacing: 0.3px;">
-                  <i class="fas fa-file-lines" style="margin-right: 4px;"></i> FROM YOUR CHARACTER SHEET
+                  FROM YOUR CHARACTER SHEET
                 </label>
                 <div style="max-height: 180px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px;">
                   ${availableRowsHtml}
@@ -2328,24 +2361,47 @@ Click a numbered modifier badge to execute a roll.</div>
 
               <div style="border-top: 1px solid #e0e0e0; padding-top: 8px;">
                 <label style="font-weight: 700; font-size: 0.78em; color: #3b4d6b; display: block; margin-bottom: 6px; letter-spacing: 0.3px;">
-                  <i class="fas fa-plus" style="margin-right: 4px;"></i> CREATE CUSTOM COUNTER
+                  CREATE CUSTOM COUNTER
                 </label>
                 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 6px; margin-bottom: 6px;">
                   <input type="text" id="new-custom-name" placeholder="Counter Name (e.g. Grit, Torches)" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
                   <input type="number" id="new-custom-max" placeholder="Max" value="3" min="1" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                  <select id="new-custom-reset" style="height: 26px; font-size: 0.82em; border: 1px solid #ccc; border-radius: 3px;">
-                    <option value="lr">Reset on Long Rest</option>
-                    <option value="sr">Reset on Short Rest</option>
-                    <option value="dawn">Daily at Dawn</option>
-                    <option value="none">Manual Only</option>
+                  <select id="new-custom-reset" style="height: 26px; font-size: 0.80em; border: 1px solid #ccc; border-radius: 3px;">
+                    <optgroup label="Recharge (to Max)">
+                      <option value="lr">Recharge on Long Rest</option>
+                      <option value="sr">Recharge on Short Rest</option>
+                      <option value="dawn">Daily at Dawn</option>
+                    </optgroup>
+                    <optgroup label="Reset (Count Up / Tally)">
+                      <option value="lr_reset_1">Reset on Long Rest (to 1)</option>
+                      <option value="lr_reset_0">Reset on Long Rest (to 0)</option>
+                      <option value="sr_reset_1">Reset on Short Rest (to 1)</option>
+                      <option value="sr_reset_0">Reset on Short Rest (to 0)</option>
+                      <option value="dawn_reset_1">Reset at Dawn (to 1)</option>
+                      <option value="dawn_reset_0">Reset at Dawn (to 0)</option>
+                    </optgroup>
+                    <optgroup label="Manual">
+                      <option value="none">Manual Only</option>
+                    </optgroup>
                   </select>
-                  <input type="text" id="new-custom-formula" placeholder="Recharge (e.g. 1d6+1)" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
+                  <input type="text" id="new-custom-formula" placeholder="Recharge Formula (e.g. 1d6+1)" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
                 </div>
-                <button type="button" id="btn-submit-new-custom" style="width: 100%; height: 26px; line-height: 24px; font-weight: 600; font-size: 0.82em; background: #28a745; color: #fff; border: 1px solid #218838; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
-                  <i class="fas fa-plus-circle"></i> Create Custom Tracker
-                </button>
+                <div style="display: flex; justify-content: flex-end;">
+                  <button type="button" id="btn-submit-new-custom" style="height: 24px; line-height: 22px; font-weight: 600; font-size: 0.78em; padding: 0 12px; background: #28a745; color: #fff; border: 1px solid #218838; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                    Create Tracker
+                  </button>
+                </div>
+              </div>
+
+              <div style="border-top: 1px solid #e0e0e0; padding-top: 8px;">
+                <label style="font-weight: 700; font-size: 0.78em; color: #3b4d6b; display: block; margin-bottom: 4px; letter-spacing: 0.3px;">
+                  ACTIVE TRACKERS (EDIT & REMOVE)
+                </label>
+                <div id="manage-active-trackers-container" style="max-height: 250px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px; padding: 6px;">
+                  ${renderActiveTrackersList()}
+                </div>
               </div>
             </div>
           `;
@@ -2359,6 +2415,19 @@ Click a numbered modifier badge to execute a roll.</div>
             default: "close",
             render: (modalHtml) => {
               const bindActiveTrackerEvents = () => {
+                modalHtml.find('.manage-input-name').off('change').on('change', async function () {
+                  const id = $(this).data('id');
+                  const t = trackers.find(x => x.id === id);
+                  if (!t) return;
+                  const newName = $(this).val()?.trim() || "Tracker";
+                  t.label = newName;
+                  if (t.type === "resource" && t.resourceSlot) {
+                    await actor.update({ [`system.resources.${t.resourceSlot}.label`]: newName });
+                  }
+                  await actor.setFlag("world", "trackingStuff", trackers);
+                  refreshChips();
+                });
+
                 modalHtml.find('.manage-input-max').off('change').on('change', async function () {
                   const id = $(this).data('id');
                   const t = trackers.find(x => x.id === id);
@@ -2410,7 +2479,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
                   const addBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${id}"], .btn-add-trackable-item[data-id="resource_${t.resourceSlot}"]`);
                   if (addBtn.length) {
-                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;').html('<i class="fas fa-plus"></i> Add');
+                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;').text('Add');
                   }
                 });
               };
@@ -2435,7 +2504,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 });
 
                 await actor.setFlag("world", "trackingStuff", trackers);
-                $(this).prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #ccc; background: #eee; color: #777;').html('<i class="fas fa-check"></i> Added');
+                $(this).prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;').text('Added');
                 refreshChips();
                 modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
                 bindActiveTrackerEvents();
@@ -2458,15 +2527,19 @@ Click a numbered modifier badge to execute a roll.</div>
                   }
                 }
 
+                const isReset1 = resetOn.endsWith("_reset_1");
+                const isReset0 = resetOn.endsWith("_reset_0");
+                const startVal = isReset1 ? 1 : (isReset0 ? 0 : max);
+
                 const newId = targetSlot ? `resource_${targetSlot}` : `custom_${Date.now()}`;
                 if (targetSlot) {
                   await actor.update({
                     [`system.resources.${targetSlot}`]: {
                       label: name,
-                      value: max,
+                      value: startVal,
                       max: max,
-                      sr: resetOn === "sr",
-                      lr: resetOn === "lr"
+                      sr: resetOn.startsWith("sr"),
+                      lr: resetOn.startsWith("lr")
                     }
                   });
                   trackers.push({
@@ -2475,14 +2548,14 @@ Click a numbered modifier badge to execute a roll.</div>
                     resourceSlot: targetSlot,
                     isCustom: true,
                     label: name,
-                    value: max,
+                    value: startVal,
                     max: max,
                     rechargeFormula: formula,
                     resetOn
                   });
                   const availBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${newId}"]`);
                   if (availBtn.length) {
-                    availBtn.prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.76em; font-weight: 600; height: 22px; line-height: 20px; padding: 0 10px; border-radius: 4px; border: 1px solid #ccc; background: #eee; color: #777;').html('<i class="fas fa-check"></i> Added');
+                    availBtn.prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;').text('Added');
                   }
                 } else {
                   trackers.push({
@@ -2490,7 +2563,7 @@ Click a numbered modifier badge to execute a roll.</div>
                     type: "custom",
                     isCustom: true,
                     label: name,
-                    value: max,
+                    value: startVal,
                     max: max,
                     rechargeFormula: formula,
                     resetOn
