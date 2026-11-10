@@ -792,19 +792,19 @@ export function initCustomRolls() {
 
     const skillsToolsHtml = `
       <!-- Skills Section Card -->
-      <div style="display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+      <div style="flex: 1; min-height: 140px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
           Skills
         </div>
-        <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; max-height: 200px; overflow-y: auto;">
+        <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; flex: 1; min-height: 0; overflow-y: auto;">
           ${standardSkillsHtml}
           ${customSkillsList.join('')}
         </div>
       </div>
 
-      <!-- Tools Section Card (Directly below Skills, expands downward) -->
-      <div style="display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+      <!-- Tools Section Card (Expands up to 50% max, shrinks if fewer tools) -->
+      <div style="max-height: 50%; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
           Tools
         </div>
         <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 120px; overflow-y: auto;">
@@ -813,7 +813,7 @@ export function initCustomRolls() {
       : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
         </div>
 
-        <div id="other-tools-container-v2">
+        <div id="other-tools-container-v2" style="flex-shrink: 0;">
           <div style="font-weight: 700; font-size: 0.64em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
           <div style="display: flex; flex-direction: column; gap: 3px;">
             <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box; background: #fff;">
@@ -2599,18 +2599,20 @@ Click a numbered modifier badge to execute a roll.</div>
               </div>
               ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
 
-              <!-- Live Estimated Formula Totals -->
-              <div id="weapon-live-formula-section" style="margin-top: auto; padding-top: 4px; border-top: 1px dashed #bcc5d3;">
-                <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">
+              <!-- Live Estimated Formula Totals (Expanded & Larger Font) -->
+              <div id="weapon-live-formula-section" style="margin-top: auto; padding-top: 5px; border-top: 1px dashed #bcc5d3; display: flex; flex-direction: column; gap: 3px;">
+                <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px;">
                   Estimated Roll Formula
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="color: #555; font-size: 0.76em;">Total Atk:</span>
-                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 0.82em;">1d20 ${d.atkSign}</strong>
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <span style="color: #555; font-size: 0.8em; font-weight: 600;">Total Atk:</span>
+                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 0.95em;">1d20 ${d.atkSign}</strong>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1px;">
-                  <span style="color: #555; font-size: 0.76em;">Total Dmg:</span>
-                  <strong id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 0.82em; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;" title="${d.dmgFormula} ${d.dmgType.toLowerCase()}">${d.dmgFormula} ${d.dmgType.toLowerCase()}</strong>
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span style="color: #555; font-size: 0.8em; font-weight: 600;">Total Dmg:</span>
+                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 0.95em; font-weight: 700; line-height: 1.35; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 3px 6px;">
+                    ${d.dmgFormula} ${d.dmgType.toLowerCase()}
+                  </div>
                 </div>
               </div>
             ` : `
@@ -3036,7 +3038,7 @@ Click a numbered modifier badge to execute a roll.</div>
           totalDmgStr += ` ${d.dmgType.toLowerCase()}`;
 
           if (extraDmg) {
-            totalDmgStr += ` + ${extraDmg}`;
+            totalDmgStr += ` + ${extraDmg} <small style="color: #666; font-weight: normal;">(Extra)</small>`;
           }
           if (activeExtras.length > 0) {
             totalDmgStr += ` + ${activeExtras.join(" + ")}`;
