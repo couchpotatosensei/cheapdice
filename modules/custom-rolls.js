@@ -2550,35 +2550,91 @@ Click a numbered modifier badge to execute a roll.</div>
       }).join("");
     }
 
-    function getSelectedWeaponOptionsHtml() {
+    function getSelectedWeaponInspectorHtml() {
       const config = attacks[selectedWeaponKey];
-      if (!config) return "";
+      if (!config) {
+        return `
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 0.85em; font-style: italic;">
+            Select a weapon from the list.
+          </div>
+        `;
+      }
+      const d = getWeaponDetails(config);
+      const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
+
       let gwmHtml = "";
       if (config.hasGWM) {
         gwmHtml = `
-        <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.8em; font-weight: bold; color: #a34848; cursor: pointer; padding: 3px 6px; background: rgba(163, 72, 72, 0.08); border-radius: 3px; margin-bottom: 4px;">
-          <span>GWM / Sharpshooter (-5 / +10)</span>
-          <input type="checkbox" id="gwm-toggle" style="margin: 0;">
-        </label>
-      `;
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #a34848; cursor: pointer; padding: 3px 6px; background: rgba(163, 72, 72, 0.08); border-radius: 3px; border: 1px solid rgba(163, 72, 72, 0.25);">
+            <span>GWM / Sharpshooter (-5 / +10)</span>
+            <input type="checkbox" id="gwm-toggle" style="margin: 0;">
+          </label>
+        `;
       }
+
       const extras = config.additionalDamageComponents || [];
       let extrasHtml = "";
       if (extras.length > 0) {
         extrasHtml = `
-        <div style="border-top: 1px solid #e0e0e0; padding-top: 4px; margin-top: 4px;">
-          <div style="font-size: 0.7em; font-weight: bold; color: #777; margin-bottom: 3px;">OPTIONAL DAMAGE:</div>
-          ${extras.map((ex, i) => `
-            <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; cursor: pointer; padding: 2px 4px; background: rgba(0,0,0,0.02); border-radius: 3px; margin-bottom: 2px;">
-              <span><strong>${ex.label}</strong> <small style="color: #777;">(${ex.formula})</small></span>
-              <input type="checkbox" class="extra-dmg-toggle" data-index="${i}" style="margin: 0;">
-            </label>
-          `).join("")}
+          <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+            <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+              Optional Damage
+            </div>
+            <div id="weapon-extras-scroll" style="max-height: 125px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;">
+              ${extras.map((ex, i) => `
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; cursor: pointer; padding: 3px 5px; background: #fff; border: 1px solid #d8dee6; border-radius: 3px;">
+                  <span><strong>${ex.label}</strong> <small style="color: #666;">(${ex.formula})</small></span>
+                  <input type="checkbox" class="extra-dmg-toggle" data-index="${i}" style="margin: 0;">
+                </label>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <!-- Weapon Overview Card -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px;">
+            <span style="font-weight: 700; font-size: 0.85em; color: #2b3a4a;">${selectedWeaponKey}</span>
+            <span style="font-size: 0.72em; font-weight: 700; color: #555;">${d.dmgType}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
+            <span>Atk: <strong style="color: #2b3a4a;">${d.atkSign}</strong></span>
+            <span>Dmg: <strong style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
+          </div>
+          ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+        </div>
+
+        <!-- Extra Modifiers Card (Side-by-Side) -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <div style="display: flex; gap: 6px;">
+            <div style="flex: 1;">
+              <label for="weapon-extra-atk" style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">EXTRA ATK MOD</label>
+              <input type="text" id="weapon-extra-atk" placeholder="e.g. 1d4, +2" style="width: 100%; height: 24px; font-size: 0.78em; border-radius: 3px; border: 1px solid #ccc; padding: 1px 4px; background: #fff;" />
+            </div>
+            <div style="flex: 1;">
+              <label for="weapon-extra-dmg" style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">EXTRA DMG MOD</label>
+              <input type="text" id="weapon-extra-dmg" placeholder="e.g. 1d6, +3" style="width: 100%; height: 24px; font-size: 0.78em; border-radius: 3px; border: 1px solid #ccc; padding: 1px 4px; background: #fff;" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Optional Damage & GWM -->
+        ${gwmHtml || extrasHtml ? `
+          <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0;">
+            ${gwmHtml}
+            ${extrasHtml}
+          </div>
+        ` : ''}
+
+        <!-- Pinned Roll Attack Button -->
+        <div style="margin-top: auto; padding-top: 6px;">
+          <button type="button" id="btn-roll-weapon-now" style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <i class="fas fa-dice-d20"></i> Roll Attack
+          </button>
         </div>
       `;
-      }
-      if (!gwmHtml && !extrasHtml) return "";
-      return `<div style="background: #fafbfc; border: 1px solid #d2d7df; border-radius: 4px; padding: 6px; margin-top: 6px;">${gwmHtml}${extrasHtml}</div>`;
     }
 
     const content = `
@@ -2646,17 +2702,12 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
 
           <!-- Weapons Section -->
-          <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
-            <div id="weapon-cards-container" style="flex: 1; min-height: 0; max-height: 310px; overflow-y: auto; padding-right: 4px;">
+          <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: row; gap: 8px; height: 100%; box-sizing: border-box;">
+            <div id="weapon-cards-container" style="flex: 1; min-width: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px;">
               ${renderWeaponCards()}
             </div>
-            <div id="weapon-options-container">
-              ${getSelectedWeaponOptionsHtml()}
-            </div>
-            <div style="margin-top: auto; padding-top: 6px;">
-              <button type="button" id="btn-roll-weapon-now" ${attackNames.length === 0 ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <i class="fas fa-dice-d20"></i> Roll Attack
-              </button>
+            <div id="weapon-inspector-container" style="width: 310px; min-width: 310px; display: flex; flex-direction: column; gap: 6px; height: 100%;">
+              ${getSelectedWeaponInspectorHtml()}
             </div>
           </div>
 
@@ -2685,11 +2736,10 @@ Click a numbered modifier badge to execute a roll.</div>
     new Dialog({
       title: `Dice Stuff: ${actor.name}`,
       content: content,
-      buttons: {
-        close: { label: "Close" }
-      },
-      default: "close",
+      buttons: {},
       render: (html) => {
+        html.closest(".dialog").find(".dialog-buttons").remove();
+
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
         const btnD20 = html.find("#tab-btn-d20");
@@ -2747,7 +2797,7 @@ Click a numbered modifier badge to execute a roll.</div>
         }
 
         // Persistent Weapon Roll Handler (Keeps dialog open)
-        html.find("#btn-roll-weapon-now").on("click", async () => {
+        html.on("click", "#btn-roll-weapon-now", async () => {
           const rawConfig = attacks[selectedWeaponKey];
           if (!rawConfig) return;
           const config = foundry.utils.duplicate(rawConfig);
@@ -2766,6 +2816,10 @@ Click a numbered modifier badge to execute a roll.</div>
               }
             });
           }
+
+          // Pass extra attack & damage modifiers from inspector inputs
+          config.extraAttackModifier = html.find("#weapon-extra-atk").val() || "";
+          config.extraDamageModifier = html.find("#weapon-extra-dmg").val() || "";
 
           if (!globalThis.attackSocket) {
             return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
@@ -2874,10 +2928,10 @@ Click a numbered modifier badge to execute a roll.</div>
         btnD20.on("click", () => setTab("d20"));
         setTab(currentMode);
 
-        html.find(".weapon-card").on("click", function () {
+        html.on("click", ".weapon-card", function () {
           selectedWeaponKey = $(this).data("key");
           updateCardStyles();
-          html.find("#weapon-options-container").html(getSelectedWeaponOptionsHtml());
+          html.find("#weapon-inspector-container").html(getSelectedWeaponInspectorHtml());
         });
 
         html.find(".spell-card").on("click", function () {

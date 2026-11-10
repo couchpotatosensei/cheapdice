@@ -196,7 +196,8 @@ function registerSocketHandlers() {
       abilityScore, damageType,
       weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
       HAS_HALFLING_LUCKY, HALFLING_LUCKY_REROLL_THRESHOLD, GWF_REROLL_THRESHOLD,
-      superAdv, additionalDamageComponents, chatCardTitle
+      superAdv, additionalDamageComponents, chatCardTitle,
+      extraAttackModifier, extraDamageModifier
     } = config;
 
     const isProficient = config.isProficient !== undefined ? (String(config.isProficient) === "true" || config.isProficient === true) : true;
@@ -287,68 +288,79 @@ function registerSocketHandlers() {
     }
 
     async function _rollAttackAndCheckCrit() {
-      async function _rollD20AttackSlot() {
-        let roll = await new Roll(`1d20 + ${totalAttackModifier}`).evaluate();
-        let d20Term = roll.terms.find(t => t.faces === 20) || roll.dice[0];
-        let val = Number(d20Term?.results?.[0]?.result ?? roll.total);
-        let rerollSummary = null;
+      const cleanExtraAtk = (extraAttackModifier || "").trim();
+      const atkSuffix = `${totalAttackModifier >= 0 ? `+ ${totalAttackModifier}` : `- ${Math.abs(totalAttackModifier)}`}${cleanExtraAtk ? (cleanExtraAtk.startsWith("+") || cleanExtraAtk.startsWith("-") ? ` ${cleanExtraAtk}` : ` + ${cleanExtraAtk}`) : ""}`;
 
-        if (isLucky && val <= luckyThreshold) {
-          let reroll = await new Roll(`1d20 + ${totalAttackModifier}`).evaluate();
-          let rerolledTerm = reroll.terms.find(t => t.faces === 20) || reroll.dice[0];
-          let newVal = Number(rerolledTerm?.results?.[0]?.result ?? reroll.total);
-          rerollSummary = { original: val, final: newVal };
-          val = newVal;
-          roll = reroll;
-        }
+      let roll1 = await new Roll(`1d20 ${atkSuffix}`).evaluate();
+      let d20Term1 = roll1.terms.find(t => t.faces === 20) || roll1.dice[0];
+      let val1 = Number(d20Term1?.results?.[0]?.result ?? roll1.total);
+      let rerollSummary1 = null;
 
-        let html = await roll.render();
-        if (val >= CRIT_THRESHOLD) html = html.replace('dice-total', 'dice-total critical');
-        else if (val === 1) html = html.replace('dice-total', 'dice-total fumble');
-
-        return { roll, html, val, rerollSummary };
+      if (isLucky && val1 <= luckyThreshold) {
+        let reroll1 = await new Roll(`1d20 ${atkSuffix}`).evaluate();
+        let rerolledTerm1 = reroll1.terms.find(t => t.faces === 20) || reroll1.dice[0];
+        let newVal1 = Number(rerolledTerm1?.results?.[0]?.result ?? reroll1.total);
+        rerollSummary1 = { original: val1, final: newVal1 };
+        val1 = newVal1;
+        roll1 = reroll1;
       }
 
-      const slot1 = await _rollD20AttackSlot();
+      let html1 = await roll1.render();
+      if (val1 >= CRIT_THRESHOLD) html1 = html1.replace('dice-total', 'dice-total critical');
+      else if (val1 === 1) html1 = html1.replace('dice-total', 'dice-total fumble');
 
-      let slot2;
+      const cloneTerm = (t) => {
+        if (typeof t.clone === "function") return t.clone();
+        if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
+        return RollTerm.fromJSON(JSON.stringify(t));
+      };
+
+      // Roll second d20 slot reusing evaluated modifier terms from roll1
+      let slot2D20 = null;
       let droppedCandidate = null;
       let extraRolls = [];
 
       if (isSuperAdv) {
-        const candidateA = await _rollD20AttackSlot();
-        const candidateB = await _rollD20AttackSlot();
-        extraRolls.push(candidateA.roll, candidateB.roll);
-
-        if (candidateA.val >= candidateB.val) {
-          slot2 = candidateA;
-          droppedCandidate = candidateB;
+        const candA = await _rollSingleD20();
+        const candB = await _rollSingleD20();
+        extraRolls.push(candA.roll, candB.roll);
+        if (candA.val >= candB.val) {
+          slot2D20 = candA;
+          droppedCandidate = candB;
         } else {
-          slot2 = candidateB;
-          droppedCandidate = candidateA;
+          slot2D20 = candB;
+          droppedCandidate = candA;
         }
       } else {
-        slot2 = await _rollD20AttackSlot();
-        extraRolls.push(slot2.roll);
+        slot2D20 = await _rollSingleD20();
+        extraRolls.push(slot2D20.roll);
       }
 
-      let rerollSummary2 = slot2.rerollSummary;
+      const terms2 = [cloneTerm(slot2D20.roll.terms[0]), ...roll1.terms.slice(1).map(cloneTerm)];
+      let roll2 = Roll.fromTerms(terms2);
+      if (!roll2._evaluated) {
+        await roll2.evaluate();
+      }
+      let html2 = await roll2.render();
+      if (slot2D20.val >= CRIT_THRESHOLD) html2 = html2.replace('dice-total', 'dice-total critical');
+      else if (slot2D20.val === 1) html2 = html2.replace('dice-total', 'dice-total fumble');
+
       if (isSuperAdv && droppedCandidate) {
         const superAdvHtml = `<div style="padding: 2px 4px; margin: 3px 0 0; border: 1px solid #7289DA; border-radius: 3px; background-color: #f0f4ff; font-size: 0.75em; text-align: center;">
-        <span style="font-weight: bold; color: #4b5d88;">Super Adv (Kept d20: ${slot2.val} | Dropped: ${droppedCandidate.val})</span>
+        <span style="font-weight: bold; color: #4b5d88;">Super Adv (Kept d20: ${slot2D20.val} | Dropped: ${droppedCandidate.val})</span>
       </div>`;
-        slot2.html += superAdvHtml;
+        html2 += superAdvHtml;
       }
 
-      const isCritical = slot1.val >= CRIT_THRESHOLD || slot2.val >= CRIT_THRESHOLD;
+      const isCritical = val1 >= CRIT_THRESHOLD || slot2D20.val >= CRIT_THRESHOLD;
 
       return {
-        attackRoll1: slot1.roll,
-        rollHtml1: slot1.html,
-        rerollSummary1: slot1.rerollSummary,
-        attackRoll2: slot2.roll,
-        rollHtml2: slot2.html,
-        rerollSummary2,
+        attackRoll1: roll1,
+        rollHtml1: html1,
+        rerollSummary1,
+        attackRoll2: roll2,
+        rollHtml2: html2,
+        rerollSummary2: slot2D20.rerollSummary,
         extraRolls,
         isCritical
       };
@@ -459,6 +471,16 @@ function registerSocketHandlers() {
     const { attackRoll1, rollHtml1, rerollSummary1, attackRoll2, rollHtml2, rerollSummary2, extraRolls, isCritical } = await _rollAttackAndCheckCrit();
     const { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary } = await _rollDamageDice();
     const activeComponents = (additionalDamageComponents || []).filter(c => c.isActive);
+    const cleanExtraDmg = (extraDamageModifier || "").trim();
+    if (cleanExtraDmg) {
+      activeComponents.push({
+        label: "Extra Dmg",
+        formula: cleanExtraDmg,
+        damageType: damageType,
+        isCrit: true,
+        isActive: true
+      });
+    }
     const { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults, allAdditionalDamageRolls } = await _rollAdditionalDamage(activeComponents, isCritical);
 
     let critAdditionalDamageComponent = 0;
@@ -681,9 +703,18 @@ function registerSocketHandlers() {
       </div>
     </details>`;
 
+    const extraDamageBadges = activeComponents.map(c => `
+      <span style="background: #f1f3f5; border: 1px solid #ced4da; border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 600; color: #495057;">${c.label}</span>
+    `).join("");
+
+    const tagsBlock = extraDamageBadges
+      ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 5px;">${extraDamageBadges}</div>`
+      : "";
+
     const chatContent = `
-    <p><strong>${actorName}: ${chatCardTitle}</strong></p>
-    <hr>
+    <p style="margin: 0 0 4px 0;"><strong>${actorName}: ${chatCardTitle}</strong></p>
+    ${tagsBlock}
+    <hr style="margin: 4px 0;">
     <div style="display: flex; justify-content: space-around; align-items: flex-start; gap: 10px;">
       <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
         <p style="margin: 0; text-align: center;">Attack Roll</p>
