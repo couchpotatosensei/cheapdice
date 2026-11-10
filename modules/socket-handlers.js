@@ -1529,8 +1529,8 @@ function registerSocketHandlers() {
       } else {
         const skill = actor.system.skills?.[key];
         baseMod = getNumericValue(skill?.total, 0);
-        const profLevel = Number(skill?.value ?? skill?.proficient ?? 0);
-        if (profLevel > 0) isProficient = true;
+        const profLevel = Number(skill?.value ?? skill?.proficient ?? skill?.prof?.multiplier ?? (skill?.prof?.hasProficiency ? 1 : 0) ?? 0);
+        if (profLevel > 0 || Boolean(skill?.proficient) || Boolean(skill?.prof?.hasProficiency)) isProficient = true;
         const skillNames = {
           acr: "Acrobatics", ani: "Animal Handling", arc: "Arcana", ath: "Athletics",
           dec: "Deception", his: "History", ins: "Insight", itm: "Intimidation",
@@ -1605,7 +1605,9 @@ function registerSocketHandlers() {
 
     let dieFormula = "1d20";
     if (isHalflingLuck) dieFormula += "r1";
-    if (isReliableTalent && isProficient && (rollType === "skill" || rollType === "tool")) dieFormula += "min10";
+    // Reliable talent: active if explicitly toggled (or if proficient skill/tool)
+    const applyReliableTalent = Boolean(isReliableTalent) && (isProficient || rollType === "skill" || rollType === "tool" || rollType === "check");
+    if (applyReliableTalent) dieFormula += "min10";
 
     const cleanOther = (otherModString || "").trim();
     let formulaSuffix = `${baseMod >= 0 ? `+ ${baseMod}` : `- ${Math.abs(baseMod)}`}`;
@@ -1626,8 +1628,14 @@ function registerSocketHandlers() {
     if (isSuperAdvantage) {
       const candidateA = await new Roll(dieFormula).evaluate();
       const candidateB = await new Roll(dieFormula).evaluate();
-      const valA = candidateA.dice[0]?.total ?? candidateA.total;
-      const valB = candidateB.dice[0]?.total ?? candidateB.total;
+      let valA = candidateA.dice[0]?.total ?? candidateA.total;
+      let valB = candidateB.dice[0]?.total ?? candidateB.total;
+
+      // Enforce Reliable Talent floor of 10 if active
+      if (applyReliableTalent) {
+        valA = Math.max(10, valA);
+        valB = Math.max(10, valB);
+      }
 
       if (valA >= valB) {
         rollD20Second = candidateA;
@@ -1639,16 +1647,21 @@ function registerSocketHandlers() {
 
       // Construct roll2 with the kept d20 candidate's roll term plus modifiers
       const keptD20Term = rollD20Second.terms[0];
+      const keptTotal = applyReliableTalent ? Math.max(10, keptD20Term.total) : keptD20Term.total;
       const modifierFormula = formulaSuffix.trim();
-      const secondFormula = modifierFormula ? `${keptD20Term.total} ${modifierFormula}` : `${keptD20Term.total}`;
+      const secondFormula = modifierFormula ? `${keptTotal} ${modifierFormula}` : `${keptTotal}`;
       roll2 = await new Roll(secondFormula).evaluate();
     } else {
       rollD20Second = await new Roll(fullFormula).evaluate();
       roll2 = rollD20Second;
     }
 
-    const d20_1 = roll1.dice[0]?.total ?? 0;
-    const d20_2 = rollD20Second.dice[0]?.total ?? 0;
+    let d20_1 = roll1.dice[0]?.total ?? 0;
+    let d20_2 = rollD20Second.dice[0]?.total ?? 0;
+    if (applyReliableTalent) {
+      d20_1 = Math.max(10, d20_1);
+      d20_2 = Math.max(10, d20_2);
+    }
 
     let rHtml1 = await roll1.render();
     let rHtml2 = await roll2.render();
@@ -1701,7 +1714,7 @@ function registerSocketHandlers() {
     if (isSuperAdvantage) {
       tags.push('<span style="background: rgba(40, 167, 69, 0.2); border: 1px solid rgba(40, 167, 69, 0.5); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #1e7e34;">Super Advantage</span>');
     }
-    if (isReliableTalent && isProficient && (rollType === "skill" || rollType === "tool")) {
+    if (applyReliableTalent) {
       tags.push('<span style="background: rgba(108, 117, 125, 0.15); border: 1px solid rgba(108, 117, 125, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #495057;">Reliable Talent</span>');
     }
     if (isHalflingLuck) {
