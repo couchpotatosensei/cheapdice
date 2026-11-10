@@ -790,100 +790,89 @@ export function initCustomRolls() {
       }
     });
 
-    const dialogHtml = `
-    <div style="display: flex; gap: 8px; font-family: inherit; height: 480px; box-sizing: border-box;">
-      
-      <!-- LEFT COLUMN: Skills & Tools in a Single Stack -->
-      <div style="flex: 1.15; min-width: 220px; display: flex; flex-direction: column; gap: 6px; min-height: 0; height: 100%;">
-        
-        <!-- Skills Section Card -->
-        <div style="display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
-            Skills
-          </div>
-          <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; max-height: 200px; overflow-y: auto;">
-            ${standardSkillsHtml}
-            ${customSkillsList.join('')}
-          </div>
+    const skillsToolsHtml = `
+      <!-- Skills Section Card -->
+      <div style="display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+          Skills
         </div>
-
-        <!-- Tools Section Card (Directly below Skills, expands downward) -->
-        <div style="display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
-            Tools
-          </div>
-          <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 120px; overflow-y: auto;">
-            ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
-        ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
-        : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
-          </div>
-
-          <div id="other-tools-container-v2">
-            <div style="font-weight: 700; font-size: 0.64em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
-            <div style="display: flex; flex-direction: column; gap: 3px;">
-              <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box; background: #fff;">
-                <option value="">-- Choose Tool --</option>
-                ${nonProficientToolsHtml.join('')}
-              </select>
-              <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-                Roll Selected Tool
-              </button>
-            </div>
-          </div>
+        <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; max-height: 200px; overflow-y: auto;">
+          ${standardSkillsHtml}
+          ${customSkillsList.join('')}
         </div>
-
       </div>
 
-      <!-- RIGHT COLUMN: Descriptions & Modifiers -->
-      <div style="flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid #bcc5d3; padding-left: 8px; min-height: 0; overflow-y: auto;">
-        
-        <!-- Live Description Box Card -->
-        <div style="flex: 1; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 6px 8px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05); min-height: 150px;">
-          <div style="border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px;">
-            <div id="desc-title-v2" style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">D20 Test Overview</div>
-            <div id="desc-subtitle-v2" style="font-size: 0.72em; color: #777;">Information Pane</div>
+      <!-- Tools Section Card (Directly below Skills, expands downward) -->
+      <div style="display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+          Tools
+        </div>
+        <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 120px; overflow-y: auto;">
+          ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
+      ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
+      : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
+        </div>
+
+        <div id="other-tools-container-v2">
+          <div style="font-weight: 700; font-size: 0.64em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box; background: #fff;">
+              <option value="">-- Choose Tool --</option>
+              ${nonProficientToolsHtml.join('')}
+            </select>
+            <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              Roll Selected Tool
+            </button>
           </div>
-          <div id="desc-body-v2" style="font-size: 0.78em; line-height: 1.4; color: #444; overflow-y: auto; flex: 1; white-space: pre-wrap;">Select any ability, saving throw, skill, or tool name to inspect its details and usage rules here.
+        </div>
+      </div>
+    `;
+
+    const inspectorHtml = `
+      <!-- Live Description Box Card -->
+      <div style="flex: 1; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 6px 8px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05); min-height: 150px;">
+        <div style="border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px;">
+          <div id="desc-title-v2" style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">D20 Test Overview</div>
+          <div id="desc-subtitle-v2" style="font-size: 0.72em; color: #777;">Information Pane</div>
+        </div>
+        <div id="desc-body-v2" style="font-size: 0.78em; line-height: 1.4; color: #444; overflow-y: auto; flex: 1; white-space: pre-wrap;">Select any ability, saving throw, skill, or tool name to inspect its details and usage rules here.
 
 Click a numbered modifier badge to execute a roll.</div>
-        </div>
-
-        <!-- Modifiers Card -->
-        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 5px;">
-          <!-- Presets Section -->
-          <div id="preset-modifiers-section-v2" style="display: none; flex-direction: column; gap: 2px; background: #fff; border: 1px dashed #c0c6ce; border-radius: 4px; padding: 3px 5px;">
-            <label style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px;">PRESET MODIFIERS (V2)</label>
-            <div id="preset-list-v2" style="display: flex; flex-direction: column; gap: 2px;"></div>
-          </div>
-
-          <div>
-            <label for="other-modifier-v2" style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">EXTRA MODIFIER</label>
-            <input type="text" id="other-modifier-v2" name="other-modifier-v2" value="" placeholder="e.g. 1d4, +2" style="width: 100%; height: 24px; border-radius: 4px; border: 1px solid #ccc; padding: 1px 4px; font-size: 0.8em; background: #fff;" />
-          </div>
-
-          <div style="display: flex; flex-direction: column; gap: 3px; border-top: 1px solid #e0e6ed; padding-top: 4px;">
-            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #1e7e34; font-weight: 600;">
-              <span>Super Advantage</span>
-              <input type="checkbox" id="super-advantage-v2" name="super-advantage-v2" style="margin: 0;">
-            </label>
-            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
-              <span>Reliable Talent (Min 10)</span>
-              <input type="checkbox" id="reliable-talent-v2" name="reliable-talent-v2" style="margin: 0;">
-            </label>
-            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
-              <span>Halfling Luck (Reroll 1s)</span>
-              <input type="checkbox" id="halfling-luck-v2" name="halfling-luck-v2" style="margin: 0;">
-            </label>
-          </div>
-        </div>
-
       </div>
 
-    </div>
-  `;
+      <!-- Modifiers Card -->
+      <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 5px; flex-shrink: 0;">
+        <!-- Presets Section -->
+        <div id="preset-modifiers-section-v2" style="display: none; flex-direction: column; gap: 2px; background: #fff; border: 1px dashed #c0c6ce; border-radius: 4px; padding: 3px 5px;">
+          <label style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px;">PRESET MODIFIERS (V2)</label>
+          <div id="preset-list-v2" style="display: flex; flex-direction: column; gap: 2px;"></div>
+        </div>
+
+        <div>
+          <label for="other-modifier-v2" style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">EXTRA MODIFIER</label>
+          <input type="text" id="other-modifier-v2" name="other-modifier-v2" value="" placeholder="e.g. 1d4, +2" style="width: 100%; height: 24px; border-radius: 4px; border: 1px solid #ccc; padding: 1px 4px; font-size: 0.8em; background: #fff;" />
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 3px; border-top: 1px solid #e0e6ed; padding-top: 4px;">
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #1e7e34; font-weight: 600;">
+            <span>Super Advantage</span>
+            <input type="checkbox" id="super-advantage-v2" name="super-advantage-v2" style="margin: 0;">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
+            <span>Reliable Talent (Min 10)</span>
+            <input type="checkbox" id="reliable-talent-v2" name="reliable-talent-v2" style="margin: 0;">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74em; cursor: pointer; padding: 1px; color: #333;">
+            <span>Halfling Luck (Reroll 1s)</span>
+            <input type="checkbox" id="halfling-luck-v2" name="halfling-luck-v2" style="margin: 0;">
+          </label>
+        </div>
+      </div>
+    `;
 
     return {
-      html: dialogHtml,
+      skillsToolsHtml,
+      inspectorHtml,
       sidebarAbilitiesHtml: sidebarAbilitiesHtml,
       totalInitMod,
       dexScore,
@@ -2637,10 +2626,56 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
     }
 
+    function getSelectedSpellInspectorHtml() {
+      const sp = spellConfigs[selectedSpellKey];
+      if (!sp) {
+        return `
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 0.85em; font-style: italic;">
+            Select a spell from the list.
+          </div>
+        `;
+      }
+      const d = getSpellDetails(sp, sp.baseLevel);
+      const lvlLabel = Number(sp.baseLevel) === 0 ? "Cantrip" : `Level ${sp.baseLevel}`;
+      const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
+
+      return `
+        <!-- Spell Overview Card -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px;">
+            <span style="font-weight: 700; font-size: 0.85em; color: #2b3a4a;">${selectedSpellKey}</span>
+            <span style="font-size: 0.72em; font-weight: 700; color: #7289da;">${lvlLabel}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
+            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a;">${d.actionVal}</strong></span>
+            <span>Effect: <strong style="color: #2b3a4a;">${d.valFormula}</strong> <small style="color: #666;">${d.typeLabel}</small></span>
+          </div>
+          ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+        </div>
+
+        <!-- Upcast & Slot Options Card -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+            Cast Options
+          </div>
+          <div id="spell-options-container">
+            ${getUpcastOptionsHtml(sp)}
+          </div>
+        </div>
+
+        <!-- Pinned Cast Spell Button -->
+        <div style="margin-top: auto; padding-top: 6px;">
+          <button type="button" id="btn-cast-spell-now" style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <i class="fas fa-magic"></i> Cast Spell
+          </button>
+        </div>
+      `;
+    }
+
     const content = `
     <div style="display: flex; gap: 10px; font-family: inherit; height: 520px; box-sizing: border-box; padding: 2px;">
       
-      <!-- LEFT SIDEBAR: Persistent (~245px) -->
+      <!-- COLUMN 1: LEFT SIDEBAR: Persistent (~245px) -->
       <div id="dialog-sidebar-left" style="width: 245px; min-width: 245px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait (Left) & Stacked Init/Conc (Right) -->
@@ -2677,57 +2712,58 @@ Click a numbered modifier badge to execute a roll.</div>
 
       </div>
 
-      <!-- RIGHT PANEL: Tabs & Sections (~635px) -->
-      <div id="dialog-panel-right" style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 100%;">
+      <!-- COLUMN 2: CENTER PANEL: Tabs & Active List (~315px) -->
+      <div id="dialog-panel-center" style="flex: 1; min-width: 270px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Tabs Header -->
-        <div style="display: flex; gap: 6px; border-bottom: 2px solid #7289da; padding-bottom: 6px; flex-shrink: 0;">
-          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
+        <div style="display: flex; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 6px; flex-shrink: 0;">
+          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
             <i class="fas fa-dice-d20"></i> Skills & Tools
           </button>
-          <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
+          <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
             <i class="fas fa-sword"></i> Weapons (${attackNames.length})
           </button>
-          <button type="button" id="tab-btn-spell" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
+          <button type="button" id="tab-btn-spell" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
             <i class="fas fa-magic"></i> Spells (${spellKeys.length})
           </button>
         </div>
 
-        <!-- Tab Body Container (Height fixed to 480px) -->
+        <!-- Active List Container -->
         <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
-          
-          <!-- D20 Checks & Saves Section -->
-          <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
-            ${d20Data.html}
+          <!-- Tab 1: Skills & Tools Stack -->
+          <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; gap: 6px; height: 100%; box-sizing: border-box; overflow-y: auto;">
+            ${d20Data.skillsToolsHtml}
           </div>
 
-          <!-- Weapons Section -->
-          <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: row; gap: 8px; height: 100%; box-sizing: border-box;">
-            <div id="weapon-cards-container" style="flex: 1; min-width: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px;">
-              ${renderWeaponCards()}
-            </div>
-            <div id="weapon-inspector-container" style="width: 310px; min-width: 310px; display: flex; flex-direction: column; gap: 6px; height: 100%;">
-              ${getSelectedWeaponInspectorHtml()}
-            </div>
+          <!-- Tab 2: Weapons List -->
+          <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; gap: 4px; height: 100%; box-sizing: border-box; overflow-y: auto;">
+            ${renderWeaponCards()}
           </div>
 
-          <!-- Spells Section -->
-          <div id="section-spell" style="display: ${currentMode === 'spell' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
-            <div id="spell-cards-container" style="flex: 1; min-height: 0; max-height: 310px; overflow-y: auto; padding-right: 4px;">
-              ${renderSpellCards()}
-            </div>
-            <div id="spell-options-container" style="margin-top: 4px;">
-              ${spellConfigs[selectedSpellKey] ? getUpcastOptionsHtml(spellConfigs[selectedSpellKey]) : ""}
-            </div>
-            <div style="margin-top: auto; padding-top: 6px;">
-              <button type="button" id="btn-cast-spell-now" ${spellKeys.length === 0 ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <i class="fas fa-magic"></i> Cast Spell
-              </button>
-            </div>
+          <!-- Tab 3: Spells List -->
+          <div id="section-spell" style="display: ${currentMode === 'spell' ? 'flex' : 'none'}; flex-direction: column; gap: 4px; height: 100%; box-sizing: border-box; overflow-y: auto;">
+            ${renderSpellCards()}
           </div>
-
         </div>
 
+      </div>
+
+      <!-- COLUMN 3: PERSISTENT RIGHT INSPECTOR (~310px) -->
+      <div id="dialog-panel-right" style="width: 310px; min-width: 310px; display: flex; flex-direction: column; gap: 6px; height: 100%;">
+        <!-- Inspector for Skills & Tools -->
+        <div id="inspector-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; gap: 6px; height: 100%;">
+          ${d20Data.inspectorHtml}
+        </div>
+
+        <!-- Inspector for Weapons -->
+        <div id="inspector-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; gap: 6px; height: 100%;">
+          ${getSelectedWeaponInspectorHtml()}
+        </div>
+
+        <!-- Inspector for Spells -->
+        <div id="inspector-spell" style="display: ${currentMode === 'spell' ? 'flex' : 'none'}; flex-direction: column; gap: 6px; height: 100%;">
+          ${getSelectedSpellInspectorHtml()}
+        </div>
       </div>
 
     </div>
@@ -2746,6 +2782,9 @@ Click a numbered modifier badge to execute a roll.</div>
         const secWeapon = html.find("#section-weapon");
         const secSpell = html.find("#section-spell");
         const secD20 = html.find("#section-d20");
+        const inspectorD20 = html.find("#inspector-d20");
+        const inspectorWeapon = html.find("#inspector-weapon");
+        const inspectorSpell = html.find("#inspector-spell");
 
         // Initialize D20 event handlers and Tracking Stuff
         d20Data.setupEvents(html);
@@ -2830,7 +2869,7 @@ Click a numbered modifier badge to execute a roll.</div>
         });
 
         // Persistent Spell Cast Handler (Keeps dialog open)
-        html.find("#btn-cast-spell-now").on("click", async () => {
+        html.on("click", "#btn-cast-spell-now", async () => {
           const rawConfig = spellConfigs[selectedSpellKey];
           if (!rawConfig) return;
 
@@ -2908,19 +2947,15 @@ Click a numbered modifier badge to execute a roll.</div>
           btnSpell.css({ background: mode === "spell" ? "#7289da" : "#f0f2f5", color: mode === "spell" ? "#fff" : "#555" });
           btnD20.css({ background: mode === "d20" ? "#7289da" : "#f0f2f5", color: mode === "d20" ? "#fff" : "#555" });
 
-          if (mode === "weapon") {
-            secWeapon.show();
-            secSpell.hide();
-            secD20.hide();
-          } else if (mode === "spell") {
-            secSpell.show();
-            secWeapon.hide();
-            secD20.hide();
-          } else {
-            secD20.show();
-            secWeapon.hide();
-            secSpell.hide();
-          }
+          // Center column lists
+          secD20.css("display", mode === "d20" ? "flex" : "none");
+          secWeapon.css("display", mode === "weapon" ? "flex" : "none");
+          secSpell.css("display", mode === "spell" ? "flex" : "none");
+
+          // Right column inspectors
+          inspectorD20.css("display", mode === "d20" ? "flex" : "none");
+          inspectorWeapon.css("display", mode === "weapon" ? "flex" : "none");
+          inspectorSpell.css("display", mode === "spell" ? "flex" : "none");
         }
 
         btnWeapon.on("click", () => setTab("weapon"));
@@ -2931,14 +2966,13 @@ Click a numbered modifier badge to execute a roll.</div>
         html.on("click", ".weapon-card", function () {
           selectedWeaponKey = $(this).data("key");
           updateCardStyles();
-          html.find("#weapon-inspector-container").html(getSelectedWeaponInspectorHtml());
+          html.find("#inspector-weapon").html(getSelectedWeaponInspectorHtml());
         });
 
-        html.find(".spell-card").on("click", function () {
+        html.on("click", ".spell-card", function () {
           selectedSpellKey = $(this).data("key");
           updateCardStyles();
-          const sp = spellConfigs[selectedSpellKey];
-          html.find("#spell-options-container").html(sp ? getUpcastOptionsHtml(sp) : "");
+          html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
         });
       }
     }, {
