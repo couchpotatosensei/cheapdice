@@ -2,13 +2,25 @@
 // Region Behavior: Auto-Confirm Change Level & Force Relative Elevation 0
 // =============================================================================
 
+import { MODULE_ID } from "../src/constants.js";
+
+function getSetting(key, fallback = true) {
+  if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
+    return game.settings.get(MODULE_ID, key);
+  }
+  if (game.settings.settings.has(`cheapdice.${key}`)) {
+    return game.settings.get("cheapdice", key);
+  }
+  return fallback;
+}
+
 export function initElevation() {
   CONFIG.Token.movement.defaultSpeed = 14;
 
   setupChangeLevelBypass();
 
   Hooks.once("ready", () => {
-    if (!game.user.isGM && game.settings.get("cheapdice", "featureElevationControl")) {
+    if (!game.user.isGM && getSetting("featureElevationControl")) {
       const originalMoveMany = canvas.tokens.constructor.prototype.moveMany;
       canvas.tokens.constructor.prototype.moveMany = function (options = {}) {
         if (options.dz) options.dz = 0;

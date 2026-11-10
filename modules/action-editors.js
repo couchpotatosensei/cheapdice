@@ -2,8 +2,20 @@
 // CONFIGURATION EDITORS
 // =============================================================================
 
+import { MODULE_ID } from "../src/constants.js";
+
+function getSetting(key, fallback = true) {
+  if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
+    return game.settings.get(MODULE_ID, key);
+  }
+  if (game.settings.settings.has(`cheapdice.${key}`)) {
+    return game.settings.get("cheapdice", key);
+  }
+  return fallback;
+}
+
 export function initActionEditors() {
-  if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+  if (!getSetting("featurePresetEditors")) return;
 
   window.CustomRolls = window.CustomRolls || {};
 
@@ -28,7 +40,7 @@ export function initActionEditors() {
 
   // --- 4.1 D20 Preset Modifier Editor Launcher ---
   window.CustomRolls.openD20PresetEditor = function () {
-    if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+    if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
@@ -485,7 +497,7 @@ export function initActionEditors() {
   // VERSION 2: D20 PRESET MODIFIER EDITOR (DISTINCT V2 DIALOG THEME)
   // =========================================================================
   window.CustomRolls.openD20PresetEditorV2 = function () {
-    if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+    if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
@@ -959,7 +971,7 @@ export function initActionEditors() {
 
   // --- 4.2 Unified Action Generator (Weapons & Spells) ---
   window.CustomRolls.openActionGenerator = async function () {
-    if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+    if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
     const actor = token?.actor;
@@ -1876,7 +1888,7 @@ export function initActionEditors() {
 
   // --- 4.3 Unified Action Editor & Manager (Weapons & Spells) ---
   window.CustomRolls.openActionEditor = function (initialCategory = "weapons") {
-    if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+    if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
     const actor = token?.actor;

@@ -1,13 +1,22 @@
 import { renderTokenAcBadge } from "./token-ac.js";
+import { MODULE_ID, SETTINGS } from "../src/constants.js";
+
+function getSetting(key, fallback = true) {
+  if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
+    return game.settings.get(MODULE_ID, key);
+  }
+  if (game.settings.settings.has(`cheapdice.${key}`)) {
+    return game.settings.get("cheapdice", key);
+  }
+  return fallback;
+}
 
 export function initTokenHud() {
-  if (!game.settings.get("cheapdice", "featureTokenHud")) return;
-
-
+  if (!getSetting("featureTokenHud")) return;
 
   // 3. Token HUD adjustments
   Hooks.on("renderTokenHUD", (app, html, data) => {
-    if (!game.settings.get("cheapdice", "featureTokenHud")) return;
+    if (!getSetting("featureTokenHud")) return;
     const root = html instanceof HTMLElement ? html : (html[0] ?? html);
     if (!root) return;
 
@@ -62,7 +71,7 @@ export function initTokenHud() {
           return ui.notifications.warn(`Assigned action "${assignment.name}" not found in actor configurations.`);
         }
 
-        const socket = game.modules.get("cheapdice")?.api?.socket || globalThis.attackSocket;
+        const socket = game.modules.get(MODULE_ID)?.api?.socket || game.modules.get("cheapdice")?.api?.socket || globalThis.attackSocket;
         if (!socket) {
           return ui.notifications.error("SocketLib handler is not initialized.");
         }
@@ -230,7 +239,7 @@ export function initTokenHud() {
       }
 
       // AC Toggle Button
-      if (game.settings.get("cheapdice", "featureTokenAc") && !colRight.querySelector(".ac-toggle-btn")) {
+      if (getSetting("featureTokenAc") && !colRight.querySelector(".ac-toggle-btn")) {
         const isAcVisible = Boolean(token.document.getFlag("world", "showAC"));
 
         const acToggleBtn = document.createElement("div");

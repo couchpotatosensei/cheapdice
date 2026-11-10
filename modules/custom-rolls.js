@@ -5,6 +5,16 @@ export function getSocket() {
   return game.modules.get(MODULE_ID)?.api?.socket || globalThis.attackSocket || null;
 }
 
+function getSetting(key, fallback = true) {
+  if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
+    return game.settings.get(MODULE_ID, key);
+  }
+  if (game.settings.settings.has(`cheapdice.${key}`)) {
+    return game.settings.get("cheapdice", key);
+  }
+  return fallback;
+}
+
 // --- Persistent Profile Storage Helpers ---
 export function getProfileData(actor, category) {
   if (!actor) return null;
@@ -51,7 +61,7 @@ export function initCustomRolls() {
 
   // --- 3.1 D20 Test Client-Side Dialog Launcher ---
   window.CustomRolls.openD20Dialog = function () {
-    if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+    if (!getSetting("featureCustomRolls")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
@@ -1044,7 +1054,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
   // --- 3.2 Weapon Attack Client-Side Dialog Launcher ---
   window.CustomRolls.openAttackDialog = function () {
-    if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+    if (!getSetting("featureCustomRolls")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
@@ -1227,7 +1237,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
   // --- 3.3 Spell Attack Client-Side Dialog Launcher ---
   window.CustomRolls.openSpellDialog = async function () {
-    if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+    if (!getSetting("featureCustomRolls")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
@@ -2170,7 +2180,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
   // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
   window.CustomRolls.openActionDialog = function (initialMode = "weapon") {
-    if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
+    if (!getSetting("featureCustomRolls")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 

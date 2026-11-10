@@ -2,12 +2,24 @@
 // SOCKETLIB REGISTRATION & EXECUTION HANDLERS
 // =============================================================================
 
+import { MODULE_ID, SETTINGS } from "../src/constants.js";
+
+function getSetting(key, fallback = true) {
+  if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
+    return game.settings.get(MODULE_ID, key);
+  }
+  if (game.settings.settings.has(`cheapdice.${key}`)) {
+    return game.settings.get("cheapdice", key);
+  }
+  return fallback;
+}
+
 function registerSocketHandlers() {
-  if (!game.settings.get("cheapdice", "featureSocketHandlers")) return;
+  if (!getSetting("featureSocketHandlers")) return;
   if (globalThis.attackSocket) return;
   let socket = null;
   if (typeof socketlib.registerModule === "function") {
-    socket = socketlib.registerModule("cheapdice");
+    socket = socketlib.registerModule(MODULE_ID) || socketlib.registerModule("cheapdice");
   }
   if (!socket && typeof socketlib.registerSystem === "function") {
     socket = socketlib.registerSystem("dnd5e");
@@ -19,7 +31,7 @@ function registerSocketHandlers() {
   globalThis.attackSocket = socket;
 
   // Expose socket on module public API
-  const mod = game.modules.get("cheapdice");
+  const mod = game.modules.get(MODULE_ID) || game.modules.get("cheapdice");
   if (mod) {
     mod.api = mod.api || {};
     mod.api.socket = socket;
@@ -211,7 +223,7 @@ function registerSocketHandlers() {
       ? config.targetIds.filter(Boolean)
       : Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
 
-    const animationsEnabled = game.settings.get("cheapdice", "featureAnimations");
+    const animationsEnabled = getSetting("featureAnimations");
     if (animationsEnabled && targetIds.length === 0 && token) {
       const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
       if (!isHostileNpc) {
@@ -785,7 +797,7 @@ function registerSocketHandlers() {
       ? config.targetIds.filter(Boolean)
       : Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
 
-    const animationsEnabled = game.settings.get("cheapdice", "featureAnimations");
+    const animationsEnabled = getSetting("featureAnimations");
     // If not self/point/healing and no targets, auto-target nearest hostile for player / non-hostile tokens
     if (animationsEnabled && targetIds.length === 0 && token && !isHealingType && targetType !== "self" && targetType !== "point") {
       const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
@@ -2462,7 +2474,7 @@ function registerSocketHandlers() {
 
 // --- Automated Animations & Sequencer Trigger ---
 async function triggerSequencerAnimation(actor, config, rollUser = null, autoTargetedToken = null) {
-  if (!game.settings.get("cheapdice", "featureAnimations")) return;
+  if (!getSetting("featureAnimations")) return;
   const aa = globalThis.AutomatedAnimations || globalThis.AutoAnimations;
   const token = actor.getActiveTokens()[0];
   if (!token) return;
@@ -2618,7 +2630,7 @@ globalThis.triggerSequencerAnimation = triggerSequencerAnimation;
 
 
 export function initSockets() {
-  if (!game.settings.get("cheapdice", "featureSocketHandlers")) return;
+  if (!getSetting("featureSocketHandlers")) return;
 
   const runSocketInit = () => {
     if (window.socketlib) {
