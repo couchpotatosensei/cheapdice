@@ -1628,6 +1628,9 @@ function registerSocketHandlers() {
     if (isSuperAdvantage) {
       const candidateA = await new Roll(dieFormula).evaluate();
       const candidateB = await new Roll(dieFormula).evaluate();
+
+      const rawA = candidateA.dice[0]?.results?.[0]?.result ?? candidateA.dice[0]?.total ?? candidateA.total;
+      const rawB = candidateB.dice[0]?.results?.[0]?.result ?? candidateB.dice[0]?.total ?? candidateB.total;
       let valA = candidateA.dice[0]?.total ?? candidateA.total;
       let valB = candidateB.dice[0]?.total ?? candidateB.total;
 
@@ -1637,7 +1640,8 @@ function registerSocketHandlers() {
         valB = Math.max(10, valB);
       }
 
-      if (valA >= valB) {
+      // Pick highest by evaluated value (or break ties with raw roll)
+      if (valA > valB || (valA === valB && rawA >= rawB)) {
         rollD20Second = candidateA;
         droppedCandidate = candidateB;
       } else {
@@ -1645,12 +1649,17 @@ function registerSocketHandlers() {
         droppedCandidate = candidateA;
       }
 
-      // Construct roll2 with the kept d20 candidate's roll term plus modifiers
-      const keptD20Term = rollD20Second.terms[0];
-      const keptTotal = applyReliableTalent ? Math.max(10, keptD20Term.total) : keptD20Term.total;
-      const modifierFormula = formulaSuffix.trim();
-      const secondFormula = modifierFormula ? `${keptTotal} ${modifierFormula}` : `${keptTotal}`;
-      roll2 = await new Roll(secondFormula).evaluate();
+      // Construct roll2 preserving the actual kept Die term so dice tooltip expands cleanly
+      const cloneTerm = (t) => {
+        if (typeof t.clone === "function") return t.clone();
+        if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
+        return RollTerm.fromJSON(JSON.stringify(t));
+      };
+      const terms2 = [cloneTerm(rollD20Second.terms[0]), ...roll1.terms.slice(1).map(cloneTerm)];
+      roll2 = Roll.fromTerms(terms2);
+      if (!roll2._evaluated) {
+        await roll2.evaluate();
+      }
     } else {
       rollD20Second = await new Roll(fullFormula).evaluate();
       roll2 = rollD20Second;
@@ -1673,9 +1682,15 @@ function registerSocketHandlers() {
     else if (d20_2 === 1) rHtml2 = rHtml2.replace('dice-total', 'dice-total fumble');
 
     if (isSuperAdvantage && droppedCandidate) {
-      const droppedVal = droppedCandidate.dice[0]?.total ?? droppedCandidate.total;
+      const keptRaw = rollD20Second.dice[0]?.results?.[0]?.result ?? d20_2;
+      const droppedRaw = droppedCandidate.dice[0]?.results?.[0]?.result ?? (droppedCandidate.dice[0]?.total ?? droppedCandidate.total);
+      const droppedVal = applyReliableTalent ? Math.max(10, (droppedCandidate.dice[0]?.total ?? droppedCandidate.total)) : (droppedCandidate.dice[0]?.total ?? droppedCandidate.total);
+
+      const keptDisplay = (applyReliableTalent && keptRaw < 10) ? `${keptRaw} → ${d20_2}` : `${d20_2}`;
+      const droppedDisplay = (applyReliableTalent && droppedRaw < 10) ? `${droppedRaw} → ${droppedVal}` : `${droppedVal}`;
+
       const superAdvHtml = `<div style="padding: 2px 4px; margin: 3px 0 0; border: 1px solid #7289DA; border-radius: 3px; background-color: #f0f4ff; font-size: 0.75em; text-align: center;">
-        <span style="font-weight: bold; color: #4b5d88;">Super Adv (Kept d20: ${d20_2} | Dropped: ${droppedVal})</span>
+        <span style="font-weight: bold; color: #4b5d88;">Super Adv (Kept d20: ${keptDisplay} | Dropped: ${droppedDisplay})</span>
       </div>`;
       rHtml2 += superAdvHtml;
     }
