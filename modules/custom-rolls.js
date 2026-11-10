@@ -634,6 +634,32 @@ export function initCustomRolls() {
     `;
     }).join('');
 
+    const renderSidebarAbilityCol = (keys) => keys.map(key => {
+      const score = getNumericValue(actor.system.abilities?.[key]?.value, 10);
+      const mod = getNumericValue(actor.system.abilities?.[key]?.mod, 0);
+      const name = ABILITIES[key];
+      return `
+        <div class="ability-card" data-key="${key}" data-type="check" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 3px; cursor: pointer;">
+          <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88;">${key.toUpperCase()}</span>
+          <span style="font-size: 0.72em; color: #666; font-weight: 600;">${score}</span>
+          <button type="button" class="roll-btn-v2" data-type="check" data-key="${key}" title="Roll ${name} Check" style="width: 26px; height: 18px; font-weight: 700; font-size: 0.72em; padding: 0; border-radius: 2px; border: 1px solid #c0c6ce; background: #fff; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+            ${formatSign(mod)}
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    const sidebarAbilitiesHtml = `
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          ${renderSidebarAbilityCol(["str", "dex", "con"])}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          ${renderSidebarAbilityCol(["int", "wis", "cha"])}
+        </div>
+      </div>
+    `;
+
     // Saving Throws: Col 1 (STR, DEX, CON), Col 2 (INT, WIS, CHA)
     const saveCol1Keys = ["str", "dex", "con"];
     const saveCol2Keys = ["int", "wis", "cha"];
@@ -767,15 +793,10 @@ export function initCustomRolls() {
     });
 
     const dialogHtml = `
-    <div style="display: flex; gap: 8px; font-family: inherit; height: 570px; box-sizing: border-box;">
+    <div style="display: flex; gap: 8px; font-family: inherit; height: 480px; box-sizing: border-box;">
       
-      <!-- LEFT + CENTER CONTAINER: Ability Scores, Saves, Tools, and Skills -->
-      <div style="flex: 2.1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
-        
-        <!-- Ability Scores Header (Spanning strictly over Saves, Tools, and Skills) -->
-        <div style="display: flex; gap: 4px; justify-content: space-between; border-bottom: 1px solid #d2d7df; padding-bottom: 4px;">
-          ${abilityCardsHtml}
-        </div>
+      <!-- LEFT + CENTER CONTAINER: Saves, Tools, and Skills -->
+      <div style="flex: 2.1; display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 100%;">
 
         <!-- Two Sub-Columns: [Utilities + Saves + Tools] and [Skills] -->
         <div style="display: flex; gap: 8px; flex: 1; min-height: 0;">
@@ -834,9 +855,9 @@ export function initCustomRolls() {
           </div>
 
           <!-- RIGHT SUB-COLUMN: Skills Column -->
-          <div style="flex: 1.05; min-width: 170px; display: flex; flex-direction: column; border-left: 1px solid #e5e5e5; padding-left: 8px; overflow-y: auto;">
+          <div style="flex: 1.05; min-width: 170px; display: flex; flex-direction: column; border-left: 1px solid #e5e5e5; padding-left: 8px; min-height: 0;">
             <label style="font-weight: 700; font-size: 0.7em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">SKILLS</label>
-            <div style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 1px 3px;">
+            <div style="background: rgba(0,0,0,0.015); border: 1px solid #e2e6ea; border-radius: 4px; padding: 1px 3px; max-height: 440px; overflow-y: auto;">
               ${standardSkillsHtml}
               ${customSkillsList.join('')}
             </div>
@@ -846,7 +867,7 @@ export function initCustomRolls() {
       </div>
 
       <!-- RIGHT COLUMN: Descriptions & Modifiers (Shifted to start at the very top) -->
-      <div style="flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid #d2d7df; padding-left: 8px;">
+      <div style="flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid #d2d7df; padding-left: 8px; min-height: 0; overflow-y: auto;">
         
         <!-- Live Description Box (Starts at top) -->
         <div style="flex: 1; display: flex; flex-direction: column; background: rgba(0,0,0,0.02); border-radius: 4px; padding: 6px 8px; border: 1px solid #e2e6ea; min-height: 160px;">
@@ -892,6 +913,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
     return {
       html: dialogHtml,
+      sidebarAbilitiesHtml: sidebarAbilitiesHtml,
       setupEvents: (html) => {
         const descTitle = html.find('#desc-title-v2');
         const descSubtitle = html.find('#desc-subtitle-v2');
@@ -1817,49 +1839,49 @@ Click a numbered modifier badge to execute a roll.</div>
 
     function renderChips() {
       if (!trackers || trackers.length === 0) {
-        return `<span style="font-size: 0.74em; color: #888; font-style: italic;">No active trackers. Click <strong>+ Add</strong> to track abilities, charges, or pools.</span>`;
+        return `<span style="font-size: 0.72em; color: #888; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong>+ Add</strong> to track abilities, charges, or pools.</span>`;
       }
 
       return trackers.map(t => {
         const live = getLiveTracker(t);
         const hasRecharge = Boolean(live.rechargeFormula);
         return `
-          <div class="tracking-chip" data-id="${t.id}" style="display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 1px solid #c0c6ce; border-radius: 4px; padding: 2px 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
-            <span style="font-weight: 700; font-size: 0.76em; color: #2b3a4a; white-space: nowrap;">${live.label}</span>
-            <div style="display: inline-flex; align-items: center; gap: 2px; background: rgba(0,0,0,0.03); border-radius: 3px; padding: 1px 3px;">
-              <button type="button" class="btn-chip-dec" data-id="${t.id}" style="width: 18px; height: 18px; line-height: 14px; font-weight: 700; font-size: 0.82em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">-</button>
-              <span class="chip-val-display" data-id="${t.id}" style="font-size: 0.75em; font-weight: 700; min-width: 32px; text-align: center; color: #1e293b;">${live.value} / ${live.max}</span>
-              <button type="button" class="btn-chip-inc" data-id="${t.id}" style="width: 18px; height: 18px; line-height: 14px; font-weight: 700; font-size: 0.82em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">+</button>
-            </div>
-            ${hasRecharge ? `
-              <button type="button" class="btn-chip-recharge" data-id="${t.id}" title="Recharge (${live.rechargeFormula})" style="height: 18px; line-height: 14px; font-size: 0.7em; font-weight: 700; padding: 0 4px; border: 1px solid #7289da; background: #f0f4ff; color: #3b5998; border-radius: 2px; cursor: pointer;">
-                <i class="fas fa-rotate"></i> ${live.rechargeFormula}
+          <div class="tracking-chip" data-id="${t.id}" style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #c0c6ce; border-radius: 4px; padding: 2px 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); width: 100%; box-sizing: border-box;">
+            <span style="font-weight: 700; font-size: 0.72em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 82px;" title="${live.label}">${live.label}</span>
+            <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;">
+              <button type="button" class="btn-chip-dec" data-id="${t.id}" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">-</button>
+              <span class="chip-val-display" data-id="${t.id}" style="font-size: 0.72em; font-weight: 700; min-width: 26px; text-align: center; color: #1e293b;">${live.value}/${live.max}</span>
+              <button type="button" class="btn-chip-inc" data-id="${t.id}" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">+</button>
+              ${hasRecharge ? `
+                <button type="button" class="btn-chip-recharge" data-id="${t.id}" title="Recharge (${live.rechargeFormula})" style="height: 16px; line-height: 12px; font-size: 0.65em; font-weight: 700; padding: 0 3px; border: 1px solid #7289da; background: #f0f4ff; color: #3b5998; border-radius: 2px; cursor: pointer;">
+                  <i class="fas fa-rotate"></i>
+                </button>
+              ` : ''}
+              <button type="button" class="btn-chip-remove" data-id="${t.id}" title="Remove Tracker" style="background: transparent; border: none; color: #dc3545; font-size: 0.72em; cursor: pointer; padding: 0 1px;">
+                <i class="fas fa-times"></i>
               </button>
-            ` : ''}
-            <button type="button" class="btn-chip-remove" data-id="${t.id}" title="Remove Tracker" style="background: transparent; border: none; color: #dc3545; font-size: 0.76em; cursor: pointer; padding: 0 2px;">
-              <i class="fas fa-times"></i>
-            </button>
+            </div>
           </div>
         `;
       }).join('');
     }
 
     const htmlContent = `
-      <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 6px;">
+      <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 5px; height: 100%; box-sizing: border-box; min-height: 0;">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px;">
-          <span style="font-weight: 700; font-size: 0.72em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
-            <i class="fas fa-boxes-stacked" style="margin-right: 4px;"></i> Tracking Stuff
+          <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
+            <i class="fas fa-boxes-stacked" style="margin-right: 3px;"></i> Tracking Stuff
           </span>
-          <div style="display: flex; gap: 4px;">
-            <button type="button" id="btn-recharge-dawn-all" title="Roll recharge for all Daily/Dawn items" style="font-size: 0.7em; font-weight: 700; height: 20px; padding: 0 6px; border: 1px solid #e5a50a; background: #fffbe6; color: #9c6c03; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+          <div style="display: flex; gap: 3px;">
+            <button type="button" id="btn-recharge-dawn-all" title="Roll recharge for all Daily/Dawn items" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 4px; border: 1px solid #e5a50a; background: #fffbe6; color: #9c6c03; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;">
               <i class="fas fa-sun"></i> Dawn
             </button>
-            <button type="button" id="btn-open-add-tracker" title="Add trackable feature or custom counter" style="font-size: 0.7em; font-weight: 700; height: 20px; padding: 0 6px; border: 1px solid #7289da; background: #f0f4ff; color: #4054b2; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            <button type="button" id="btn-open-add-tracker" title="Add trackable feature or custom counter" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 4px; border: 1px solid #7289da; background: #f0f4ff; color: #4054b2; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;">
               <i class="fas fa-plus"></i> Add
             </button>
           </div>
         </div>
-        <div id="tracking-chips-container" style="display: flex; flex-wrap: wrap; gap: 6px; padding-top: 2px;">
+        <div id="tracking-chips-container" style="display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow-y: auto; padding-right: 2px; min-height: 0; flex: 1;">
           ${renderChips()}
         </div>
       </div>
@@ -2213,6 +2235,15 @@ Click a numbered modifier badge to execute a roll.</div>
     const d20Data = getD20V2Data(actor);
     const trackingHelper = getTrackingStuffHelper(actor);
 
+    // Actor Stats & Portrait for Persistent Sidebar
+    const curHp = Number(actor.system.attributes?.hp?.value) || 0;
+    const maxHp = Number(actor.system.attributes?.hp?.max) || 0;
+    const tempHp = Number(actor.system.attributes?.hp?.temp) || 0;
+    const acVal = actor.system.attributes?.ac?.value ?? 10;
+    const portraitSrc = token.document?.texture?.src || actor.img || "icons/svg/mystery-man.svg";
+    const initialHpPct = maxHp > 0 ? Math.clamp(Math.round((curHp / maxHp) * 100), 0, 100) : 0;
+    const initialHpColor = initialHpPct > 50 ? "#22c55e" : (initialHpPct > 25 ? "#f59e0b" : "#ef4444");
+
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
       if (!config) return { atkSign: "+0", dmgFormula: "1d6", dmgType: "SLASHING", tags: [] };
@@ -2462,59 +2493,116 @@ Click a numbered modifier badge to execute a roll.</div>
     }
 
     const content = `
-    <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; font-family: inherit;">
-      <!-- Tabs -->
-      <div style="display: flex; gap: 6px; border-bottom: 2px solid #7289da; padding-bottom: 8px;">
-        <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 6px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="fas fa-sword"></i> Weapons (${attackNames.length})
-        </button>
-        <button type="button" id="tab-btn-spell" style="flex: 1; padding: 6px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="fas fa-magic"></i> Spells (${spellKeys.length})
-        </button>
-        <button type="button" id="tab-btn-d20" style="flex: 1; padding: 6px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="fas fa-dice-d20"></i> Checks & Saves
-        </button>
+    <div style="display: flex; gap: 10px; font-family: inherit; height: 520px; box-sizing: border-box; padding: 2px;">
+      
+      <!-- LEFT SIDEBAR: Persistent (~215px) -->
+      <div id="dialog-sidebar-left" style="width: 215px; min-width: 215px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #d2d7df; padding-right: 8px; height: 100%;">
+        
+        <!-- Actor Portrait & HP Block -->
+        <div style="display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 5px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <img src="${portraitSrc}" alt="${actor.name}" style="width: 36px; height: 36px; border-radius: 4px; border: 1px solid #c0c6ce; object-fit: cover; flex-shrink: 0;" />
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${actor.name}">${actor.name}</div>
+              <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+                <span style="font-size: 0.7em; font-weight: 700; color: #4b5d88; background: #eef2f7; border: 1px solid #c0c6ce; border-radius: 3px; padding: 1px 4px; display: inline-flex; align-items: center; gap: 3px;">
+                  <i class="fas fa-shield-alt"></i> AC ${acVal}
+                </span>
+                ${tempHp > 0 ? `<span style="font-size: 0.68em; font-weight: 700; color: #1e7e34; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 3px; padding: 1px 3px;">+${tempHp} Temp</span>` : ''}
+              </div>
+            </div>
+          </div>
+
+          <!-- HP Bar & Live Controls -->
+          <div style="margin-top: 2px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+              <span style="font-size: 0.68em; font-weight: 700; color: #555; text-transform: uppercase;">Hit Points</span>
+              <div style="display: flex; align-items: center; gap: 2px;">
+                <button type="button" id="btn-sidebar-hp-dec" title="Decrease HP" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">-</button>
+                <span id="sidebar-hp-display" style="font-size: 0.72em; font-weight: 700; min-width: 44px; text-align: center; color: #1e293b;">${curHp} / ${maxHp}</span>
+                <button type="button" id="btn-sidebar-hp-inc" title="Increase HP" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">+</button>
+              </div>
+            </div>
+            <!-- Mini HP Bar -->
+            <div style="width: 100%; height: 5px; background: #e2e8f0; border-radius: 3px; overflow: hidden; border: 1px solid #cbd5e1;">
+              <div id="sidebar-hp-bar" style="height: 100%; width: ${initialHpPct}%; background: ${initialHpColor}; transition: width 0.2s ease, background 0.2s ease;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ability Scores (2-Col Grid) -->
+        <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px;">
+          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase;">
+            <i class="fas fa-hand-fist" style="margin-right: 3px;"></i> Ability Scores
+          </div>
+          ${d20Data.sidebarAbilitiesHtml}
+        </div>
+
+        <!-- Tracking Stuff Container -->
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+          ${trackingHelper.html}
+        </div>
+
       </div>
 
-      <!-- Weapons Section -->
-      <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; height: 500px; max-height: 500px; overflow-y: auto;">
-        <div id="weapon-cards-container" style="max-height: 270px; overflow-y: auto; padding-right: 4px;">
-          ${renderWeaponCards()}
-        </div>
-        <div id="weapon-options-container">
-          ${getSelectedWeaponOptionsHtml()}
-        </div>
-        <div style="margin-top: auto; padding-top: 8px;">
-          <button type="button" id="btn-roll-weapon-now" ${attackNames.length === 0 ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.9em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-            <i class="fas fa-dice-d20"></i> Roll Attack
+      <!-- RIGHT PANEL: Tabs & Sections (~635px) -->
+      <div id="dialog-panel-right" style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 100%;">
+        
+        <!-- Tabs Header -->
+        <div style="display: flex; gap: 6px; border-bottom: 2px solid #7289da; padding-bottom: 6px; flex-shrink: 0;">
+          <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
+            <i class="fas fa-sword"></i> Weapons (${attackNames.length})
+          </button>
+          <button type="button" id="tab-btn-spell" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
+            <i class="fas fa-magic"></i> Spells (${spellKeys.length})
+          </button>
+          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 5px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.82em;">
+            <i class="fas fa-dice-d20"></i> Checks & Saves
           </button>
         </div>
+
+        <!-- Tab Body Container (Height fixed to 480px) -->
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+          
+          <!-- Weapons Section -->
+          <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
+            <div id="weapon-cards-container" style="flex: 1; min-height: 0; max-height: 310px; overflow-y: auto; padding-right: 4px;">
+              ${renderWeaponCards()}
+            </div>
+            <div id="weapon-options-container">
+              ${getSelectedWeaponOptionsHtml()}
+            </div>
+            <div style="margin-top: auto; padding-top: 6px;">
+              <button type="button" id="btn-roll-weapon-now" ${attackNames.length === 0 ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i class="fas fa-dice-d20"></i> Roll Attack
+              </button>
+            </div>
+          </div>
+
+          <!-- Spells Section -->
+          <div id="section-spell" style="display: ${currentMode === 'spell' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
+            <div id="spell-cards-container" style="flex: 1; min-height: 0; max-height: 310px; overflow-y: auto; padding-right: 4px;">
+              ${renderSpellCards()}
+            </div>
+            <div id="spell-options-container" style="margin-top: 4px;">
+              ${spellConfigs[selectedSpellKey] ? getUpcastOptionsHtml(spellConfigs[selectedSpellKey]) : ""}
+            </div>
+            <div style="margin-top: auto; padding-top: 6px;">
+              <button type="button" id="btn-cast-spell-now" ${spellKeys.length === 0 ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i class="fas fa-magic"></i> Cast Spell
+              </button>
+            </div>
+          </div>
+
+          <!-- D20 Checks & Saves Section -->
+          <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box;">
+            ${d20Data.html}
+          </div>
+
+        </div>
+
       </div>
 
-      <!-- Spells Section -->
-      <div id="section-spell" style="display: ${currentMode === 'spell' ? 'flex' : 'none'}; flex-direction: column; height: 500px; max-height: 500px; overflow-y: auto;">
-        <div id="spell-cards-container" style="max-height: 270px; overflow-y: auto; padding-right: 4px;">
-          ${renderSpellCards()}
-        </div>
-        <div id="spell-options-container" style="margin-top: 6px;">
-          ${spellConfigs[selectedSpellKey] ? getUpcastOptionsHtml(spellConfigs[selectedSpellKey]) : ""}
-        </div>
-        <div style="margin-top: auto; padding-top: 8px;">
-          <button type="button" id="btn-cast-spell-now" ${spellKeys.length === 0 ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.9em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-            <i class="fas fa-magic"></i> Cast Spell
-          </button>
-        </div>
-      </div>
-
-      <!-- D20 Checks & Saves Section -->
-      <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; height: 500px; max-height: 500px; overflow-y: auto;">
-        ${d20Data.html}
-      </div>
-
-      <!-- Tracking Stuff Persistent Footer -->
-      <div id="section-tracking-stuff" style="margin-top: 6px; border-top: 2px solid #7289da; padding-top: 6px;">
-        ${trackingHelper.html}
-      </div>
     </div>
   `;
 
@@ -2536,6 +2624,30 @@ Click a numbered modifier badge to execute a roll.</div>
         // Initialize D20 event handlers and Tracking Stuff
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
+
+        // Sidebar HP Stepper Handlers
+        let currentHp = curHp;
+        const updateHpDisplay = (val) => {
+          currentHp = val;
+          const pct = maxHp > 0 ? Math.clamp(Math.round((currentHp / maxHp) * 100), 0, 100) : 0;
+          const color = pct > 50 ? "#22c55e" : (pct > 25 ? "#f59e0b" : "#ef4444");
+          html.find("#sidebar-hp-display").text(`${currentHp} / ${maxHp}`);
+          html.find("#sidebar-hp-bar").css({ width: `${pct}%`, background: color });
+        };
+
+        html.find("#btn-sidebar-hp-dec").on("click", async () => {
+          const newVal = Math.max(0, currentHp - 1);
+          if (newVal === currentHp) return;
+          updateHpDisplay(newVal);
+          await actor.update({ "system.attributes.hp.value": newVal });
+        });
+
+        html.find("#btn-sidebar-hp-inc").on("click", async () => {
+          const newVal = Math.min(maxHp, currentHp + 1);
+          if (newVal === currentHp) return;
+          updateHpDisplay(newVal);
+          await actor.update({ "system.attributes.hp.value": newVal });
+        });
 
         // Persistent Weapon Roll Handler (Keeps dialog open)
         html.find("#btn-roll-weapon-now").on("click", async () => {
@@ -2679,7 +2791,7 @@ Click a numbered modifier badge to execute a roll.</div>
         });
       }
     }, {
-      width: 640,
+      width: 860,
       height: "auto",
       resizable: true
     }).render(true);
