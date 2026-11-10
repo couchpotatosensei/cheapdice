@@ -759,6 +759,104 @@ function registerSocketHandlers() {
     triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
   });
 
+  // --- 2.2b Unarmed 5.5e Maneuver Handler (Grapple / Shove) ---
+  socket.register("runUnarmedManeuver", async (maneuverType, config, actorId, userId) => {
+    const actor = game.actors.get(actorId);
+    if (!actor) return ui.notifications.warn("Actor not found for Unarmed Maneuver.");
+    const token = actor.getActiveTokens()[0];
+
+    const rollUser = game.users.get(userId) || game.user;
+    const speaker = ChatMessage.getSpeaker({ actor });
+
+    const abilityScore = config.abilityScore || "str";
+    const abilityMod = actor.system.abilities?.[abilityScore]?.mod || 0;
+    const prof = actor.system.attributes?.prof || 0;
+    const wepMod = Number(config.weaponModifier) || 0;
+    const circMod = Number(config.attackCircumstanceModifier) || 0;
+    const saveDC = 8 + prof + abilityMod + wepMod + circMod;
+
+    let targetIds = Array.isArray(config?.targetIds) && config.targetIds.length > 0
+      ? config.targetIds.filter(Boolean)
+      : Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
+
+    let targetHtml = "";
+    if (targetIds.length > 0) {
+      const targetNames = targetIds.map(tid => {
+        const t = canvas.tokens.get(tid);
+        return t ? t.name : tid;
+      });
+      targetHtml = `
+        <div style="font-size: 0.82em; color: #555; margin-bottom: 5px;">
+          <strong>Target:</strong> ${targetNames.join(", ")}
+        </div>
+      `;
+    }
+
+    const isGrapple = maneuverType === "grapple";
+    const actionTitle = isGrapple ? "Unarmed Strike: Grapple" : "Unarmed Strike: Shove";
+    const badgeColor = isGrapple ? "#2b7489" : "#a34848";
+    const badgeIcon = isGrapple ? "fa-hand-holding-hand" : "fa-person-falling";
+
+    const effectDetails = isGrapple
+      ? `
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 4px; padding: 6px; font-size: 0.82em; color: #333; line-height: 1.4;">
+          <div style="font-weight: 700; color: #2b7489; margin-bottom: 2px;">
+            <i class="fas fa-hand-holding-hand"></i> Grapple Effect (5.5e)
+          </div>
+          <div><strong>Failed Save:</strong> The target has the <strong>Grappled</strong> condition. Its Speed is 0, and attack rolls against creatures other than you have Disadvantage.</div>
+          <div style="margin-top: 4px; font-size: 0.8em; color: #666;">Target can be up to one size larger than you. Target can escape by repeating the save as an action or at the end of its turns.</div>
+        </div>
+      `
+      : `
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 4px; padding: 6px; font-size: 0.82em; color: #333; line-height: 1.4;">
+          <div style="font-weight: 700; color: #a34848; margin-bottom: 2px;">
+            <i class="fas fa-person-falling"></i> Shove Effect (5.5e)
+          </div>
+          <div><strong>Failed Save:</strong> You push the target <strong>5 feet away</strong> from you, OR knock it <strong>Prone</strong> (attacker's choice).</div>
+          <div style="margin-top: 4px; font-size: 0.8em; color: #666;">Target can be up to one size larger than you.</div>
+        </div>
+      `;
+
+    const circDetails = circMod !== 0 ? ` + Circ (${circMod})` : '';
+    const wepDetails = wepMod !== 0 ? ` + Mod (${wepMod})` : '';
+
+    const chatContent = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <span style="font-weight: bold; font-size: 0.95em; color: #2b3a4a;">${actor.name}: ${actionTitle}</span>
+        <span style="font-size: 0.72em; font-weight: bold; color: #fff; background: ${badgeColor}; padding: 1px 6px; border-radius: 3px;">
+          <i class="fas ${badgeIcon}"></i> 5.5e
+        </span>
+      </div>
+      ${targetHtml}
+      <div style="background: rgba(43, 116, 137, 0.1); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 4px; padding: 6px; text-align: center; margin: 6px 0;">
+        <div style="font-size: 1.15em; font-weight: bold; color: #235d6e;">DC ${saveDC} Strength or Dexterity Save</div>
+        <div style="font-size: 0.8em; color: #555; margin-top: 2px;">Target's choice to resist</div>
+      </div>
+      ${effectDetails}
+      <details style="margin-top: 6px; padding: 2px 4px;">
+        <summary style="font-weight: 600; font-size: 0.78em; color: #666; cursor: pointer;">Formula Breakdown</summary>
+        <div style="padding-top: 4px; border-top: 1px solid #e0e0e0; font-size: 0.78em; color: #555; margin-top: 3px;">
+          <div><strong>Save DC:</strong> 8 + PB (${prof}) + ${abilityScore.toUpperCase()} (${abilityMod})${wepDetails}${circDetails} = DC ${saveDC}</div>
+        </div>
+      </details>
+    `;
+
+    await ChatMessage.create({
+      user: userId,
+      speaker: speaker,
+      content: getCardDispositionWrapper(actor, token, userId, chatContent),
+      sound: CONFIG.sounds.dice,
+      flags: {
+        "autoanimations": {
+          item: { name: isGrapple ? "Grapple" : "Shove" },
+          targets: targetIds
+        }
+      }
+    });
+
+    triggerSequencerAnimation(actor, config, rollUser, null);
+  });
+
 
 
   // --- 2.3 Spell Execution Handler ---
@@ -1476,7 +1574,6 @@ function registerSocketHandlers() {
 
     triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
   });
-
 
 
 

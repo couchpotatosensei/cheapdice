@@ -37,17 +37,157 @@ export async function setProfileData(actor, category, data) {
   return await game.settings.set(scope, key, store);
 }
 
+export async function ensureStandardAttacks(actor, attacks = null) {
+  if (!actor) return attacks || {};
+  let currentAttacks = attacks ? foundry.utils.deepClone(attacks) : (
+    getProfileData(actor, "attackConfigs") ||
+    actor.getFlag?.("world", "attackConfigs") || {}
+  );
+  currentAttacks = foundry.utils.deepClone(currentAttacks || {});
+
+  let modified = false;
+
+  // Feat & Class checks
+  const hasTavernBrawler = actor.items?.some(i => (i.name || "").toLowerCase().includes("tavern brawler")) ?? false;
+  const monkClass = actor.items?.find(i => i.type === "class" && (i.name || "").toLowerCase().includes("monk")) || actor.classes?.monk;
+  const isMonk = Boolean(monkClass);
+  const monkLvl = monkClass?.system?.levels || 0;
+  const strMod = actor.system?.abilities?.str?.mod ?? 0;
+  const dexMod = actor.system?.abilities?.dex?.mod ?? 0;
+
+  // Monk Martial Arts scale die
+  let monkDie = null;
+  const scale = actor.system?.scale?.monk?.["martial-arts"] || actor.system?.scale?.["monk"]?.["martial-arts"];
+  if (scale) {
+    if (scale.faces) monkDie = String(scale.faces);
+    else if (scale.die) monkDie = String(scale.die).replace(/^d/i, "");
+    else if (scale.formula) {
+      const m = String(scale.formula).match(/d(\d+)/i);
+      if (m) monkDie = m[1];
+    }
+  }
+  if (!monkDie && isMonk) {
+    if (monkLvl >= 17) monkDie = "10";
+    else if (monkLvl >= 11) monkDie = "8";
+    else if (monkLvl >= 5) monkDie = "6";
+    else monkDie = "4";
+  }
+
+  // Two-Weapon Fighting style check
+  const hasTWF = actor.items?.some(i => {
+    const n = (i.name || "").toLowerCase();
+    return n.includes("two-weapon fighting") || n.includes("two weapon fighting") || n.includes("twf");
+  }) ?? false;
+
+  // 1. Unarmed Strike
+  if (!currentAttacks["Unarmed Strike"]) {
+    const unarmedAbility = (isMonk && dexMod > strMod) ? "dex" : "str";
+    const unarmedDie = isMonk ? (monkDie || "4") : (hasTavernBrawler ? "4" : "none");
+    const unarmedDiceCount = (isMonk || hasTavernBrawler) ? 1 : 0;
+    const unarmedFlatMod = (isMonk || hasTavernBrawler) ? 0 : 1;
+
+    currentAttacks["Unarmed Strike"] = {
+      macroName: "Unarmed Strike",
+      chatCardTitle: "Unarmed Strike",
+      abilityScore: unarmedAbility,
+      isProficient: true,
+      damageDiceCount: unarmedDiceCount,
+      damageDieSize: unarmedDie === "none" ? "none" : `d${unarmedDie}`,
+      damageType: "bludgeoning",
+      weaponModifier: 0,
+      attackCircumstanceModifier: 0,
+      damageModifier: unarmedFlatMod,
+      CRIT_THRESHOLD: 20,
+      extraCriticalBonus: "",
+      GWF_REROLL_THRESHOLD: 0,
+      HAS_HALFLING_LUCKY: false,
+      HALFLING_LUCKY_REROLL_THRESHOLD: 1,
+      superAdv: false,
+      hasGWM: false,
+      additionalDamageComponents: []
+    };
+    modified = true;
+  }
+
+  // 2. Improvised Weapon
+  if (!currentAttacks["Improvised Weapon"]) {
+    currentAttacks["Improvised Weapon"] = {
+      macroName: "Improvised Weapon",
+      chatCardTitle: "Improvised Weapon",
+      abilityScore: "str",
+      isProficient: hasTavernBrawler,
+      damageDiceCount: 1,
+      damageDieSize: "d4",
+      damageType: "bludgeoning",
+      weaponModifier: 0,
+      attackCircumstanceModifier: 0,
+      damageModifier: 0,
+      CRIT_THRESHOLD: 20,
+      extraCriticalBonus: "",
+      GWF_REROLL_THRESHOLD: 0,
+      HAS_HALFLING_LUCKY: false,
+      HALFLING_LUCKY_REROLL_THRESHOLD: 1,
+      superAdv: false,
+      hasGWM: false,
+      additionalDamageComponents: []
+    };
+    modified = true;
+  }
+
+  // 3. Off-Hand Attack
+  if (!currentAttacks["Off-Hand Attack"]) {
+    const offhandAbility = dexMod > strMod ? "dex" : "str";
+    const offhandAbilityMod = actor.system?.abilities?.[offhandAbility]?.mod ?? 0;
+    const offhandDmgMod = hasTWF ? 0 : (offhandAbilityMod > 0 ? -offhandAbilityMod : 0);
+
+    currentAttacks["Off-Hand Attack"] = {
+      macroName: "Off-Hand Attack",
+      chatCardTitle: "Off-Hand Attack",
+      abilityScore: offhandAbility,
+      isProficient: true,
+      damageDiceCount: 1,
+      damageDieSize: "d6",
+      damageType: "slashing",
+      weaponModifier: 0,
+      attackCircumstanceModifier: 0,
+      damageModifier: offhandDmgMod,
+      CRIT_THRESHOLD: 20,
+      extraCriticalBonus: "",
+      GWF_REROLL_THRESHOLD: 0,
+      HAS_HALFLING_LUCKY: false,
+      HALFLING_LUCKY_REROLL_THRESHOLD: 1,
+      superAdv: false,
+      hasGWM: false,
+      additionalDamageComponents: []
+    };
+    modified = true;
+  }
+
+  if (modified) {
+    if (typeof setProfileData === "function") {
+      await setProfileData(actor, "attackConfigs", currentAttacks);
+    }
+    if (actor.setFlag) {
+      await actor.setFlag("world", "attackConfigs", currentAttacks, { recursive: false });
+    }
+  }
+
+  return currentAttacks;
+}
+
 export function initCustomRolls() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.CUSTOM_ROLLS)) return;
 
   window.CustomRolls = window.CustomRolls || {};
   window.CustomRolls.getProfileData = getProfileData;
   window.CustomRolls.setProfileData = setProfileData;
+  window.CustomRolls.ensureStandardAttacks = ensureStandardAttacks;
 
   const mod = game.modules.get(MODULE_ID);
   if (mod?.api) {
     mod.api.getProfileData = getProfileData;
     mod.api.setProfileData = setProfileData;
+    mod.api.ensureStandardAttacks = ensureStandardAttacks;
   }
 
   // Hook into D&D 5e rest completion to auto-recharge tracking stuff
@@ -2299,7 +2439,8 @@ Click a numbered modifier badge to execute a roll.</div>
       return ui.notifications.warn("You don't have permissions to use this token.");
     }
 
-    const attacks = window.CustomRolls.getProfileData(actor, "attackConfigs") || actor.getFlag("world", "attackConfigs") || {};
+    let attacks = window.CustomRolls.getProfileData(actor, "attackConfigs") || actor.getFlag("world", "attackConfigs") || {};
+    attacks = await ensureStandardAttacks(actor, attacks);
     const spellConfigs = window.CustomRolls.getProfileData(actor, "spellConfigs") || actor.getFlag("world", "spellConfigs") || {};
 
     const attackNames = Object.keys(attacks);
@@ -2313,7 +2454,9 @@ Click a numbered modifier badge to execute a roll.</div>
       currentMode = attackNames.length > 0 ? "weapon" : "d20";
     }
 
-    let selectedWeaponKey = attackNames[0] || null;
+    const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+    const customAttackNames = attackNames.filter(k => !STANDARD_KEYS.includes(k));
+    let selectedWeaponKey = customAttackNames[0] || attackNames[0] || null;
     let selectedSpellKey = spellKeys[0] || null;
 
     const d20Data = getD20V2Data(actor);
@@ -2494,26 +2637,91 @@ Click a numbered modifier badge to execute a roll.</div>
     }
 
     function renderWeaponCards() {
-      return attackNames.map(name => {
-        const conf = attacks[name];
-        const isSel = name === selectedWeaponKey;
-        const d = getWeaponDetails(conf);
-        const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
+      const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+      const customNames = attackNames.filter(k => !STANDARD_KEYS.includes(k));
+      const standardNames = STANDARD_KEYS.filter(k => attacks[k]);
 
-        return `
-        <div class="action-card weapon-card" data-key="${name}" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-            <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a;">${name}</span>
-            <span style="font-size: 0.75em; font-weight: bold; color: #555;">${d.dmgType}</span>
+      let customHtml = "";
+      if (customNames.length > 0) {
+        customHtml = customNames.map(name => {
+          const conf = attacks[name];
+          const isSel = name === selectedWeaponKey;
+          const d = getWeaponDetails(conf);
+          const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
+
+          return `
+          <div class="action-card weapon-card" data-key="${name}" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+              <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a;">${name}</span>
+              <span style="font-size: 0.75em; font-weight: bold; color: #555;">${d.dmgType}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
+              <span>Atk: <strong style="color: #2b3a4a;">${d.atkSign}</strong></span>
+              <span>Dmg: <strong style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
+            </div>
+            ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span>Atk: <strong style="color: #2b3a4a;">${d.atkSign}</strong></span>
-            <span>Dmg: <strong style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
+        `;
+        }).join("");
+      } else {
+        customHtml = `
+          <div style="color: #888; font-size: 0.8em; font-style: italic; text-align: center; padding: 16px 8px;">
+            No custom weapons configured.<br><small style="color: #aaa;">Click GM Tools &gt; Generate Actions to generate from inventory.</small>
           </div>
-          ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+        `;
+      }
+
+      let standardRowHtml = "";
+      if (standardNames.length > 0) {
+        const miniCards = standardNames.map(name => {
+          const conf = attacks[name];
+          const isSel = name === selectedWeaponKey;
+          const d = getWeaponDetails(conf);
+          let shortTitle = name;
+          let icon = "fa-hand-fist";
+          if (name === "Unarmed Strike") {
+            shortTitle = "Unarmed";
+            icon = "fa-hand-fist";
+          } else if (name === "Improvised Weapon") {
+            shortTitle = "Improvised";
+            icon = "fa-bottle-droplet";
+          } else if (name === "Off-Hand Attack") {
+            shortTitle = "Off-Hand";
+            icon = "fa-dagger";
+          }
+
+          return `
+            <div class="action-card weapon-card standard-weapon-card" data-key="${name}" style="flex: 1; min-width: 0; border: 2px solid ${isSel ? '#7289da' : '#bcc5d3'}; background: ${isSel ? '#f0f4ff' : '#f8fafc'}; border-radius: 5px; padding: 4px 3px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+              <div style="display: flex; align-items: center; justify-content: center; gap: 3px; max-width: 100%;">
+                <i class="fas ${icon}" style="font-size: 0.7em; color: ${isSel ? '#7289da' : '#5b6eae'}; flex-shrink: 0;"></i>
+                <span style="font-weight: 700; font-size: 0.75em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${name}">${shortTitle}</span>
+              </div>
+              <div style="font-size: 0.78em; font-weight: 800; color: #235d6e; margin: 1px 0;">
+                ${d.atkSign}
+              </div>
+              <div style="font-size: 0.68em; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: monospace;" title="${d.dmgFormula} (${d.dmgType})">
+                ${d.dmgFormula}
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        standardRowHtml = `
+          <div style="display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; margin-top: auto; padding-top: 5px; border-top: 1px dashed #bcc5d3;">
+            <div style="font-weight: 700; font-size: 0.65em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px;">Standard Attacks</div>
+            <div style="display: flex; gap: 4px; width: 100%;">
+              ${miniCards}
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding-right: 2px;">
+          ${customHtml}
         </div>
+        ${standardRowHtml}
       `;
-      }).join("");
     }
 
     function renderSpellCards() {
@@ -2567,7 +2775,7 @@ Click a numbered modifier badge to execute a roll.</div>
               ${extras.map((ex, i) => `
                 <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; cursor: pointer; padding: 3px 5px; background: #fff; border: 1px solid #d8dee6; border-radius: 3px;">
                   <span><strong>${ex.label}</strong> <small style="color: #666;">(${ex.formula})</small></span>
-                  <input type="checkbox" class="extra-dmg-toggle" data-index="${i}" ${ex.isActive ? 'checked' : ''} style="margin: 0;">
+                  <input type="checkbox" class="extra-dmg-toggle" data-index="${i}" style="margin: 0;">
                 </label>
               `).join("")}
             </div>
@@ -2764,7 +2972,7 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
 
           <!-- Tab 2: Weapons List -->
-          <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; gap: 4px; height: 100%; box-sizing: border-box; overflow-y: auto;">
+          <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; height: 100%; box-sizing: border-box; min-height: 0;">
             ${renderWeaponCards()}
           </div>
 
@@ -2893,7 +3101,57 @@ Click a numbered modifier badge to execute a roll.</div>
           }
 
           config.targetIds = Array.from(game.user.targets).map(t => t.id);
-          await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
+
+          const isUnarmed = (selectedWeaponKey || "").toLowerCase().includes("unarmed");
+          if (isUnarmed) {
+            const abilityMod = actor.system.abilities[config.abilityScore]?.mod || 0;
+            const prof = actor.system.attributes.prof || 0;
+            const wepMod = Number(config.weaponModifier) || 0;
+            const circMod = Number(config.attackCircumstanceModifier) || 0;
+            const saveDC = 8 + prof + abilityMod + wepMod + circMod;
+            const d = getWeaponDetails(config);
+
+            new Dialog({
+              title: "Unarmed Strike (5.5e Options)",
+              content: `
+                <div style="padding: 6px 4px; text-align: center; font-size: 0.85em;">
+                  <div style="font-weight: 700; color: #2b3a4a; margin-bottom: 6px;">Choose an option for your Unarmed Strike:</div>
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <button type="button" id="unarmed-choice-damage" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                      <i class="fas fa-hand-fist"></i> Damage (${d.atkSign} to hit • ${d.dmgFormula} ${d.dmgType.toLowerCase()})
+                    </button>
+                    <button type="button" id="unarmed-choice-grapple" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #2b7489; color: #fff; border: 1px solid #1f5564; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                      <i class="fas fa-hand-holding-hand"></i> Grapple (DC ${saveDC} STR/DEX Save)
+                    </button>
+                    <button type="button" id="unarmed-choice-shove" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #a34848; color: #fff; border: 1px solid #7c3535; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                      <i class="fas fa-person-falling"></i> Shove (DC ${saveDC} STR/DEX Save)
+                    </button>
+                  </div>
+                  <div style="margin-top: 6px; font-size: 0.75em; color: #777;">Under 5.5e rules, target chooses Strength or Dexterity saving throw.</div>
+                </div>
+              `,
+              buttons: {
+                cancel: { label: "Cancel" }
+              },
+              default: "cancel",
+              render: (dlgHtml) => {
+                dlgHtml.find("#unarmed-choice-damage").on("click", async () => {
+                  dlgHtml.closest(".dialog").find(".close").trigger("click");
+                  await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
+                });
+                dlgHtml.find("#unarmed-choice-grapple").on("click", async () => {
+                  dlgHtml.closest(".dialog").find(".close").trigger("click");
+                  await globalThis.attackSocket.executeAsGM("runUnarmedManeuver", "grapple", config, actor.id, game.user.id);
+                });
+                dlgHtml.find("#unarmed-choice-shove").on("click", async () => {
+                  dlgHtml.closest(".dialog").find(".close").trigger("click");
+                  await globalThis.attackSocket.executeAsGM("runUnarmedManeuver", "shove", config, actor.id, game.user.id);
+                });
+              }
+            }, { width: 320 }).render(true);
+          } else {
+            await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
+          }
         });
 
         // Persistent Spell Cast Handler (Keeps dialog open)
@@ -2954,10 +3212,14 @@ Click a numbered modifier badge to execute a roll.</div>
           html.find(".weapon-card").each(function () {
             const k = $(this).data("key");
             const isSel = k === selectedWeaponKey;
+            const isStd = $(this).hasClass("standard-weapon-card");
             $(this).css({
-              "border-color": isSel ? "#7289da" : "#e0e0e0",
-              "background-color": isSel ? "#f0f4ff" : "#fff"
+              "border-color": isSel ? "#7289da" : (isStd ? "#bcc5d3" : "#e0e0e0"),
+              "background-color": isSel ? "#f0f4ff" : (isStd ? "#f8fafc" : "#fff")
             });
+            if (isStd) {
+              $(this).find("i").css("color", isSel ? "#7289da" : "#5b6eae");
+            }
           });
           html.find(".spell-card").each(function () {
             const k = $(this).data("key");

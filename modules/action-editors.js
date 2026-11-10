@@ -1233,7 +1233,7 @@ export function initActionEditors() {
                     formula: formula,
                     label: getVal(`damage${i}_label`) || `Extra Damage ${i}`,
                     damageType: getVal(`damage${i}_type`) || "slashing",
-                    isActive: true,
+                    isActive: false,
                     isCrit: getCheck(`damage${i}_isCrit`),
                     onlyCrit: getCheck(`damage${i}_onlyCrit`),
                     id: `extra_gen_${i}`
@@ -1887,7 +1887,7 @@ export function initActionEditors() {
   };
 
   // --- 4.3 Unified Action Editor & Manager (Weapons & Spells) ---
-  window.CustomRolls.openActionEditor = function (initialCategory = "weapons", targetActor = null) {
+  window.CustomRolls.openActionEditor = async function (initialCategory = "weapons", targetActor = null) {
     if (!getSetting("featurePresetEditors")) return;
 
     // Support flexible argument order if targetActor passed as first arg
@@ -1902,6 +1902,10 @@ export function initActionEditors() {
     const actor = explicitActor || token?.actor;
     if (!actor) {
       return ui.notifications.warn("Please select your token first.");
+    }
+
+    if (window.CustomRolls?.ensureStandardAttacks) {
+      await window.CustomRolls.ensureStandardAttacks(actor);
     }
 
     let activeCategory = category;
@@ -2524,7 +2528,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
                 const formula = getVal(`damage${i}_formula`)?.trim();
                 if (formula) {
-                  const prevActive = existingComponents[i - 1]?.isActive ?? true;
+                  const prevActive = existingComponents[i - 1]?.isActive ?? false;
                   components.push({
                     formula: formula,
                     label: getVal(`damage${i}_label`) || `Extra Damage ${i}`,
