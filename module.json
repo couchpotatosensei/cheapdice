@@ -1,8 +1,8 @@
 {
-  "id": "cheapdice",
-  "title": "Cheap Dice",
-  "description": "Custom quality-of-life settings and automations.",
-  "version": "1.0.87",
+  "id": "growingpotatoes",
+  "title": "Growing Potatoes (Cheap Dice Dev)",
+  "description": "Custom quality-of-life settings and automations (Development Build).",
+  "version": "1.0.88",
   "authors": [
     {
       "name": "couchpotatosensei"
@@ -36,6 +36,6 @@
   "esmodules": [
     "main.js"
   ],
-  "manifest": "https://raw.githubusercontent.com/couchpotatosensei/cheapdice/main/module.json",
-  "download": "https://github.com/couchpotatosensei/cheapdice/archive/refs/heads/main.zip"
+  "manifest": "https://raw.githubusercontent.com/couchpotatosensei/growingpotatoes/main/module.json",
+  "download": "https://github.com/couchpotatosensei/growingpotatoes/archive/refs/heads/main.zip"
 }
