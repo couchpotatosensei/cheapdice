@@ -1881,7 +1881,7 @@ Click a numbered modifier badge to execute a roll.</div>
             </button>
           </div>
         </div>
-        <div id="tracking-chips-container" style="display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow-y: auto; padding-right: 2px; min-height: 0; flex: 1;">
+        <div id="tracking-chips-container" style="display: flex; flex-direction: column; gap: 3px; max-height: 340px; overflow-y: auto; padding-right: 2px; min-height: 0; flex: 1;">
           ${renderChips()}
         </div>
       </div>
@@ -2235,14 +2235,8 @@ Click a numbered modifier badge to execute a roll.</div>
     const d20Data = getD20V2Data(actor);
     const trackingHelper = getTrackingStuffHelper(actor);
 
-    // Actor Stats & Portrait for Persistent Sidebar
-    const curHp = Number(actor.system.attributes?.hp?.value) || 0;
-    const maxHp = Number(actor.system.attributes?.hp?.max) || 0;
-    const tempHp = Number(actor.system.attributes?.hp?.temp) || 0;
-    const acVal = actor.system.attributes?.ac?.value ?? 10;
+    // Portrait for Persistent Sidebar
     const portraitSrc = token.document?.texture?.src || actor.img || "icons/svg/mystery-man.svg";
-    const initialHpPct = maxHp > 0 ? Math.clamp(Math.round((curHp / maxHp) * 100), 0, 100) : 0;
-    const initialHpColor = initialHpPct > 50 ? "#22c55e" : (initialHpPct > 25 ? "#f59e0b" : "#ef4444");
 
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
@@ -2498,35 +2492,11 @@ Click a numbered modifier badge to execute a roll.</div>
       <!-- LEFT SIDEBAR: Persistent (~215px) -->
       <div id="dialog-sidebar-left" style="width: 215px; min-width: 215px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #d2d7df; padding-right: 8px; height: 100%;">
         
-        <!-- Actor Portrait & HP Block -->
-        <div style="display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 5px;">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <img src="${portraitSrc}" alt="${actor.name}" style="width: 36px; height: 36px; border-radius: 4px; border: 1px solid #c0c6ce; object-fit: cover; flex-shrink: 0;" />
-            <div style="flex: 1; min-width: 0;">
-              <div style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${actor.name}">${actor.name}</div>
-              <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-                <span style="font-size: 0.7em; font-weight: 700; color: #4b5d88; background: #eef2f7; border: 1px solid #c0c6ce; border-radius: 3px; padding: 1px 4px; display: inline-flex; align-items: center; gap: 3px;">
-                  <i class="fas fa-shield-alt"></i> AC ${acVal}
-                </span>
-                ${tempHp > 0 ? `<span style="font-size: 0.68em; font-weight: 700; color: #1e7e34; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 3px; padding: 1px 3px;">+${tempHp} Temp</span>` : ''}
-              </div>
-            </div>
-          </div>
-
-          <!-- HP Bar & Live Controls -->
-          <div style="margin-top: 2px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-              <span style="font-size: 0.68em; font-weight: 700; color: #555; text-transform: uppercase;">Hit Points</span>
-              <div style="display: flex; align-items: center; gap: 2px;">
-                <button type="button" id="btn-sidebar-hp-dec" title="Decrease HP" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">-</button>
-                <span id="sidebar-hp-display" style="font-size: 0.72em; font-weight: 700; min-width: 44px; text-align: center; color: #1e293b;">${curHp} / ${maxHp}</span>
-                <button type="button" id="btn-sidebar-hp-inc" title="Increase HP" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">+</button>
-              </div>
-            </div>
-            <!-- Mini HP Bar -->
-            <div style="width: 100%; height: 5px; background: #e2e8f0; border-radius: 3px; overflow: hidden; border: 1px solid #cbd5e1;">
-              <div id="sidebar-hp-bar" style="height: 100%; width: ${initialHpPct}%; background: ${initialHpColor}; transition: width 0.2s ease, background 0.2s ease;"></div>
-            </div>
+        <!-- Actor Portrait & Name Header -->
+        <div style="display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px 6px;">
+          <img src="${portraitSrc}" alt="${actor.name}" style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid #c0c6ce; object-fit: cover; flex-shrink: 0;" />
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight: 700; font-size: 0.84em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${actor.name}">${actor.name}</div>
           </div>
         </div>
 
@@ -2624,30 +2594,6 @@ Click a numbered modifier badge to execute a roll.</div>
         // Initialize D20 event handlers and Tracking Stuff
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
-
-        // Sidebar HP Stepper Handlers
-        let currentHp = curHp;
-        const updateHpDisplay = (val) => {
-          currentHp = val;
-          const pct = maxHp > 0 ? Math.clamp(Math.round((currentHp / maxHp) * 100), 0, 100) : 0;
-          const color = pct > 50 ? "#22c55e" : (pct > 25 ? "#f59e0b" : "#ef4444");
-          html.find("#sidebar-hp-display").text(`${currentHp} / ${maxHp}`);
-          html.find("#sidebar-hp-bar").css({ width: `${pct}%`, background: color });
-        };
-
-        html.find("#btn-sidebar-hp-dec").on("click", async () => {
-          const newVal = Math.max(0, currentHp - 1);
-          if (newVal === currentHp) return;
-          updateHpDisplay(newVal);
-          await actor.update({ "system.attributes.hp.value": newVal });
-        });
-
-        html.find("#btn-sidebar-hp-inc").on("click", async () => {
-          const newVal = Math.min(maxHp, currentHp + 1);
-          if (newVal === currentHp) return;
-          updateHpDisplay(newVal);
-          await actor.update({ "system.attributes.hp.value": newVal });
-        });
 
         // Persistent Weapon Roll Handler (Keeps dialog open)
         html.find("#btn-roll-weapon-now").on("click", async () => {
