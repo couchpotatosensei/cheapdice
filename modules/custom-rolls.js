@@ -472,21 +472,9 @@ export function initCustomRolls() {
   };
 
   // =========================================================================
-  // VERSION 2: D20 TEST MINI CHARACTER SHEET LAUNCHER (REFINED & COMPACT)
+  // VERSION 2: D20 TEST MINI CHARACTER SHEET DATA & VIEW BUILDER
   // =========================================================================
-  window.CustomRolls.openD20DialogV2 = function () {
-    if (!game.settings.get("cheapdice", "featureCustomRolls")) return;
-
-    const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
-
-    if (!token) {
-      return ui.notifications.warn("Please select your token first.");
-    }
-
-    const actor = token.actor;
-    if (!actor || !actor.isOwner) {
-      return ui.notifications.warn("You don't have permissions to use this token.");
-    }
+  function getD20V2Data(actor) {
 
     function getNumericValue(val, fallback = 0) {
       if (typeof val === "number" && !isNaN(val)) return val;
@@ -883,14 +871,9 @@ Click a numbered modifier badge to execute a roll.</div>
     </div>
   `;
 
-    new Dialog({
-      title: `${actor.name}: Mini Sheet D20 Rolls (V2)`,
-      content: dialogHtml,
-      buttons: {
-        close: { label: "Close" }
-      },
-      default: "close",
-      render: (html) => {
+    return {
+      html: dialogHtml,
+      setupEvents: (html) => {
         const descTitle = html.find('#desc-title-v2');
         const descSubtitle = html.find('#desc-subtitle-v2');
         const descBody = html.find('#desc-body-v2');
@@ -1041,7 +1024,12 @@ Click a numbered modifier badge to execute a roll.</div>
           executeRoll('tool', key);
         });
       }
-    }, { width: 590, height: "auto" }).render(true);
+    };
+  }
+
+  // Backwards-compatible launcher that delegates to unified Combat Remote dialog
+  window.CustomRolls.openD20DialogV2 = function () {
+    return window.CustomRolls.openActionDialog("d20");
   };
 
 
@@ -1677,16 +1665,18 @@ Click a numbered modifier badge to execute a roll.</div>
     const attackNames = Object.keys(attacks);
     const spellKeys = Object.keys(spellConfigs);
 
-    if (attackNames.length === 0 && spellKeys.length === 0) {
-      return ui.notifications.warn(`No configured attacks or spells found for ${actor.name}.`);
-    }
-
     let currentMode = initialMode;
-    if (currentMode === "weapon" && attackNames.length === 0) currentMode = "spell";
-    if (currentMode === "spell" && spellKeys.length === 0) currentMode = "weapon";
+    if (currentMode === "weapon" && attackNames.length === 0) {
+      currentMode = spellKeys.length > 0 ? "spell" : "d20";
+    }
+    if (currentMode === "spell" && spellKeys.length === 0) {
+      currentMode = attackNames.length > 0 ? "weapon" : "d20";
+    }
 
     let selectedWeaponKey = attackNames[0] || null;
     let selectedSpellKey = spellKeys[0] || null;
+
+    const d20Data = getD20V2Data(actor);
 
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
@@ -1946,6 +1936,9 @@ Click a numbered modifier badge to execute a roll.</div>
         <button type="button" id="tab-btn-spell" style="flex: 1; padding: 6px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
           <i class="fas fa-magic"></i> Spells (${spellKeys.length})
         </button>
+        <button type="button" id="tab-btn-d20" style="flex: 1; padding: 6px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <i class="fas fa-dice-d20"></i> Checks & Saves
+        </button>
       </div>
 
       <!-- Weapons Section -->
@@ -1967,11 +1960,16 @@ Click a numbered modifier badge to execute a roll.</div>
           ${spellConfigs[selectedSpellKey] ? getUpcastOptionsHtml(spellConfigs[selectedSpellKey]) : ""}
         </div>
       </div>
+
+      <!-- D20 Checks & Saves Section -->
+      <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column;">
+        ${d20Data.html}
+      </div>
     </div>
   `;
 
     new Dialog({
-      title: `${actor.name}: Perform Action`,
+      title: `${actor.name}: Actions & Checks`,
       content: content,
       buttons: {
         execute: {
@@ -2065,9 +2063,14 @@ Click a numbered modifier badge to execute a roll.</div>
         setTimeout(() => html.closest('.app.dialog').css({ height: "auto" }), 10);
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
+        const btnD20 = html.find("#tab-btn-d20");
         const secWeapon = html.find("#section-weapon");
         const secSpell = html.find("#section-spell");
+        const secD20 = html.find("#section-d20");
         const execBtn = html.find(".dialog-button.execute");
+
+        // Initialize D20 event handlers
+        d20Data.setupEvents(html);
 
         function updateCardStyles() {
           html.find(".weapon-card").each(function () {
@@ -2090,25 +2093,34 @@ Click a numbered modifier badge to execute a roll.</div>
 
         function setTab(mode) {
           currentMode = mode;
+          btnWeapon.css({ background: mode === "weapon" ? "#7289da" : "#f0f2f5", color: mode === "weapon" ? "#fff" : "#555" });
+          btnSpell.css({ background: mode === "spell" ? "#7289da" : "#f0f2f5", color: mode === "spell" ? "#fff" : "#555" });
+          btnD20.css({ background: mode === "d20" ? "#7289da" : "#f0f2f5", color: mode === "d20" ? "#fff" : "#555" });
+
           if (mode === "weapon") {
-            btnWeapon.css({ background: "#7289da", color: "#fff" });
-            btnSpell.css({ background: "#f0f2f5", color: "#555" });
             secWeapon.show();
             secSpell.hide();
-            execBtn.html('<i class="fas fa-dice-d20" style="margin-right: 6px;"></i> Roll Attack');
+            secD20.hide();
+            execBtn.show().html('<i class="fas fa-dice-d20" style="margin-right: 6px;"></i> Roll Attack');
             execBtn.prop("disabled", attackNames.length === 0);
-          } else {
-            btnSpell.css({ background: "#7289da", color: "#fff" });
-            btnWeapon.css({ background: "#f0f2f5", color: "#555" });
+          } else if (mode === "spell") {
             secSpell.show();
             secWeapon.hide();
-            execBtn.html('<i class="fas fa-magic" style="margin-right: 6px;"></i> Cast Spell');
+            secD20.hide();
+            execBtn.show().html('<i class="fas fa-magic" style="margin-right: 6px;"></i> Cast Spell');
             execBtn.prop("disabled", spellKeys.length === 0);
+          } else {
+            secD20.show();
+            secWeapon.hide();
+            secSpell.hide();
+            execBtn.hide();
           }
+          setTimeout(() => html.closest('.app.dialog').css({ height: "auto" }), 10);
         }
 
         btnWeapon.on("click", () => setTab("weapon"));
         btnSpell.on("click", () => setTab("spell"));
+        btnD20.on("click", () => setTab("d20"));
         setTab(currentMode);
 
         html.find(".weapon-card").on("click", function () {
@@ -2125,11 +2137,14 @@ Click a numbered modifier badge to execute a roll.</div>
         });
       }
     }, {
-      width: 440,
+      width: 630,
       height: "auto",
       resizable: true
     }).render(true);
   };
+
+  // Unified Combat Remote alias
+  window.CustomRolls.openCombatRemote = window.CustomRolls.openActionDialog;
 
 
 
