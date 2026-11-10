@@ -1416,6 +1416,19 @@ export function initActionEditors() {
         </div>
       </div>
 
+      <div id="spellAttackOptionsGroup" style="display: block; background: rgba(0,0,0,0.03); border: 1px solid #ccc; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div>
+            <label style="font-weight: bold; display: block; font-size: 0.8em;">Crit Threshold:</label>
+            <input type="number" name="CRIT_THRESHOLD" value="20" min="1" max="20" style="width: 100%; height: 26px; font-size: 0.85em;" />
+          </div>
+          <div>
+            <label style="font-weight: bold; display: block; font-size: 0.8em;">Attack Mod:</label>
+            <input type="number" name="attackModifier" value="0" style="width: 100%; height: 26px; font-size: 0.85em;" />
+          </div>
+        </div>
+      </div>
+
       <div id="saveOptionsGroup" style="display: none; background: rgba(0,0,0,0.03); border: 1px solid #ccc; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
           <div>
@@ -1652,6 +1665,7 @@ export function initActionEditors() {
                 flatDamageBonus: Number(getVal("flatDamageBonus")) || 0,
                 explodeCondition: getVal("explodeCondition")?.trim() || "",
                 chaosJump: getCheck("chaosJump"),
+                CRIT_THRESHOLD: Number(getVal("CRIT_THRESHOLD")) || 20,
                 attackModifier: Number(getVal("attackModifier")) || 0,
                 isCantripScale: getCheck("isCantripScale"),
                 superAdv: getCheck("superAdv"),
@@ -1695,6 +1709,7 @@ export function initActionEditors() {
 
           function updateLayout() {
             const val = resSelect.val();
+            html.find('#spellAttackOptionsGroup').toggle(val === 'attack');
             saveGroup.toggle(val === 'save');
             autoGroup.toggle(val === 'auto');
             healGroup.toggle(['heal', 'temp_hp', 'max_hp'].includes(val));
@@ -2624,6 +2639,19 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
           </div>
         </div>
 
+        <div id="spellAttackOptionsGroup" style="display: ${curMethod === 'attack' ? 'block' : 'none'}; background: rgba(0,0,0,0.03); border: 1px solid #ccc; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div>
+              <label style="font-weight: bold; display: block; font-size: 0.8em;">Crit Threshold:</label>
+              <input type="number" name="CRIT_THRESHOLD" value="${s.CRIT_THRESHOLD ?? 20}" min="1" max="20" style="width: 100%; height: 26px; font-size: 0.85em;" />
+            </div>
+            <div>
+              <label style="font-weight: bold; display: block; font-size: 0.8em;">Attack Mod:</label>
+              <input type="number" name="attackModifier" value="${s.attackModifier ?? 0}" style="width: 100%; height: 26px; font-size: 0.85em;" />
+            </div>
+          </div>
+        </div>
+
         <div id="saveOptionsGroup" style="display: ${curMethod === 'save' ? 'block' : 'none'}; background: rgba(0,0,0,0.03); border: 1px solid #ccc; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px;">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
             <div>
@@ -2838,6 +2866,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                 flatDamageBonus: Number(getVal("flatDamageBonus")) || 0,
                 explodeCondition: getVal("explodeCondition")?.trim() || "",
                 chaosJump: getCheck("chaosJump"),
+                CRIT_THRESHOLD: Number(getVal("CRIT_THRESHOLD")) || 20,
                 attackModifier: Number(getVal("attackModifier")) || 0,
                 isCantripScale: getCheck("isCantripScale"),
                 superAdv: getCheck("superAdv"),
@@ -2885,6 +2914,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
 
           resSelect.on('change', () => {
             const val = resSelect.val();
+            html.find('#spellAttackOptionsGroup').toggle(val === 'attack');
             saveGroup.toggle(val === 'save');
             autoGroup.toggle(val === 'auto');
             healGroup.toggle(['heal', 'temp_hp', 'max_hp'].includes(val));

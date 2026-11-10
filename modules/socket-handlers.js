@@ -560,9 +560,10 @@ function registerSocketHandlers() {
 
     const attackCircumstanceModSign = attackCircumstanceModifier >= 0 ? '+' : '';
     const weaponModifierAttackSign = weaponModifier >= 0 ? '+' : '';
+    const abilityModAttackSign = abilityMod >= 0 ? '+' : '';
     const attackModifiersList = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
-    <li style="list-style-type: disc;">Ability Mod (${abilityScore.toUpperCase()}): <strong>${abilityMod}</strong></li>
-    <li style="list-style-type: disc;">Proficiency Bonus (PB): <strong>${prof}</strong></li>
+    <li style="list-style-type: disc;">Ability Mod (${abilityScore.toUpperCase()}): <strong>${abilityModAttackSign}${abilityMod}</strong></li>
+    <li style="list-style-type: disc;">Proficiency Bonus (PB): <strong>+${prof}</strong></li>
     ${weaponModifier !== 0 ? `<li style="list-style-type: disc;">Weapon Modifier: <strong>${weaponModifierAttackSign}${weaponModifier}</strong></li>` : ''}
     ${attackCircumstanceModifier !== 0 ? `<li style="list-style-type: disc;">Other Mod: <strong>${attackCircumstanceModSign}${attackCircumstanceModifier}</strong></li>` : ''}
   </ul>`;
@@ -576,17 +577,19 @@ function registerSocketHandlers() {
 
     additionalDamageResults.forEach(c => {
       if (c.onlyCrit) return;
-      let parts = c.formula.split('+').map(p => p.trim());
+      let parts = (c.formula || "").match(/[+-]?[^+-]+/g)?.map(p => p.trim()).filter(Boolean) || [];
       parts.forEach(p => {
-        let diceMatch = p.match(/^(\d*)[dD](\d+)$/);
+        let cleanP = p.replace(/\s+/g, "");
+        let diceMatch = cleanP.match(/^([+-]?)(\d*)[dD](\d+)$/);
         if (diceMatch) {
-          let count = parseInt(diceMatch[1]) || 1;
-          let size = diceMatch[2];
+          let sign = diceMatch[1] === '-' ? -1 : 1;
+          let count = (parseInt(diceMatch[2]) || 1) * sign;
+          let size = diceMatch[3];
           diceMap[size] = (diceMap[size] || 0) + count;
-        } else if (!isNaN(Number(p)) && p !== "") {
-          flatTotal += Number(p);
+        } else if (!isNaN(Number(cleanP)) && cleanP !== "") {
+          flatTotal += Number(cleanP);
         } else {
-          otherParts.push(p);
+          otherParts.push(p.replace(/^[+]/, '').trim());
         }
       });
     });
@@ -597,7 +600,8 @@ function registerSocketHandlers() {
     });
     combinedDamageFormulas.push(...otherParts);
     if (flatTotal !== 0) combinedDamageFormulas.push(flatTotal);
-    const finalDamageString = combinedDamageFormulas.join(" + ").replace(/\+ -/g, "- ");
+    if (combinedDamageFormulas.length === 0) combinedDamageFormulas.push("0");
+    const finalDamageString = combinedDamageFormulas.join(" + ").replace(/\+\s*-\s*/g, "- ");
 
     const normalDamageByType = {};
     const critDamageByType = {};
@@ -655,7 +659,7 @@ function registerSocketHandlers() {
         <strong>Attack/Damage Breakdown</strong>
       </summary>
       <div style="padding-top: 5px; border-top: 1px solid #ccc;">
-        <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Attack: +${totalAttackModifier}</strong></p>
+        <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Attack: ${totalAttackModifier >= 0 ? '+' : ''}${totalAttackModifier}</strong></p>
         ${attackModifiersList}
         <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Damage Dice: ${finalDamageString}</strong></p>
         ${damageDiceSummary}
@@ -1102,8 +1106,10 @@ function registerSocketHandlers() {
       const maxExtraCrit = parseMaxDiceDamage(cleanExtraDice);
       const maxCritBonus = maxPrimaryCrit + maxExtraCrit;
 
+      const critThreshold = Number(config.CRIT_THRESHOLD) || 20;
       const rolledObjects = [];
       let totalStandardDamage = 0;
+      let totalCritBonus = 0;
       let hasAnyCrit = false;
       let summaryRowsHtml = "";
       let detailedAuditHtml = "";
@@ -1117,18 +1123,21 @@ function registerSocketHandlers() {
 
         const d20_1 = atkRoll.dice[0]?.total ?? 0;
         const d20_2 = advRoll.dice[0]?.total ?? 0;
-        const isCrit = d20_1 === 20 || d20_2 === 20;
-        if (isCrit) hasAnyCrit = true;
+        const isCrit = d20_1 >= critThreshold || d20_2 >= critThreshold;
+        if (isCrit) {
+          hasAnyCrit = true;
+          totalCritBonus += maxCritBonus;
+        }
 
         const baseDmg = dmgRoll.total;
         totalStandardDamage += baseDmg;
 
         let atk1Style = "color: #2b3a4a;";
-        if (d20_1 === 20) atk1Style = "color: #18521e; font-weight: bold;";
+        if (d20_1 >= critThreshold) atk1Style = "color: #18521e; font-weight: bold;";
         else if (d20_1 === 1) atk1Style = "color: #a33; font-weight: bold;";
 
         let atk2Style = "color: #666;";
-        if (d20_2 === 20) atk2Style = "color: #18521e; font-weight: bold;";
+        if (d20_2 >= critThreshold) atk2Style = "color: #18521e; font-weight: bold;";
         else if (d20_2 === 1) atk2Style = "color: #a33; font-weight: bold;";
 
         const rowLabel = numAttacks > 1 ? `Ray ${i}` : "Attack";
@@ -1154,10 +1163,10 @@ function registerSocketHandlers() {
         let advHtml = await advRoll.render();
         let dmgHtml = await dmgRoll.render();
 
-        if (d20_1 === 20) atkHtml = atkHtml.replace('dice-total', 'dice-total critical');
+        if (d20_1 >= critThreshold) atkHtml = atkHtml.replace('dice-total', 'dice-total critical');
         else if (d20_1 === 1) atkHtml = atkHtml.replace('dice-total', 'dice-total fumble');
 
-        if (d20_2 === 20) advHtml = advHtml.replace('dice-total', 'dice-total critical');
+        if (d20_2 >= critThreshold) advHtml = advHtml.replace('dice-total', 'dice-total critical');
         else if (d20_2 === 1) advHtml = advHtml.replace('dice-total', 'dice-total fumble');
 
         detailedAuditHtml += `
@@ -1210,11 +1219,16 @@ function registerSocketHandlers() {
           </div>
 
           <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.04); border-radius: 4px; padding: 6px 4px; text-align: center;">
-            <div>
-              <div style="font-size: 0.75em; font-weight: 600; color: #777;">${numAttacks > 1 ? "COMBINED BASE DAMAGE" : "DAMAGE TOTAL"}</div>
+            <div style="flex: 1; ${hasAnyCrit ? 'border-right: 1px solid rgba(0,0,0,0.1);' : ''} padding: 0 4px;">
+              <div style="font-size: 0.75em; font-weight: 600; color: #777;">${numAttacks > 1 ? "COMBINED BASE" : "DAMAGE TOTAL"}</div>
               <div style="font-size: 1.25em; font-weight: bold; color: #2b3a4a;">${totalStandardDamage}</div>
             </div>
-            <div style="border-left: 1px solid rgba(0,0,0,0.1); padding-left: 14px;">
+            ${hasAnyCrit ? `
+            <div style="flex: 1; border-right: 1px solid rgba(0,0,0,0.1); padding: 0 4px;">
+              <div style="font-size: 0.75em; font-weight: 600; color: #18520b;">CRITICAL TOTAL</div>
+              <div style="font-size: 1.25em; font-weight: bold; color: #18520b;">${totalStandardDamage + totalCritBonus}</div>
+            </div>` : ''}
+            <div style="flex: 1; padding: 0 4px;">
               <div style="font-size: 0.75em; font-weight: 600; color: #777;">DAMAGE TYPE</div>
               <div style="font-size: 1.1em; font-weight: bold; color: #2b3a4a;">${typeDisplay}</div>
             </div>
@@ -1223,7 +1237,7 @@ function registerSocketHandlers() {
           <details style="margin-top: 6px; padding: 2px 4px;">
             <summary style="font-weight: 600; font-size: 0.82em; color: #666; cursor: pointer;">Dice Roll Audits & Formula</summary>
             <div style="padding-top: 4px; border-top: 1px solid #e0e0e0; font-size: 0.8em; color: #555; margin-top: 3px;">
-              <div><strong>Attack Mod:</strong> +${totalAttackMod} (${spellAbility.toUpperCase()}: ${abilityMod} + PB: ${prof}${attackModifier ? ` + Mod: ${attackModifier}` : ''})</div>
+              <div><strong>Attack Mod:</strong> ${totalAttackMod >= 0 ? '+' : ''}${totalAttackMod} (${spellAbility.toUpperCase()}: ${abilityMod >= 0 ? '+' : ''}${abilityMod} + PB: +${prof}${attackModifier ? ` + Mod: ${attackModifier}` : ''})</div>
               <div><strong>Damage Formula:</strong> ${baseDamageFormula} (${typeDisplay})</div>
               ${hasAnyCrit ? `<div><strong>Crunchy Crit Extra:</strong> +${maxCritBonus} (Max Dice)</div>` : ''}
               ${detailedAuditHtml}
