@@ -1672,11 +1672,11 @@ function registerSocketHandlers() {
       d20_2 = Math.max(10, d20_2);
     }
 
-    // Helper to detect Halfling Lucky rerolls on a roll object
+    // Helper to detect genuine Halfling Lucky rerolls on a roll object (only when a 1 is rerolled)
     const getHalflingReroll = (rollObj) => {
       const results = rollObj?.dice?.[0]?.results || [];
-      const rerolled = results.find(r => r.rerolled || r.active === false);
-      const active = results.find(r => r.active !== false);
+      const rerolled = results.find(r => r.rerolled === true && r.result === 1);
+      const active = results.find(r => r.active !== false && !r.rerolled);
       if (rerolled && active) {
         return { original: rerolled.result, final: active.result };
       }
