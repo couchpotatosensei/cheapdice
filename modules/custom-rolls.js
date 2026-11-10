@@ -1839,27 +1839,25 @@ Click a numbered modifier badge to execute a roll.</div>
 
     function renderChips() {
       if (!trackers || trackers.length === 0) {
-        return `<span style="font-size: 0.72em; color: #888; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong>+ Add</strong> to track abilities, charges, or pools.</span>`;
+        return `<span style="font-size: 0.72em; color: #888; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong>Manage</strong> to track abilities, charges, or pools.</span>`;
       }
 
       return trackers.map(t => {
         const live = getLiveTracker(t);
         const hasRecharge = Boolean(live.rechargeFormula);
         return `
-          <div class="tracking-chip" data-id="${t.id}" style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #c0c6ce; border-radius: 4px; padding: 2px 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); width: 100%; box-sizing: border-box;">
-            <span style="font-weight: 700; font-size: 0.72em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 82px;" title="${live.label}">${live.label}</span>
+          <div class="tracking-chip" data-id="${t.id}" style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #c0c6ce; border-radius: 4px; padding: 2px 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); width: 100%; box-sizing: border-box; gap: 4px;">
+            <span style="font-weight: 700; font-size: 0.72em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;" title="${live.label}">${live.label}</span>
             <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;">
               <button type="button" class="btn-chip-dec" data-id="${t.id}" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">-</button>
-              <span class="chip-val-display" data-id="${t.id}" style="font-size: 0.72em; font-weight: 700; min-width: 26px; text-align: center; color: #1e293b;">${live.value}/${live.max}</span>
+              <input type="number" class="chip-val-input" data-id="${t.id}" min="0" max="${live.max}" value="${live.value}" style="width: 26px; height: 16px; line-height: 14px; text-align: center; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; border-radius: 2px; background: #fafbfc; color: #1e293b; margin: 0;" />
+              <span style="font-size: 0.70em; font-weight: 700; color: #64748b; line-height: 16px;">/${live.max}</span>
               <button type="button" class="btn-chip-inc" data-id="${t.id}" style="width: 16px; height: 16px; line-height: 12px; font-weight: 700; font-size: 0.78em; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 2px; cursor: pointer;">+</button>
               ${hasRecharge ? `
                 <button type="button" class="btn-chip-recharge" data-id="${t.id}" title="Recharge (${live.rechargeFormula})" style="height: 16px; line-height: 12px; font-size: 0.65em; font-weight: 700; padding: 0 3px; border: 1px solid #7289da; background: #f0f4ff; color: #3b5998; border-radius: 2px; cursor: pointer;">
                   <i class="fas fa-rotate"></i>
                 </button>
               ` : ''}
-              <button type="button" class="btn-chip-remove" data-id="${t.id}" title="Remove Tracker" style="background: transparent; border: none; color: #dc3545; font-size: 0.72em; cursor: pointer; padding: 0 1px;">
-                <i class="fas fa-times"></i>
-              </button>
             </div>
           </div>
         `;
@@ -1876,8 +1874,8 @@ Click a numbered modifier badge to execute a roll.</div>
             <button type="button" id="btn-recharge-dawn-all" title="Roll recharge for all Daily/Dawn items" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 4px; border: 1px solid #e5a50a; background: #fffbe6; color: #9c6c03; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;">
               <i class="fas fa-sun"></i> Dawn
             </button>
-            <button type="button" id="btn-open-add-tracker" title="Add trackable feature or custom counter" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 4px; border: 1px solid #7289da; background: #f0f4ff; color: #4054b2; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;">
-              <i class="fas fa-plus"></i> Add
+            <button type="button" id="btn-open-add-tracker" title="Manage active trackers or add new ones" style="font-size: 0.68em; font-weight: 700; height: 18px; padding: 0 5px; border: 1px solid #7289da; background: #f0f4ff; color: #4054b2; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center;">
+              Manage
             </button>
           </div>
         </div>
@@ -1895,10 +1893,11 @@ Click a numbered modifier badge to execute a roll.</div>
           bindChipEvents();
         };
 
-        const updateVal = async (t, delta) => {
+        const updateVal = async (t, delta, directValue = null) => {
           const live = getLiveTracker(t);
-          const newVal = Math.clamp(live.value + delta, 0, live.max);
-          if (newVal === live.value) return;
+          const targetVal = directValue !== null ? directValue : (live.value + delta);
+          const newVal = Math.clamp(targetVal, 0, live.max);
+          if (newVal === live.value && directValue === null) return;
 
           if (t.type === "item" && t.itemRefId) {
             const item = actor.items.get(t.itemRefId);
@@ -1909,6 +1908,7 @@ Click a numbered modifier badge to execute a roll.</div>
             t.value = newVal;
             await actor.setFlag("world", "trackingStuff", trackers);
           }
+          containerHtml.find(`.chip-val-input[data-id="${t.id}"]`).val(newVal);
           containerHtml.find(`.tracker-val-display[data-id="${t.id}"], .chip-val-display[data-id="${t.id}"]`).text(`${newVal} / ${live.max}`);
         };
 
@@ -1925,6 +1925,24 @@ Click a numbered modifier badge to execute a roll.</div>
             const id = $(this).data('id');
             const t = trackers.find(x => x.id === id);
             if (t) updateVal(t, 1);
+          });
+
+          containerHtml.find('.chip-val-input').off('change').on('change', function (e) {
+            e.stopPropagation();
+            const id = $(this).data('id');
+            const t = trackers.find(x => x.id === id);
+            if (t) {
+              const parsed = parseInt($(this).val(), 10);
+              const val = isNaN(parsed) ? 0 : parsed;
+              updateVal(t, 0, val);
+            }
+          });
+
+          containerHtml.find('.chip-val-input').off('keydown').on('keydown', function (e) {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              $(this).trigger("change");
+            }
           });
 
           containerHtml.find('.btn-chip-recharge').off('click').on('click', async function (e) {
@@ -1950,6 +1968,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 await actor.setFlag("world", "trackingStuff", trackers);
               }
 
+              containerHtml.find(`.chip-val-input[data-id="${t.id}"]`).val(newVal);
               containerHtml.find(`.chip-val-display[data-id="${t.id}"]`).text(`${newVal} / ${live.max}`);
 
               await ChatMessage.create({
@@ -1966,21 +1985,6 @@ Click a numbered modifier badge to execute a roll.</div>
             } catch (err) {
               ui.notifications.error(`Failed to evaluate recharge formula: ${err.message}`);
             }
-          });
-
-          containerHtml.find('.btn-chip-remove').off('click').on('click', async function (e) {
-            e.stopPropagation();
-            const id = $(this).data('id');
-            const t = trackers.find(x => x.id === id);
-            if (!t) return;
-
-            if (t.type === "resource" && t.isCustom && t.resourceSlot) {
-              await actor.update({ [`system.resources.${t.resourceSlot}`]: { label: "", value: 0, max: 0 } });
-            }
-
-            trackers = trackers.filter(x => x.id !== id);
-            await actor.setFlag("world", "trackingStuff", trackers);
-            refreshChips();
           });
         };
 
@@ -2004,7 +2008,7 @@ Click a numbered modifier badge to execute a roll.</div>
           }
         });
 
-        // Add to Tracking Stuff Modal
+        // Manage Tracking Stuff Modal
         containerHtml.find('#btn-open-add-tracker').off('click').on('click', function () {
           const available = [];
 
@@ -2062,6 +2066,44 @@ Click a numbered modifier badge to execute a roll.</div>
             }
           }
 
+          function renderActiveTrackersList() {
+            if (!trackers || trackers.length === 0) {
+              return `<div style="font-size: 0.76em; color: #888; font-style: italic; padding: 4px;">No active trackers. Add one below.</div>`;
+            }
+            return trackers.map(t => {
+              const live = getLiveTracker(t);
+              return `
+                <div class="manage-tracker-row" data-id="${t.id}" style="border: 1px solid #d2d7df; border-radius: 4px; padding: 5px; background: #fafbfc; margin-bottom: 5px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 4px;">
+                    <strong style="font-size: 0.82em; color: #2b3a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;" title="${live.label}">${live.label}</strong>
+                    <button type="button" class="btn-manage-remove" data-id="${t.id}" title="Remove Tracker" style="height: 20px; font-size: 0.70em; font-weight: 700; padding: 0 6px; border: 1px solid #dc3545; background: #fff5f5; color: #dc3545; border-radius: 3px; cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px;">
+                      <i class="fas fa-trash"></i> Remove
+                    </button>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 65px 1fr 1fr; gap: 4px; align-items: center;">
+                    <div>
+                      <label style="font-size: 0.66em; color: #666; font-weight: 700; display: block; margin-bottom: 1px;">MAX</label>
+                      <input type="number" class="manage-input-max" data-id="${t.id}" min="1" value="${live.max}" style="height: 22px; font-size: 0.78em; padding: 1px 3px; border: 1px solid #ccc; border-radius: 2px; width: 100%; box-sizing: border-box;" />
+                    </div>
+                    <div>
+                      <label style="font-size: 0.66em; color: #666; font-weight: 700; display: block; margin-bottom: 1px;">RECHARGE</label>
+                      <input type="text" class="manage-input-recharge" data-id="${t.id}" placeholder="e.g. 1d6+1" value="${t.rechargeFormula || ''}" style="height: 22px; font-size: 0.78em; padding: 1px 3px; border: 1px solid #ccc; border-radius: 2px; width: 100%; box-sizing: border-box;" />
+                    </div>
+                    <div>
+                      <label style="font-size: 0.66em; color: #666; font-weight: 700; display: block; margin-bottom: 1px;">RESET</label>
+                      <select class="manage-select-reset" data-id="${t.id}" style="height: 22px; font-size: 0.74em; border: 1px solid #ccc; border-radius: 2px; width: 100%; box-sizing: border-box;">
+                        <option value="lr" ${(t.resetOn || 'lr') === 'lr' ? 'selected' : ''}>Long Rest</option>
+                        <option value="sr" ${t.resetOn === 'sr' ? 'selected' : ''}>Short Rest</option>
+                        <option value="dawn" ${t.resetOn === 'dawn' ? 'selected' : ''}>Dawn</option>
+                        <option value="none" ${t.resetOn === 'none' ? 'selected' : ''}>Manual</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('');
+          }
+
           const availableRowsHtml = available.length === 0
             ? `<div style="font-size: 0.78em; color: #888; font-style: italic; padding: 4px;">No trackable abilities found on your character sheet.</div>`
             : available.map(a => `
@@ -2076,16 +2118,29 @@ Click a numbered modifier badge to execute a roll.</div>
             `).join('');
 
           const modalContent = `
-            <div style="display: flex; flex-direction: column; gap: 8px; font-family: inherit;">
+            <div style="display: flex; flex-direction: column; gap: 8px; font-family: inherit; max-height: 520px; overflow-y: auto; padding-right: 2px;">
               <div>
-                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 3px;">FROM YOUR CHARACTER SHEET</label>
-                <div style="max-height: 180px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px;">
+                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 3px;">
+                  <i class="fas fa-sliders" style="margin-right: 3px;"></i> ACTIVE TRACKERS (EDIT & REMOVE)
+                </label>
+                <div id="manage-active-trackers-container" style="max-height: 180px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px; padding: 4px;">
+                  ${renderActiveTrackersList()}
+                </div>
+              </div>
+
+              <div style="border-top: 1px solid #e0e0e0; padding-top: 6px;">
+                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 3px;">
+                  <i class="fas fa-file-lines" style="margin-right: 3px;"></i> FROM YOUR CHARACTER SHEET
+                </label>
+                <div style="max-height: 140px; overflow-y: auto; background: #fff; border: 1px solid #d2d7df; border-radius: 4px;">
                   ${availableRowsHtml}
                 </div>
               </div>
 
               <div style="border-top: 1px solid #e0e0e0; padding-top: 6px;">
-                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 4px;">CREATE CUSTOM COUNTER</label>
+                <label style="font-weight: 700; font-size: 0.76em; color: #4b5d88; display: block; margin-bottom: 4px;">
+                  <i class="fas fa-plus" style="margin-right: 3px;"></i> CREATE CUSTOM COUNTER
+                </label>
                 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 4px; margin-bottom: 4px;">
                   <input type="text" id="new-custom-name" placeholder="Counter Name (e.g. Grit, Torches)" style="height: 24px; font-size: 0.8em; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px;" />
                   <input type="number" id="new-custom-max" placeholder="Max" value="3" min="1" style="height: 24px; font-size: 0.8em; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px;" />
@@ -2107,13 +2162,72 @@ Click a numbered modifier badge to execute a roll.</div>
           `;
 
           const addDialog = new Dialog({
-            title: `${actor.name}: Add to Tracking Stuff`,
+            title: `${actor.name}: Manage Tracking Stuff`,
             content: modalContent,
             buttons: {
               close: { label: "Done" }
             },
             default: "close",
             render: (modalHtml) => {
+              const bindActiveTrackerEvents = () => {
+                modalHtml.find('.manage-input-max').off('change').on('change', async function () {
+                  const id = $(this).data('id');
+                  const t = trackers.find(x => x.id === id);
+                  if (!t) return;
+                  const newMax = Math.max(1, Number($(this).val()) || 1);
+                  t.max = newMax;
+                  if (t.type === "item" && t.itemRefId) {
+                    const it = actor.items.get(t.itemRefId);
+                    if (it) await it.update({ "system.uses.max": newMax });
+                  } else if (t.type === "resource" && t.resourceSlot) {
+                    await actor.update({ [`system.resources.${t.resourceSlot}.max`]: newMax });
+                  }
+                  await actor.setFlag("world", "trackingStuff", trackers);
+                  refreshChips();
+                });
+
+                modalHtml.find('.manage-input-recharge').off('change').on('change', async function () {
+                  const id = $(this).data('id');
+                  const t = trackers.find(x => x.id === id);
+                  if (!t) return;
+                  t.rechargeFormula = $(this).val()?.trim() || "";
+                  await actor.setFlag("world", "trackingStuff", trackers);
+                  refreshChips();
+                });
+
+                modalHtml.find('.manage-select-reset').off('change').on('change', async function () {
+                  const id = $(this).data('id');
+                  const t = trackers.find(x => x.id === id);
+                  if (!t) return;
+                  t.resetOn = $(this).val();
+                  await actor.setFlag("world", "trackingStuff", trackers);
+                });
+
+                modalHtml.find('.btn-manage-remove').off('click').on('click', async function () {
+                  const id = $(this).data('id');
+                  const t = trackers.find(x => x.id === id);
+                  if (!t) return;
+
+                  if (t.type === "resource" && t.isCustom && t.resourceSlot) {
+                    await actor.update({ [`system.resources.${t.resourceSlot}`]: { label: "", value: 0, max: 0 } });
+                  }
+
+                  trackers = trackers.filter(x => x.id !== id);
+                  await actor.setFlag("world", "trackingStuff", trackers);
+                  refreshChips();
+
+                  modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
+                  bindActiveTrackerEvents();
+
+                  const addBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${id}"]`);
+                  if (addBtn.length) {
+                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.74em; font-weight: 700; height: 20px; padding: 0 6px; border-radius: 3px; border: 1px solid #7289da; background: #7289da; color: #fff;').text('Add');
+                  }
+                });
+              };
+
+              bindActiveTrackerEvents();
+
               modalHtml.find('.btn-add-trackable-item').on('click', async function () {
                 const id = $(this).data('id');
                 const itemData = available.find(x => x.id === id);
@@ -2134,6 +2248,8 @@ Click a numbered modifier badge to execute a roll.</div>
                 await actor.setFlag("world", "trackingStuff", trackers);
                 $(this).prop('disabled', true).css({ opacity: 0.5, background: '#eee', color: '#777' }).text('Added');
                 refreshChips();
+                modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
+                bindActiveTrackerEvents();
               });
 
               modalHtml.find('#btn-submit-new-custom').on('click', async function () {
@@ -2190,11 +2306,14 @@ Click a numbered modifier badge to execute a roll.</div>
 
                 await actor.setFlag("world", "trackingStuff", trackers);
                 refreshChips();
-                addDialog.close();
+                modalHtml.find('#new-custom-name').val('');
+                modalHtml.find('#new-custom-formula').val('');
+                modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
+                bindActiveTrackerEvents();
                 ui.notifications.info(`Added "${name}" to Tracking Stuff!`);
               });
             }
-          }, { width: 380 }).render(true);
+          }, { width: 420 }).render(true);
         });
       }
     };
