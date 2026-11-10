@@ -2492,16 +2492,16 @@ Click a numbered modifier badge to execute a roll.</div>
       <!-- LEFT SIDEBAR: Persistent (~215px) -->
       <div id="dialog-sidebar-left" style="width: 215px; min-width: 215px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #d2d7df; padding-right: 8px; height: 100%;">
         
-        <!-- Actor Portrait & Name Header -->
-        <div style="display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px 6px;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid #c0c6ce; object-fit: cover; flex-shrink: 0;" />
-          <div style="flex: 1; min-width: 0;">
-            <div style="font-weight: 700; font-size: 0.84em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${actor.name}">${actor.name}</div>
+        <!-- Actor Portrait & Name Hero Header -->
+        <div style="display: flex; flex-direction: column; align-items: center; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 6px 4px; flex-shrink: 0;">
+          <img src="${portraitSrc}" alt="${actor.name}" style="width: 72px; height: 72px; border-radius: 6px; border: 1px solid #b5bec8; object-fit: cover; object-position: top; box-shadow: 0 1px 3px rgba(0,0,0,0.12);" />
+          <div style="font-weight: 700; font-size: 0.88em; color: #2b3a4a; margin-top: 4px; text-align: center; max-width: 195px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${actor.name}">
+            ${actor.name}
           </div>
         </div>
 
         <!-- Ability Scores (2-Col Grid) -->
-        <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px;">
+        <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 4px; flex-shrink: 0;">
           <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase;">
             <i class="fas fa-hand-fist" style="margin-right: 3px;"></i> Ability Scores
           </div>
@@ -2512,6 +2512,29 @@ Click a numbered modifier badge to execute a roll.</div>
         <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
           ${trackingHelper.html}
         </div>
+
+        ${game.user.isGM ? `
+        <!-- GM Tools Panel -->
+        <div style="background: rgba(114, 137, 218, 0.08); border: 1px dashed #7289da; border-radius: 4px; padding: 4px; margin-top: auto; flex-shrink: 0;">
+          <div style="font-weight: 700; font-size: 0.66em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; display: flex; align-items: center; justify-content: space-between;">
+            <span><i class="fas fa-crown" style="color: #d97706; margin-right: 3px;"></i> GM Tools</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px;">
+            <button type="button" id="btn-gm-d20-presets" title="Open D20 Modifier Presets" style="height: 22px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
+              <i class="fas fa-sliders" style="color: #4b5d88;"></i> Presets
+            </button>
+            <button type="button" id="btn-gm-action-editor" title="Open Action Editor" style="height: 22px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
+              <i class="fas fa-pen-to-square" style="color: #2b7489;"></i> Actions
+            </button>
+            <button type="button" id="btn-gm-action-generator" title="Generate Actions from Sheet" style="height: 22px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
+              <i class="fas fa-wand-magic-sparkles" style="color: #7289da;"></i> Generate
+            </button>
+            <button type="button" id="btn-gm-storage-inspector" title="Open Persistent Storage Inspector" style="height: 22px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
+              <i class="fas fa-database" style="color: #d97706;"></i> Storage
+            </button>
+          </div>
+        </div>
+        ` : ''}
 
       </div>
 
@@ -2594,6 +2617,14 @@ Click a numbered modifier badge to execute a roll.</div>
         // Initialize D20 event handlers and Tracking Stuff
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
+
+        // GM Tool Buttons
+        if (game.user.isGM) {
+          html.find("#btn-gm-d20-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.());
+          html.find("#btn-gm-action-editor").on("click", () => window.CustomRolls?.openActionEditor?.());
+          html.find("#btn-gm-action-generator").on("click", () => window.CustomRolls?.openActionGenerator?.());
+          html.find("#btn-gm-storage-inspector").on("click", () => window.CustomRolls?.openStorageInspector?.());
+        }
 
         // Persistent Weapon Roll Handler (Keeps dialog open)
         html.find("#btn-roll-weapon-now").on("click", async () => {
@@ -2745,6 +2776,96 @@ Click a numbered modifier badge to execute a roll.</div>
 
   // Unified Combat Remote alias
   window.CustomRolls.openCombatRemote = window.CustomRolls.openActionDialog;
+
+  // Persistent Storage Inspector Helper
+  window.CustomRolls.openStorageInspector = function () {
+    const store = foundry.utils.deepClone(game.settings.get("world", "customRollProfiles") || {});
+    const actorIds = Object.keys(store);
+    if (actorIds.length === 0) return ui.notifications.info("Persistent storage is currently empty.");
+
+    function renderInspector() {
+      let sectionsHtml = "";
+      for (const actorId of Object.keys(store)) {
+        const data = store[actorId];
+        const actorName = data._actorName || game.actors.get(actorId)?.name || actorId;
+        const weapons = Object.keys(data.attackConfigs || {});
+        const spells = Object.keys(data.spellConfigs || {});
+        const d20 = Object.keys(data.d20Profiles || {});
+        const quick = Object.keys(data.quickMacroProfiles || {});
+
+        const buildItemList = (catKey, items) => {
+          if (!items.length) return `<div style="color: #888; font-size: 0.8em; margin-left: 10px;">None</div>`;
+          return items.map(item => {
+            const displayLabel = catKey === "quickMacroProfiles" ? (data[catKey]?.[item]?.chatCardTitle || data[catKey]?.[item]?.macroName || item) : item;
+            return `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 6px; margin: 2px 0 2px 10px; background: #fff; border: 1px solid #ddd; border-radius: 3px; font-size: 0.82em;">
+                <span>${displayLabel}</span>
+                <button type="button" class="del-item-btn" data-actor="${actorId}" data-cat="${catKey}" data-item="${item}" style="width: auto; height: 20px; line-height: 18px; padding: 0 5px; color: #a33; border: none; background: transparent; cursor: pointer;">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>`;
+          }).join("");
+        };
+
+        sectionsHtml += `
+          <div style="border: 1px solid #ccc; border-radius: 5px; margin-bottom: 10px; background: #fafafa; padding: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #bbb; padding-bottom: 4px; margin-bottom: 6px;">
+              <strong style="color: #2b3a4a; font-size: 0.95em;">${actorName}</strong>
+              <button type="button" class="del-actor-btn" data-actor="${actorId}" style="height: 22px; line-height: 20px; padding: 0 6px; font-size: 0.75em; color: #fff; background: #a33; border: 1px solid #722; border-radius: 3px; cursor: pointer;">
+                Wipe Actor Storage
+              </button>
+            </div>
+            <div style="font-weight: 600; font-size: 0.8em; color: #4b5d88; margin-top: 4px;">WEAPONS (${weapons.length})</div>
+            ${buildItemList("attackConfigs", weapons)}
+            <div style="font-weight: 600; font-size: 0.8em; color: #4b5d88; margin-top: 6px;">SPELLS (${spells.length})</div>
+            ${buildItemList("spellConfigs", spells)}
+            <div style="font-weight: 600; font-size: 0.8em; color: #4b5d88; margin-top: 6px;">D20 PRESETS (${d20.length})</div>
+            ${buildItemList("d20Profiles", d20)}
+            <div style="font-weight: 600; font-size: 0.8em; color: #c9510c; margin-top: 6px;">QUICK MACROS (${quick.length})</div>
+            ${buildItemList("quickMacroProfiles", quick)}
+          </div>`;
+      }
+
+      const d = new Dialog({
+        title: "Persistent Storage Inspector",
+        content: `<div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">${sectionsHtml}</div>`,
+        buttons: { close: { label: "Done" } },
+        render: (html) => {
+          html.find('.del-item-btn').on('click', async (e) => {
+            const aId = $(e.currentTarget).data('actor');
+            const cat = $(e.currentTarget).data('cat');
+            const item = $(e.currentTarget).data('item');
+            if (cat === "quickMacroProfiles") {
+              const macroData = store[aId]?.[cat]?.[item];
+              const targetName = macroData?.chatCardTitle || macroData?.macroName;
+              if (targetName) {
+                const m = game.macros.find(macro => macro.name === targetName);
+                if (m) await m.delete();
+              }
+            }
+            delete store[aId][cat][item];
+            await game.settings.set("world", "customRollProfiles", store);
+            ui.notifications.info(`Removed "${item}" from storage.`);
+            d.close();
+            renderInspector();
+          });
+          html.find('.del-actor-btn').on('click', async (e) => {
+            const aId = $(e.currentTarget).data('actor');
+            const confirmed = await Dialog.confirm({ title: "Confirm Wipe", content: "<p>Delete ALL persistent data for this actor?</p>" });
+            if (confirmed) {
+              delete store[aId];
+              await game.settings.set("world", "customRollProfiles", store);
+              ui.notifications.warn("Actor profile deleted.");
+              d.close();
+              renderInspector();
+            }
+          });
+        }
+      }, { width: 420, height: "auto" });
+      d.render(true);
+    }
+    renderInspector();
+  };
 
 
 
