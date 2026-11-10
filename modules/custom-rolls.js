@@ -2472,32 +2472,42 @@ Click a numbered modifier badge to execute a roll.</div>
           <i class="fas fa-magic"></i> Spells (${spellKeys.length})
         </button>
         <button type="button" id="tab-btn-d20" style="flex: 1; padding: 6px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="fas fa-dice-d20"></i> Dice Stuff
+          <i class="fas fa-dice-d20"></i> Checks & Saves
         </button>
       </div>
 
       <!-- Weapons Section -->
-      <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column;">
-        <div id="weapon-cards-container" style="max-height: 55vh; overflow-y: auto; padding-right: 4px;">
+      <div id="section-weapon" style="display: ${currentMode === 'weapon' ? 'flex' : 'none'}; flex-direction: column; height: 500px; max-height: 500px; overflow-y: auto;">
+        <div id="weapon-cards-container" style="max-height: 270px; overflow-y: auto; padding-right: 4px;">
           ${renderWeaponCards()}
         </div>
         <div id="weapon-options-container">
           ${getSelectedWeaponOptionsHtml()}
         </div>
+        <div style="margin-top: auto; padding-top: 8px;">
+          <button type="button" id="btn-roll-weapon-now" ${attackNames.length === 0 ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.9em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fas fa-dice-d20"></i> Roll Attack
+          </button>
+        </div>
       </div>
 
       <!-- Spells Section -->
-      <div id="section-spell" style="display: ${currentMode === 'spell' ? 'flex' : 'none'}; flex-direction: column;">
-        <div id="spell-cards-container" style="max-height: 55vh; overflow-y: auto; padding-right: 4px;">
+      <div id="section-spell" style="display: ${currentMode === 'spell' ? 'flex' : 'none'}; flex-direction: column; height: 500px; max-height: 500px; overflow-y: auto;">
+        <div id="spell-cards-container" style="max-height: 270px; overflow-y: auto; padding-right: 4px;">
           ${renderSpellCards()}
         </div>
         <div id="spell-options-container" style="margin-top: 6px;">
           ${spellConfigs[selectedSpellKey] ? getUpcastOptionsHtml(spellConfigs[selectedSpellKey]) : ""}
         </div>
+        <div style="margin-top: auto; padding-top: 8px;">
+          <button type="button" id="btn-cast-spell-now" ${spellKeys.length === 0 ? 'disabled' : ''} style="width: 100%; height: 32px; font-weight: 700; font-size: 0.9em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fas fa-magic"></i> Cast Spell
+          </button>
+        </div>
       </div>
 
       <!-- D20 Checks & Saves Section -->
-      <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column;">
+      <div id="section-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; height: 500px; max-height: 500px; overflow-y: auto;">
         ${d20Data.html}
       </div>
 
@@ -2509,109 +2519,106 @@ Click a numbered modifier badge to execute a roll.</div>
   `;
 
     new Dialog({
-      title: `${actor.name}: Actions & Dice Stuff`,
+      title: `${actor.name}: Dice Stuff`,
       content: content,
       buttons: {
-        execute: {
-          icon: '<i class="fas fa-dice-d20" style="margin-right: 6px;"></i>',
-          label: currentMode === "weapon" ? "Roll Attack" : "Cast Spell",
-          callback: async (html) => {
-            if (currentMode === "weapon") {
-              const rawConfig = attacks[selectedWeaponKey];
-              if (!rawConfig) return;
-              const config = foundry.utils.duplicate(rawConfig);
-
-              if (config.hasGWM && html.find("#gwm-toggle").is(":checked")) {
-                config.attackCircumstanceModifier = (Number(config.attackCircumstanceModifier) || 0) - 5;
-                config.damageModifier = (Number(config.damageModifier) || 0) + 10;
-                config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [GWM/SS -5/+10]`;
-              }
-
-              if (config.additionalDamageComponents) {
-                html.find(".extra-dmg-toggle").each(function () {
-                  const idx = $(this).data("index");
-                  if (config.additionalDamageComponents[idx]) {
-                    config.additionalDamageComponents[idx].isActive = $(this).is(":checked");
-                  }
-                });
-              }
-
-              if (!globalThis.attackSocket) {
-                return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
-              }
-
-              config.targetIds = Array.from(game.user.targets).map(t => t.id);
-              await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
-            } else {
-              const rawConfig = spellConfigs[selectedSpellKey];
-              if (!rawConfig) return;
-
-              const castLvl = Number(html.find("#castLevelSelect").val()) ?? Number(rawConfig.baseLevel) ?? 0;
-              const { cfg: config } = getEffectiveSpellConfig(rawConfig, castLvl);
-
-              const shouldDeduct = html.find("#deductSlotToggle").is(":checked");
-              if (!shouldDeduct || castLvl === 0) {
-                config.skipSlotDeduction = true;
-              } else {
-                const slotKey = `spell${castLvl}`;
-                const currentSlotVal = Number(actor.system.spells?.[slotKey]?.value) || 0;
-                if (currentSlotVal <= 0) {
-                  const proceed = await Dialog.confirm({
-                    title: "No Spell Slots Remaining",
-                    content: `<p><strong>${actor.name}</strong> has <strong>0</strong> Level ${castLvl} spell slots remaining. Cast anyway?</p>`
-                  });
-                  if (!proceed) return;
-                  config.skipSlotDeduction = true;
-                }
-              }
-
-              if (config.damageMode === "choice" && !["heal", "temp_hp", "max_hp"].includes(config.resolutionMethod)) {
-                const choiceOptions = [
-                  "acid", "cold", "fire", "force", "lightning",
-                  "necrotic", "poison", "psychic", "radiant", "thunder"
-                ].map(t => `<option value="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('');
-
-                let choiceConfirmed = false;
-                await new Promise((resolve) => {
-                  new Dialog({
-                    title: `${config.spellName}: Damage Type`,
-                    content: `<div style="padding: 6px;"><select id="chosenType" style="width:100%; height:30px;">${choiceOptions}</select></div>`,
-                    buttons: {
-                      ok: { label: "Confirm", callback: (chHtml) => { choiceConfirmed = true; config.damageType = chHtml.find("#chosenType").val(); } },
-                      cancel: { label: "Cancel" }
-                    },
-                    default: "ok",
-                    close: () => resolve()
-                  }, { width: 260 }).render(true);
-                });
-                if (!choiceConfirmed) return;
-              }
-
-              if (!globalThis.attackSocket) {
-                return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
-              }
-
-              config.targetIds = Array.from(game.user.targets).map(t => t.id);
-              await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
-            }
-          }
-        },
-        cancel: { label: "Cancel" }
+        close: { label: "Close" }
       },
-      default: "execute",
+      default: "close",
       render: (html) => {
-        setTimeout(() => html.closest('.app.dialog').css({ height: "auto" }), 10);
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
         const btnD20 = html.find("#tab-btn-d20");
         const secWeapon = html.find("#section-weapon");
         const secSpell = html.find("#section-spell");
         const secD20 = html.find("#section-d20");
-        const execBtn = html.find(".dialog-button.execute");
 
         // Initialize D20 event handlers and Tracking Stuff
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
+
+        // Persistent Weapon Roll Handler (Keeps dialog open)
+        html.find("#btn-roll-weapon-now").on("click", async () => {
+          const rawConfig = attacks[selectedWeaponKey];
+          if (!rawConfig) return;
+          const config = foundry.utils.duplicate(rawConfig);
+
+          if (config.hasGWM && html.find("#gwm-toggle").is(":checked")) {
+            config.attackCircumstanceModifier = (Number(config.attackCircumstanceModifier) || 0) - 5;
+            config.damageModifier = (Number(config.damageModifier) || 0) + 10;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [GWM/SS -5/+10]`;
+          }
+
+          if (config.additionalDamageComponents) {
+            html.find(".extra-dmg-toggle").each(function () {
+              const idx = $(this).data("index");
+              if (config.additionalDamageComponents[idx]) {
+                config.additionalDamageComponents[idx].isActive = $(this).is(":checked");
+              }
+            });
+          }
+
+          if (!globalThis.attackSocket) {
+            return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
+          }
+
+          config.targetIds = Array.from(game.user.targets).map(t => t.id);
+          await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
+        });
+
+        // Persistent Spell Cast Handler (Keeps dialog open)
+        html.find("#btn-cast-spell-now").on("click", async () => {
+          const rawConfig = spellConfigs[selectedSpellKey];
+          if (!rawConfig) return;
+
+          const castLvl = Number(html.find("#castLevelSelect").val()) ?? Number(rawConfig.baseLevel) ?? 0;
+          const { cfg: config } = getEffectiveSpellConfig(rawConfig, castLvl);
+
+          const shouldDeduct = html.find("#deductSlotToggle").is(":checked");
+          if (!shouldDeduct || castLvl === 0) {
+            config.skipSlotDeduction = true;
+          } else {
+            const slotKey = `spell${castLvl}`;
+            const currentSlotVal = Number(actor.system.spells?.[slotKey]?.value) || 0;
+            if (currentSlotVal <= 0) {
+              const proceed = await Dialog.confirm({
+                title: "No Spell Slots Remaining",
+                content: `<p><strong>${actor.name}</strong> has <strong>0</strong> Level ${castLvl} spell slots remaining. Cast anyway?</p>`
+              });
+              if (!proceed) return;
+              config.skipSlotDeduction = true;
+            }
+          }
+
+          if (config.damageMode === "choice" && !["heal", "temp_hp", "max_hp"].includes(config.resolutionMethod)) {
+            const choiceOptions = [
+              "acid", "cold", "fire", "force", "lightning",
+              "necrotic", "poison", "psychic", "radiant", "thunder"
+            ].map(t => `<option value="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('');
+
+            let choiceConfirmed = false;
+            await new Promise((resolve) => {
+              new Dialog({
+                title: `${config.spellName}: Damage Type`,
+                content: `<div style="padding: 6px;"><select id="chosenType" style="width:100%; height:30px;">${choiceOptions}</select></div>`,
+                buttons: {
+                  ok: { label: "Confirm", callback: (chHtml) => { choiceConfirmed = true; config.damageType = chHtml.find("#chosenType").val(); } },
+                  cancel: { label: "Cancel" }
+                },
+                default: "ok",
+                close: () => resolve()
+              }, { width: 260 }).render(true);
+            });
+            if (!choiceConfirmed) return;
+          }
+
+          if (!globalThis.attackSocket) {
+            return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
+          }
+
+          config.targetIds = Array.from(game.user.targets).map(t => t.id);
+          await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+        });
 
         function updateCardStyles() {
           html.find(".weapon-card").each(function () {
@@ -2642,21 +2649,15 @@ Click a numbered modifier badge to execute a roll.</div>
             secWeapon.show();
             secSpell.hide();
             secD20.hide();
-            execBtn.show().html('<i class="fas fa-dice-d20" style="margin-right: 6px;"></i> Roll Attack');
-            execBtn.prop("disabled", attackNames.length === 0);
           } else if (mode === "spell") {
             secSpell.show();
             secWeapon.hide();
             secD20.hide();
-            execBtn.show().html('<i class="fas fa-magic" style="margin-right: 6px;"></i> Cast Spell');
-            execBtn.prop("disabled", spellKeys.length === 0);
           } else {
             secD20.show();
             secWeapon.hide();
             secSpell.hide();
-            execBtn.hide();
           }
-          setTimeout(() => html.closest('.app.dialog').css({ height: "auto" }), 10);
         }
 
         btnWeapon.on("click", () => setTab("weapon"));
@@ -2678,7 +2679,7 @@ Click a numbered modifier badge to execute a roll.</div>
         });
       }
     }, {
-      width: 630,
+      width: 640,
       height: "auto",
       resizable: true
     }).render(true);
