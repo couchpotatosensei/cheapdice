@@ -344,7 +344,7 @@ function registerSocketHandlers() {
 
     async function _rollDamageDice() {
       if (damageDiceCount <= 0 || !cleanDieSize || maxDieValue <= 0) {
-        return { finalCombinedDieResult: 0, allDieRolls: [], rerollSummary: [] };
+        return { finalCombinedDieResult: 0, finalDieResults: [], allDieRolls: [], rerollSummary: [] };
       }
       const damageDieFormula = `1${cleanDieSize}`;
       const allDieRolls = [];
@@ -366,7 +366,7 @@ function registerSocketHandlers() {
         }
       }
       const finalCombinedDieResult = finalDieResults.reduce((a, b) => a + b, 0);
-      return { finalCombinedDieResult, allDieRolls, rerollSummary };
+      return { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary };
     }
 
     async function _rollAdditionalDamage(selectedDamageComponents, isCritical) {
@@ -407,7 +407,7 @@ function registerSocketHandlers() {
       return { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults: results, allAdditionalDamageRolls };
     }
 
-    function _generateDamageDetailsHTML(flavorText, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary) {
+    function _generateDamageDetailsHTML(flavorText, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary, finalDieResults = []) {
       let html = `<p style="text-align: center; font-weight: bold; margin: 5px 0;">${flavorText}</p>`;
       if (rerollSummary.length > 0) {
         html += `<div style="padding: 5px; margin: 5px 0; border: 1px solid #7289DA; border-radius: 4px; background-color: #e6eaff; font-size: 0.85em;">
@@ -427,6 +427,7 @@ function registerSocketHandlers() {
         <div style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; background-color: #f8f9fa;">
           <p style="margin: 0; font-weight: 600; font-size: 0.9em;">Results (${damageDiceCount > 0 && cleanDieSize ? `${damageDiceCount}${cleanDieSize}` : 'Flat Dmg'})</p>
           <span style="font-weight: bold; font-size: 1.5em;">${finalCombinedDieResult}</span>
+          ${finalDieResults.length > 0 ? `<p style="margin: 2px 0 0; font-size: 0.8em; color: #555;">Dice: [${finalDieResults.join(', ')}]</p>` : ''}
         </div>
       </div>`;
       const totalDamageMods = damageBonus + flatBonus;
@@ -444,7 +445,7 @@ function registerSocketHandlers() {
     }
 
     const { attackRoll1, rollHtml1, rerollSummary1, attackRoll2, rollHtml2, rerollSummary2, extraRolls, isCritical } = await _rollAttackAndCheckCrit();
-    const { finalCombinedDieResult, allDieRolls, rerollSummary } = await _rollDamageDice();
+    const { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary } = await _rollDamageDice();
     const activeComponents = (additionalDamageComponents || []).filter(c => c.isActive);
     const { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults, allAdditionalDamageRolls } = await _rollAdditionalDamage(activeComponents, isCritical);
 
@@ -478,7 +479,7 @@ function registerSocketHandlers() {
     const finalRolls = [attackRoll1, ...extraRolls, ...allDieRolls, ...allAdditionalDamageRolls];
     const baseDamageFormulaSummary = damageDiceCount > 0 && cleanDieSize ? `${damageDiceCount}${cleanDieSize}` : "Flat Dmg";
     const baseDamageFlavor = `${damageType.charAt(0).toUpperCase() + damageType.slice(1)} Damage (${baseDamageFormulaSummary})`;
-    const normalDamageHTML = _generateDamageDetailsHTML(baseDamageFlavor, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary);
+    const normalDamageHTML = _generateDamageDetailsHTML(baseDamageFlavor, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary, finalDieResults);
 
     let additionalDamageSectionHTML = '';
     let critAdditionalDiceList = '';
