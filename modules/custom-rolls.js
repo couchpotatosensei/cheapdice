@@ -3558,26 +3558,62 @@ Click a numbered modifier badge to execute a roll.</div>
           document.head.appendChild(styleTag);
         }
 
-        // Header Theme Selector Injection (Right beside GM Tools / Close)
+        // Header Theme Button Injection (Works reliably with window dragging)
         const header = dialogApp.find(".window-header");
-        if (header.find(".dice-stuff-theme-select").length === 0) {
-          const themeOptions = THEMES.map(t => `<option value="${t.key}" ${savedTheme === t.key ? "selected" : ""}>Theme: ${t.label}</option>`).join("");
-          const themeSelect = $(`
-            <select class="dice-stuff-theme-select" title="Switch Dice Stuff Theme">
-              ${themeOptions}
-            </select>
+        if (header.find(".dice-stuff-theme-btn").length === 0) {
+          const currentThemeObj = THEMES.find(t => t.key === savedTheme) || THEMES[0];
+          const themeBtn = $(`
+            <a class="header-button dice-stuff-theme-btn" title="Current Theme: ${currentThemeObj.label} (Click to switch)" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas fa-palette"></i> <span class="theme-label-text">${currentThemeObj.label}</span>
+            </a>
           `);
-          themeSelect.on("change", (e) => {
-            const chosen = $(e.target).val();
-            applyTheme(chosen);
+
+          themeBtn.on("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const cur = localStorage.getItem(THEME_STORAGE_KEY) || "default";
+            new Dialog({
+              title: "Choose Dice Stuff Theme",
+              content: `
+                <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
+                  <button type="button" class="btn-select-theme ${cur === 'default' ? 'active-theme' : ''}" data-theme="default" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: ${cur === 'default' ? '#e2e8f0' : '#fff'}; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-sun" style="color: #64748b; width: 16px;"></i> Default (Foundry Standard)
+                  </button>
+                  <button type="button" class="btn-select-theme ${cur === 'slate' ? 'active-theme' : ''}" data-theme="slate" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #334155; background: ${cur === 'slate' ? '#1e293b' : '#0f172a'}; color: #f8fafc; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-moon" style="color: #38bdf8; width: 16px;"></i> Slate & Obsidian
+                  </button>
+                  <button type="button" class="btn-select-theme ${cur === 'arcane' ? 'active-theme' : ''}" data-theme="arcane" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #78350f; background: ${cur === 'arcane' ? '#252026' : '#121216'}; color: #fef3c7; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-scroll" style="color: #d97706; width: 16px;"></i> Arcane Midnight
+                  </button>
+                  <button type="button" class="btn-select-theme ${cur === 'glass' ? 'active-theme' : ''}" data-theme="glass" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid rgba(255,255,255,0.2); background: ${cur === 'glass' ? 'rgba(56,189,248,0.2)' : 'rgba(15,23,42,0.9)'}; color: #ffffff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-gem" style="color: #38bdf8; width: 16px;"></i> Tactical Glass
+                  </button>
+                </div>
+              `,
+              buttons: {
+                close: { label: "Cancel" }
+              },
+              default: "close",
+              render: (themeHtml) => {
+                themeHtml.find(".btn-select-theme").on("click", function() {
+                  const selectedKey = $(this).data("theme");
+                  applyTheme(selectedKey);
+                  const matched = THEMES.find(t => t.key === selectedKey) || THEMES[0];
+                  themeBtn.find(".theme-label-text").text(matched.label);
+                  themeBtn.attr("title", `Current Theme: ${matched.label} (Click to switch)`);
+                  themeHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                });
+              }
+            }, { width: 260 }).render(true);
           });
 
           // Insert before GM tools if present, else before close button
           const gmBtn = header.find(".gm-tools-header-btn");
           if (gmBtn.length > 0) {
-            gmBtn.before(themeSelect);
+            gmBtn.before(themeBtn);
           } else {
-            header.find(".close").before(themeSelect);
+            header.find(".close").before(themeBtn);
           }
         }
 
@@ -3637,10 +3673,10 @@ Click a numbered modifier badge to execute a roll.</div>
               }, { width: 260 }).render(true);
             });
             header.find(".close").before(btn);
-            // Ensure Theme Selector stays to the left of GM Tools button
-            const existingSelect = header.find(".dice-stuff-theme-select");
-            if (existingSelect.length > 0) {
-              btn.before(existingSelect);
+            // Ensure Theme Button stays to the left of GM Tools button
+            const existingThemeBtn = header.find(".dice-stuff-theme-btn");
+            if (existingThemeBtn.length > 0) {
+              btn.before(existingThemeBtn);
             }
           }
         }
