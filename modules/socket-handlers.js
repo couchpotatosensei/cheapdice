@@ -2588,6 +2588,35 @@ function registerSocketHandlers() {
     }
   });
 
+  socket.register("saveProfileDataAsGM", async (actorId, category, data, userId) => {
+    const ALLOWED_CATEGORIES = new Set(["hudAssignedSlots", "attackConfigs", "spellConfigs"]);
+    if (!ALLOWED_CATEGORIES.has(category)) {
+      console.warn(`[growingpotatoes] saveProfileDataAsGM: rejected invalid category "${category}"`);
+      return false;
+    }
+
+    const actor = game.actors.get(actorId);
+    if (!actor) return false;
+
+    const callingUser = game.users.get(userId);
+    if (callingUser && !callingUser.isGM && !actor.testUserPermission(callingUser, "OWNER")) {
+      console.warn(`[growingpotatoes] saveProfileDataAsGM: User ${callingUser.name} lacks ownership permission on actor ${actor.name}`);
+      return false;
+    }
+
+    const isWorldSetting = game.settings.settings.has("world.customRollProfiles");
+    const scope = isWorldSetting ? "world" : MODULE_ID;
+    const key = isWorldSetting ? "customRollProfiles" : SETTINGS.CUSTOM_ROLL_PROFILES;
+    const store = foundry.utils.deepClone(game.settings.get(scope, key) || {});
+    if (!store[actor.id]) store[actor.id] = {};
+    store[actor.id][category] = data;
+    store[actor.id]._actorName = actor.name;
+    await game.settings.set(scope, key, store);
+
+    await actor.setFlag("world", category, data, { recursive: false });
+    return true;
+  });
+
   socket.register("closeMusicForAll", async () => {
     if (window._activeMusicPopup) {
       window._activeMusicPopup.close();

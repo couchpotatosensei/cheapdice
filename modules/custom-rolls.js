@@ -27,6 +27,13 @@ export function getProfileData(actor, category) {
 
 export async function setProfileData(actor, category, data) {
   if (!actor) return;
+  if (!game.user.isGM) {
+    const ALLOWED_CATEGORIES = new Set(["hudAssignedSlots", "attackConfigs", "spellConfigs"]);
+    if (ALLOWED_CATEGORIES.has(category) && globalThis.attackSocket?.executeAsGM) {
+      return await globalThis.attackSocket.executeAsGM("saveProfileDataAsGM", actor.id, category, data, game.user.id);
+    }
+    return await actor.setFlag?.("world", category, data, { recursive: false });
+  }
   const isWorldSetting = game.settings.settings.has("world.customRollProfiles");
   const scope = isWorldSetting ? "world" : MODULE_ID;
   const key = isWorldSetting ? "customRollProfiles" : SETTINGS.CUSTOM_ROLL_PROFILES;
@@ -970,12 +977,12 @@ export function initCustomRolls() {
 
     const inspectorHtml = `
       <!-- Live Description Box Card -->
-      <div style="flex: 1; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 6px 8px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05); min-height: 150px;">
-        <div style="border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px;">
-          <div id="desc-title-v2" style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">D20 Test Overview</div>
-          <div id="desc-subtitle-v2" style="font-size: 0.72em; color: #777;">Information Pane</div>
+      <div style="flex: 1; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 8px 10px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05); min-height: 150px;">
+        <div style="border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 6px;">
+          <div id="desc-title-v2" style="font-weight: 800; font-size: 1.15em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">D20 Test Overview</div>
+          <div id="desc-subtitle-v2" style="font-size: 0.85em; color: #666; font-weight: 600;">Information Pane</div>
         </div>
-        <div id="desc-body-v2" style="font-size: 0.78em; line-height: 1.4; color: #444; overflow-y: auto; flex: 1; white-space: pre-wrap;">Select any ability, saving throw, skill, or tool name to inspect its details and usage rules here.
+        <div id="desc-body-v2" style="font-size: 1.05em; line-height: 1.5; color: #333; overflow-y: auto; flex: 1; white-space: pre-wrap;">Select any ability, saving throw, skill, or tool name to inspect its details and usage rules here.
 
 Click a numbered modifier badge to execute a roll.</div>
       </div>
@@ -1378,7 +1385,7 @@ Click a numbered modifier badge to execute a roll.</div>
     }
 
     const spellConfigs = window.CustomRolls.getProfileData(actor, "spellConfigs") || actor.getFlag("world", "spellConfigs") || {};
-    const spellKeys = Object.keys(spellConfigs);
+    let spellKeys = Object.keys(spellConfigs);
 
     if (spellKeys.length === 0) {
       return ui.notifications.warn(`No spells configured for ${actor.name}. Run the Spell Generator first.`);
@@ -2668,7 +2675,7 @@ Click a numbered modifier badge to execute a roll.</div>
     const spellConfigs = window.CustomRolls.getProfileData(actor, "spellConfigs") || actor.getFlag("world", "spellConfigs") || {};
 
     let attackNames = Object.keys(attacks);
-    const spellKeys = Object.keys(spellConfigs);
+    let spellKeys = Object.keys(spellConfigs);
 
     let currentMode = initialMode;
     if (currentMode === "weapon" && attackNames.length === 0) {
@@ -2919,28 +2926,23 @@ Click a numbered modifier badge to execute a roll.</div>
           const isSel = name === selectedWeaponKey;
           const d = getWeaponDetails(conf);
           let shortTitle = name;
-          let icon = "fa-hand-fist";
           if (name === "Unarmed Strike") {
             shortTitle = "Unarmed";
-            icon = "fa-hand-fist";
           } else if (name === "Improvised Weapon") {
             shortTitle = "Improvised";
-            icon = "fa-bottle-droplet";
           } else if (name === "Off-Hand Attack") {
             shortTitle = "Off-Hand";
-            icon = "fa-dagger";
           }
 
           return `
             <div class="action-card weapon-card standard-weapon-card" data-key="${name}" style="flex: 1; min-width: 0; border: 2px solid ${isSel ? '#7289da' : '#bcc5d3'}; background: ${isSel ? '#f0f4ff' : '#f8fafc'}; border-radius: 5px; padding: 4px 3px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
-              <div style="display: flex; align-items: center; justify-content: center; gap: 3px; max-width: 100%;">
-                <i class="fas ${icon}" style="font-size: 0.7em; color: ${isSel ? '#7289da' : '#5b6eae'}; flex-shrink: 0;"></i>
-                <span style="font-weight: 700; font-size: 0.75em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${name}">${shortTitle}</span>
+              <div style="display: flex; align-items: center; justify-content: center; max-width: 100%;">
+                <span style="font-weight: 700; font-size: 0.78em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${name}">${shortTitle}</span>
               </div>
-              <div style="font-size: 0.78em; font-weight: 800; color: #235d6e; margin: 1px 0;">
+              <div style="font-size: 0.82em; font-weight: 800; color: #235d6e; margin: 1px 0;">
                 ${d.atkSign}
               </div>
-              <div style="font-size: 0.68em; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: monospace;" title="${d.dmgFormula} (${d.dmgType})">
+              <div style="font-size: 0.72em; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: monospace;" title="${d.dmgFormula} (${d.dmgType})">
                 ${d.dmgFormula}
               </div>
             </div>
@@ -2983,10 +2985,13 @@ Click a numbered modifier badge to execute a roll.</div>
           : "";
 
         return `
-        <div class="action-card spell-card" data-key="${key}" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px;">
+        <div class="action-card spell-card custom-spell-card" data-key="${key}" draggable="true" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: grab; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-            <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a;">${key}</span>
-            <div style="display: flex; align-items: center; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 5px; overflow: hidden; min-width: 0;">
+              <i class="fas fa-grip-vertical" style="color: #aaa; font-size: 0.75em; cursor: grab;"></i>
+              <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${key}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
               ${hudBadge}
               <span style="font-size: 0.75em; font-weight: bold; color: #7289da;">${lvlLabel}</span>
             </div>
@@ -3042,61 +3047,61 @@ Click a numbered modifier badge to execute a roll.</div>
       }
 
       const hudSlotControls = config ? `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #d8dee6;">
-          <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px;">HUD ACTION:</span>
-          <div style="display: inline-flex; gap: 3px;">
-            <button type="button" class="btn-assign-hud-slot ${!curSlot ? 'active' : ''}" data-category="weapons" data-slot="" title="Unassign from HUD" style="height: 20px; line-height: 18px; font-size: 0.70em; font-weight: 600; padding: 0 5px; border-radius: 3px; border: 1px solid ${!curSlot ? '#2b7489' : '#ccc'}; background: ${!curSlot ? '#2b7489' : '#fff'}; color: ${!curSlot ? '#fff' : '#555'}; cursor: pointer;">None</button>
-            <button type="button" class="btn-assign-hud-slot ${curSlot === '1' ? 'active' : ''}" data-category="weapons" data-slot="1" title="Assign to HUD Button 1 (Slot 47)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '1' ? '#2b7489' : '#ccc'}; background: ${curSlot === '1' ? '#2b7489' : '#fff'}; color: ${curSlot === '1' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-1"></i></button>
-            <button type="button" class="btn-assign-hud-slot ${curSlot === '2' ? 'active' : ''}" data-category="weapons" data-slot="2" title="Assign to HUD Button 2 (Slot 48)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '2' ? '#2b7489' : '#ccc'}; background: ${curSlot === '2' ? '#2b7489' : '#fff'}; color: ${curSlot === '2' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-2"></i></button>
-            <button type="button" class="btn-assign-hud-slot ${curSlot === '3' ? 'active' : ''}" data-category="weapons" data-slot="3" title="Assign to HUD Button 3 (Slot 49)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '3' ? '#2b7489' : '#ccc'}; background: ${curSlot === '3' ? '#2b7489' : '#fff'}; color: ${curSlot === '3' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-3"></i></button>
-            <button type="button" class="btn-assign-hud-slot ${curSlot === '4' ? 'active' : ''}" data-category="weapons" data-slot="4" title="Assign to HUD Button 4 (Slot 50)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '4' ? '#2b7489' : '#ccc'}; background: ${curSlot === '4' ? '#2b7489' : '#fff'}; color: ${curSlot === '4' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-4"></i></button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8dee6;">
+          <span style="font-size: 0.82em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px;">HUD ACTION:</span>
+          <div style="display: inline-flex; gap: 4px;">
+            <button type="button" class="btn-assign-hud-slot ${!curSlot ? 'active' : ''}" data-category="weapons" data-slot="" title="Unassign from HUD" style="height: 26px; line-height: 24px; font-size: 0.80em; font-weight: 700; padding: 0 8px; border-radius: 4px; border: 1px solid ${!curSlot ? '#2b7489' : '#ccc'}; background: ${!curSlot ? '#2b7489' : '#fff'}; color: ${!curSlot ? '#fff' : '#555'}; cursor: pointer;">None</button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '1' ? 'active' : ''}" data-category="weapons" data-slot="1" title="Assign to HUD Button 1 (Slot 47)" style="height: 26px; line-height: 24px; font-size: 1.15em; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid ${curSlot === '1' ? '#2b7489' : '#ccc'}; background: ${curSlot === '1' ? '#2b7489' : '#fff'}; color: ${curSlot === '1' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-1"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '2' ? 'active' : ''}" data-category="weapons" data-slot="2" title="Assign to HUD Button 2 (Slot 48)" style="height: 26px; line-height: 24px; font-size: 1.15em; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid ${curSlot === '2' ? '#2b7489' : '#ccc'}; background: ${curSlot === '2' ? '#2b7489' : '#fff'}; color: ${curSlot === '2' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-2"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '3' ? 'active' : ''}" data-category="weapons" data-slot="3" title="Assign to HUD Button 3 (Slot 49)" style="height: 26px; line-height: 24px; font-size: 1.15em; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid ${curSlot === '3' ? '#2b7489' : '#ccc'}; background: ${curSlot === '3' ? '#2b7489' : '#fff'}; color: ${curSlot === '3' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-3"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '4' ? 'active' : ''}" data-category="weapons" data-slot="4" title="Assign to HUD Button 4 (Slot 50)" style="height: 26px; line-height: 24px; font-size: 1.15em; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid ${curSlot === '4' ? '#2b7489' : '#ccc'}; background: ${curSlot === '4' ? '#2b7489' : '#fff'}; color: ${curSlot === '4' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-4"></i></button>
           </div>
         </div>
       ` : "";
 
       return `
         <!-- Weapon Overview Card (Static space taking remainder) -->
-        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 6px 8px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-          <div style="border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px; flex-shrink: 0;">
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 8px 10px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <div style="border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 6px; flex-shrink: 0;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span style="font-weight: 700; font-size: 0.82em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">${selectedWeaponKey || "Weapon Overview"}</span>
-              ${config ? `<span style="font-size: 0.7em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(114, 137, 218, 0.3);">${d.dmgType}</span>` : ""}
+              <span style="font-weight: 800; font-size: 1.15em; color: #2b3a4a; text-transform: uppercase; letter-spacing: 0.5px;">${selectedWeaponKey || "Weapon Overview"}</span>
+              ${config ? `<span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${d.dmgType}</span>` : ""}
             </div>
-            <div style="font-size: 0.7em; color: #777;">${config ? "Attack & Damage Overview" : "Information Pane"}</div>
+            <div style="font-size: 0.82em; color: #666; font-weight: 600;">${config ? "Attack & Damage Overview" : "Information Pane"}</div>
           </div>
-          <div style="font-size: 0.78em; line-height: 1.4; color: #444; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 4px;">
+          <div style="font-size: 0.95em; line-height: 1.45; color: #444; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px;">
             ${config ? `
-              <div style="display: flex; flex-direction: column; gap: 3px; margin-top: 2px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="color: #555; font-size: 0.85em;">Attack:</span>
-                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 0.95em;">1d20 ${d.atkSign}</strong>
+              <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 2px;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <span style="color: #555; font-size: 0.95em; font-weight: 600;">Attack:</span>
+                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">1d20 ${d.atkSign}</strong>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="color: #555; font-size: 0.85em;">Damage:</span>
-                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 0.95em;">${d.dmgFormula} <small style="font-weight: normal; color: #666;">(${d.dmgType.toLowerCase()})</small></strong>
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <span style="color: #555; font-size: 0.95em; font-weight: 600;">Damage:</span>
+                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">${d.dmgFormula} <small style="font-weight: 600; font-size: 0.8em; color: #666;">(${d.dmgType.toLowerCase()})</small></strong>
                 </div>
               </div>
-              ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+              ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">${tagsHtml}</div>` : ""}
               ${hudSlotControls}
 
               <!-- Live Estimated Formula Totals (Expanded & Larger Font) -->
-              <div id="weapon-live-formula-section" style="margin-top: auto; padding-top: 5px; border-top: 1px dashed #bcc5d3; display: flex; flex-direction: column; gap: 3px;">
-                <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px;">
+              <div id="weapon-live-formula-section" style="margin-top: auto; padding-top: 6px; border-top: 1px dashed #bcc5d3; display: flex; flex-direction: column; gap: 4px;">
+                <div style="font-weight: 700; font-size: 0.78em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px;">
                   Estimated Roll Formula
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                  <span style="color: #555; font-size: 0.8em; font-weight: 600;">Total Atk:</span>
-                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 0.95em;">1d20 ${d.atkSign}</strong>
+                  <span style="color: #555; font-size: 0.92em; font-weight: 700;">Total Atk:</span>
+                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">1d20 ${d.atkSign}</strong>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span style="color: #555; font-size: 0.8em; font-weight: 600;">Total Dmg:</span>
-                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 0.95em; font-weight: 700; line-height: 1.35; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 3px 6px;">
+                  <span style="color: #555; font-size: 0.92em; font-weight: 700;">Total Dmg:</span>
+                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800; line-height: 1.4; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 4px 8px;">
                     ${d.dmgFormula} ${d.dmgType.toLowerCase()}
                   </div>
                 </div>
               </div>
             ` : `
-              <div style="color: #888; font-style: italic; margin-top: 6px;">
+              <div style="color: #888; font-style: italic; margin-top: 6px; font-size: 0.95em;">
                 Select a weapon from the list to inspect its attack notation, modifiers, and optional damage components.
               </div>
             `}
@@ -3153,14 +3158,14 @@ Click a numbered modifier badge to execute a roll.</div>
       const curSlot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === "spells" && data?.name === selectedSpellKey)?.[0] || "";
 
       const hudSlotControls = sp ? `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #d8dee6;">
-          <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px;">HUD ACTION:</span>
-          <div style="display: inline-flex; gap: 3px;">
-            <button type="button" class="btn-assign-hud-slot ${!curSlot ? 'active' : ''}" data-category="spells" data-slot="" title="Unassign from HUD" style="height: 20px; line-height: 18px; font-size: 0.70em; font-weight: 600; padding: 0 5px; border-radius: 3px; border: 1px solid ${!curSlot ? '#2b7489' : '#ccc'}; background: ${!curSlot ? '#2b7489' : '#fff'}; color: ${!curSlot ? '#fff' : '#555'}; cursor: pointer;">None</button>
-            <button type="button" class="btn-assign-hud-slot ${curSlot === '1' ? 'active' : ''}" data-category="spells" data-slot="1" title="Assign to HUD Button 1 (Slot 47)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '1' ? '#2b7489' : '#ccc'}; background: ${curSlot === '1' ? '#2b7489' : '#fff'}; color: ${curSlot === '1' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-1"></i></button>
-            <button type="button" class="btn-assign-hud-slot ${curSlot === '2' ? 'active' : ''}" data-category="spells" data-slot="2" title="Assign to HUD Button 2 (Slot 48)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '2' ? '#2b7489' : '#ccc'}; background: ${curSlot === '2' ? '#2b7489' : '#fff'}; color: ${curSlot === '2' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-2"></i></button>
-            <button type="button" class="btn-assign-hud-slot ${curSlot === '3' ? 'active' : ''}" data-category="spells" data-slot="3" title="Assign to HUD Button 3 (Slot 49)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '3' ? '#2b7489' : '#ccc'}; background: ${curSlot === '3' ? '#2b7489' : '#fff'}; color: ${curSlot === '3' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-3"></i></button>
-            <button type="button" class="btn-assign-hud-slot ${curSlot === '4' ? 'active' : ''}" data-category="spells" data-slot="4" title="Assign to HUD Button 4 (Slot 50)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '4' ? '#2b7489' : '#ccc'}; background: ${curSlot === '4' ? '#2b7489' : '#fff'}; color: ${curSlot === '4' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-4"></i></button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8dee6;">
+          <span style="font-size: 0.82em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px;">HUD ACTION:</span>
+          <div style="display: inline-flex; gap: 4px;">
+            <button type="button" class="btn-assign-hud-slot ${!curSlot ? 'active' : ''}" data-category="spells" data-slot="" title="Unassign from HUD" style="height: 26px; line-height: 24px; font-size: 0.80em; font-weight: 700; padding: 0 8px; border-radius: 4px; border: 1px solid ${!curSlot ? '#2b7489' : '#ccc'}; background: ${!curSlot ? '#2b7489' : '#fff'}; color: ${!curSlot ? '#fff' : '#555'}; cursor: pointer;">None</button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '1' ? 'active' : ''}" data-category="spells" data-slot="1" title="Assign to HUD Button 1 (Slot 47)" style="height: 26px; line-height: 24px; font-size: 1.15em; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid ${curSlot === '1' ? '#2b7489' : '#ccc'}; background: ${curSlot === '1' ? '#2b7489' : '#fff'}; color: ${curSlot === '1' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-1"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '2' ? 'active' : ''}" data-category="spells" data-slot="2" title="Assign to HUD Button 2 (Slot 48)" style="height: 26px; line-height: 24px; font-size: 1.15em; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid ${curSlot === '2' ? '#2b7489' : '#ccc'}; background: ${curSlot === '2' ? '#2b7489' : '#fff'}; color: ${curSlot === '2' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-2"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '3' ? 'active' : ''}" data-category="spells" data-slot="3" title="Assign to HUD Button 3 (Slot 49)" style="height: 26px; line-height: 24px; font-size: 1.15em; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid ${curSlot === '3' ? '#2b7489' : '#ccc'}; background: ${curSlot === '3' ? '#2b7489' : '#fff'}; color: ${curSlot === '3' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-3"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '4' ? 'active' : ''}" data-category="spells" data-slot="4" title="Assign to HUD Button 4 (Slot 50)" style="height: 26px; line-height: 24px; font-size: 1.15em; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid ${curSlot === '4' ? '#2b7489' : '#ccc'}; background: ${curSlot === '4' ? '#2b7489' : '#fff'}; color: ${curSlot === '4' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-4"></i></button>
           </div>
         </div>
       ` : "";
@@ -3168,13 +3173,13 @@ Click a numbered modifier badge to execute a roll.</div>
       return `
         <!-- Spell Overview Card -->
         <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px; margin-bottom: 4px;">
-            <span style="font-weight: 700; font-size: 0.85em; color: #2b3a4a;">${selectedSpellKey}</span>
-            <span style="font-size: 0.72em; font-weight: 700; color: #7289da;">${lvlLabel}</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 5px;">
+            <span style="font-weight: 800; font-size: 1.15em; color: #2b3a4a;">${selectedSpellKey}</span>
+            <span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${lvlLabel}</span>
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a;">${d.actionVal}</strong></span>
-            <span>Effect: <strong style="color: #2b3a4a;">${d.valFormula}</strong> <small style="color: #666;">${d.typeLabel}</small></span>
+          <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px;">
+            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">${d.actionVal}</strong></span>
+            <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
           ${hudSlotControls}
@@ -3537,6 +3542,9 @@ Click a numbered modifier badge to execute a roll.</div>
           inspectorD20.css("display", mode === "d20" ? "flex" : "none");
           inspectorWeapon.css("display", mode === "weapon" ? "flex" : "none");
           inspectorSpell.css("display", mode === "spell" ? "flex" : "none");
+
+          if (mode === "weapon") bindWeaponDragAndDrop();
+          if (mode === "spell") bindSpellDragAndDrop();
         }
 
         function updateWeaponOverviewTotals() {
@@ -3686,7 +3694,9 @@ Click a numbered modifier badge to execute a roll.</div>
             }
 
             await window.CustomRolls.setProfileData(actor, "attackConfigs", newAttacks);
-            await actor.setFlag("world", "attackConfigs", newAttacks, { recursive: false });
+            if (game.user.isGM) {
+              await actor.setFlag("world", "attackConfigs", newAttacks, { recursive: false });
+            }
 
             attacks = newAttacks;
             attackNames = Object.keys(attacks);
@@ -3698,6 +3708,75 @@ Click a numbered modifier badge to execute a roll.</div>
         }
 
         bindWeaponDragAndDrop();
+
+        function bindSpellDragAndDrop() {
+          const list = html.find("#section-spell");
+          list.find(".custom-spell-card").off("dragstart dragend dragover dragleave drop");
+
+          list.find(".custom-spell-card").on("dragstart", function (e) {
+            e.originalEvent.dataTransfer.setData("text/plain", $(this).data("key"));
+            e.originalEvent.dataTransfer.effectAllowed = "move";
+            $(this).css("opacity", "0.4");
+          });
+
+          list.find(".custom-spell-card").on("dragend", function () {
+            $(this).css("opacity", "1");
+            list.find(".custom-spell-card").css({ "border-top": "", "border-bottom": "" });
+          });
+
+          list.find(".custom-spell-card").on("dragover", function (e) {
+            e.preventDefault();
+            e.originalEvent.dataTransfer.dropEffect = "move";
+            const rect = this.getBoundingClientRect();
+            const relY = e.clientY - rect.top;
+            if (relY < rect.height / 2) {
+              $(this).css({ "border-top": "3px solid #7289da", "border-bottom": "" });
+            } else {
+              $(this).css({ "border-bottom": "3px solid #7289da", "border-top": "" });
+            }
+          });
+
+          list.find(".custom-spell-card").on("dragleave", function () {
+            $(this).css({ "border-top": "", "border-bottom": "" });
+          });
+
+          list.find(".custom-spell-card").on("drop", async function (e) {
+            e.preventDefault();
+            $(this).css({ "border-top": "", "border-bottom": "" });
+            const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
+            const targetKey = $(this).data("key");
+            if (!draggedKey || draggedKey === targetKey) return;
+
+            const rect = this.getBoundingClientRect();
+            const relY = e.clientY - rect.top;
+            const insertBefore = relY < rect.height / 2;
+
+            const fromIdx = spellKeys.indexOf(draggedKey);
+            const toIdx = spellKeys.indexOf(targetKey);
+            if (fromIdx === -1 || toIdx === -1) return;
+
+            spellKeys.splice(fromIdx, 1);
+            const newTargetIdx = spellKeys.indexOf(targetKey);
+            const finalIdx = insertBefore ? newTargetIdx : newTargetIdx + 1;
+            spellKeys.splice(finalIdx, 0, draggedKey);
+
+            const newSpells = {};
+            for (const k of spellKeys) {
+              if (spellConfigs[k]) newSpells[k] = spellConfigs[k];
+            }
+
+            await window.CustomRolls.setProfileData(actor, "spellConfigs", newSpells);
+            if (game.user.isGM) {
+              await actor.setFlag("world", "spellConfigs", newSpells, { recursive: false });
+            }
+
+            html.find("#section-spell").html(renderSpellCards());
+            bindSpellDragAndDrop();
+            updateCardStyles();
+          });
+        }
+
+        bindSpellDragAndDrop();
 
         html.on("click", ".btn-assign-hud-slot", async function (e) {
           e.stopPropagation();
@@ -3726,7 +3805,9 @@ Click a numbered modifier badge to execute a roll.</div>
           }
 
           await window.CustomRolls.setProfileData(actor, "hudAssignedSlots", assignedSlots);
-          await actor.setFlag("world", "hudAssignedSlots", assignedSlots);
+          if (game.user.isGM) {
+            await actor.setFlag("world", "hudAssignedSlots", assignedSlots);
+          }
 
           ui.notifications.info(slot ? `Assigned "${targetName}" to HUD Button ${slot}.` : `Unassigned "${targetName}" from HUD.`);
 
@@ -3738,6 +3819,7 @@ Click a numbered modifier badge to execute a roll.</div>
             updateWeaponOverviewTotals();
           } else {
             html.find("#section-spell").html(renderSpellCards());
+            bindSpellDragAndDrop();
             updateCardStyles();
             html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
           }
