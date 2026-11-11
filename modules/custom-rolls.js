@@ -3385,13 +3385,42 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate #dialog-panel-center {
               border-right-color: #273142 !important;
             }
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper,
             .app.dialog.cheapdice-theme-slate .custom-weapon-card,
             .app.dialog.cheapdice-theme-slate .custom-spell-card,
+            .app.dialog.cheapdice-theme-slate .standard-weapon-card,
             .app.dialog.cheapdice-theme-slate #section-d20 > div {
               background: #1b212f !important;
               border-color: #2e3b52 !important;
               color: #e2e8f0 !important;
             }
+            .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background: #fff"],
+            .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background:#fff"],
+            .app.dialog.cheapdice-theme-slate #tools-list-container-v2 {
+              background: #141924 !important;
+              border-color: #273142 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row {
+              border-bottom-color: #222b3a !important;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row .entry-label,
+            .app.dialog.cheapdice-theme-slate .entry-label {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .roll-btn-v2 {
+              background: #252f42 !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .standard-weapon-card {
+              background: #1e2536 !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .standard-weapon-card span,
+            .app.dialog.cheapdice-theme-slate .standard-weapon-card div {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .standard-weapon-card.selected,
             .app.dialog.cheapdice-theme-slate .custom-weapon-card.selected,
             .app.dialog.cheapdice-theme-slate .custom-spell-card.selected {
               background: #1e293b !important;
@@ -3403,6 +3432,15 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="background:#f8fafc"] {
               background: #1b212f !important;
               border-color: #2e3b52 !important;
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #desc-title-v2 {
+              color: #f8fafc !important;
+            }
+            .app.dialog.cheapdice-theme-slate #desc-subtitle-v2 {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #desc-body-v2 {
               color: #e2e8f0 !important;
             }
             .app.dialog.cheapdice-theme-slate input,
@@ -3448,13 +3486,42 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-arcane #dialog-panel-center {
               border-right-color: #2e2624 !important;
             }
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper,
             .app.dialog.cheapdice-theme-arcane .custom-weapon-card,
             .app.dialog.cheapdice-theme-arcane .custom-spell-card,
+            .app.dialog.cheapdice-theme-arcane .standard-weapon-card,
             .app.dialog.cheapdice-theme-arcane #section-d20 > div {
               background: #1c1a21 !important;
               border-color: #38312e !important;
               color: #fef3c7 !important;
             }
+            .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background: #fff"],
+            .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background:#fff"],
+            .app.dialog.cheapdice-theme-arcane #tools-list-container-v2 {
+              background: #141318 !important;
+              border-color: #38312e !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row {
+              border-bottom-color: #28242c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row .entry-label,
+            .app.dialog.cheapdice-theme-arcane .entry-label {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .roll-btn-v2 {
+              background: #252026 !important;
+              border-color: #d97706 !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .standard-weapon-card {
+              background: #1f1b24 !important;
+              border-color: #78350f !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .standard-weapon-card span,
+            .app.dialog.cheapdice-theme-arcane .standard-weapon-card div {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .standard-weapon-card.selected,
             .app.dialog.cheapdice-theme-arcane .custom-weapon-card.selected,
             .app.dialog.cheapdice-theme-arcane .custom-spell-card.selected {
               background: #252026 !important;
@@ -3466,6 +3533,15 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="background:#f8fafc"] {
               background: #1c1a21 !important;
               border-color: #38312e !important;
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #desc-title-v2 {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #desc-subtitle-v2 {
+              color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #desc-body-v2 {
               color: #fef3c7 !important;
             }
             .app.dialog.cheapdice-theme-arcane input,
@@ -3513,16 +3589,45 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #dialog-panel-center {
               border-right-color: rgba(255, 255, 255, 0.12) !important;
             }
+            .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper,
             .app.dialog.cheapdice-theme-glass .custom-weapon-card,
             .app.dialog.cheapdice-theme-glass .custom-spell-card,
+            .app.dialog.cheapdice-theme-glass .standard-weapon-card,
             .app.dialog.cheapdice-theme-glass #section-d20 > div {
               background: rgba(255, 255, 255, 0.05) !important;
-              border-color: rgba(255, 255, 255, 0.1) !important;
+              border-color: rgba(255, 255, 255, 0.12) !important;
               color: #ffffff !important;
             }
+            .app.dialog.cheapdice-theme-glass #section-d20 > div > div[style*="background: #fff"],
+            .app.dialog.cheapdice-theme-glass #section-d20 > div > div[style*="background:#fff"],
+            .app.dialog.cheapdice-theme-glass #tools-list-container-v2 {
+              background: rgba(0, 0, 0, 0.25) !important;
+              border-color: rgba(255, 255, 255, 0.1) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row {
+              border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row .entry-label,
+            .app.dialog.cheapdice-theme-glass .entry-label {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .roll-btn-v2 {
+              background: rgba(56, 189, 248, 0.18) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .standard-weapon-card {
+              background: rgba(255, 255, 255, 0.06) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .standard-weapon-card span,
+            .app.dialog.cheapdice-theme-glass .standard-weapon-card div {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .standard-weapon-card.selected,
             .app.dialog.cheapdice-theme-glass .custom-weapon-card.selected,
             .app.dialog.cheapdice-theme-glass .custom-spell-card.selected {
-              background: rgba(56, 189, 248, 0.15) !important;
+              background: rgba(56, 189, 248, 0.18) !important;
               border-color: #38bdf8 !important;
               box-shadow: 0 0 12px rgba(56, 189, 248, 0.3) !important;
             }
@@ -3530,8 +3635,17 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #dialog-panel-right div[style*="background: #f8fafc"],
             .app.dialog.cheapdice-theme-glass #dialog-panel-right div[style*="background:#f8fafc"] {
               background: rgba(255, 255, 255, 0.05) !important;
-              border-color: rgba(255, 255, 255, 0.1) !important;
+              border-color: rgba(255, 255, 255, 0.12) !important;
               color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #desc-title-v2 {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #desc-subtitle-v2 {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #desc-body-v2 {
+              color: #f1f5f9 !important;
             }
             .app.dialog.cheapdice-theme-glass input,
             .app.dialog.cheapdice-theme-glass select,
@@ -3577,17 +3691,17 @@ Click a numbered modifier badge to execute a roll.</div>
               title: "Choose Dice Stuff Theme",
               content: `
                 <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
-                  <button type="button" class="btn-select-theme ${cur === 'default' ? 'active-theme' : ''}" data-theme="default" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: ${cur === 'default' ? '#e2e8f0' : '#fff'}; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                    <i class="fas fa-sun" style="color: #64748b; width: 16px;"></i> Default (Foundry Standard)
+                  <button type="button" class="btn-select-theme ${cur === 'default' ? 'active-theme' : ''}" data-theme="default" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: ${cur === 'default' ? '#e2e8f0' : '#fff'}; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                    Default (Foundry Standard)
                   </button>
-                  <button type="button" class="btn-select-theme ${cur === 'slate' ? 'active-theme' : ''}" data-theme="slate" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #334155; background: ${cur === 'slate' ? '#1e293b' : '#0f172a'}; color: #f8fafc; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                    <i class="fas fa-moon" style="color: #38bdf8; width: 16px;"></i> Slate & Obsidian
+                  <button type="button" class="btn-select-theme ${cur === 'slate' ? 'active-theme' : ''}" data-theme="slate" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #334155; background: ${cur === 'slate' ? '#1e293b' : '#0f172a'}; color: #f8fafc; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                    Slate & Obsidian
                   </button>
-                  <button type="button" class="btn-select-theme ${cur === 'arcane' ? 'active-theme' : ''}" data-theme="arcane" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #78350f; background: ${cur === 'arcane' ? '#252026' : '#121216'}; color: #fef3c7; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                    <i class="fas fa-scroll" style="color: #d97706; width: 16px;"></i> Arcane Midnight
+                  <button type="button" class="btn-select-theme ${cur === 'arcane' ? 'active-theme' : ''}" data-theme="arcane" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #78350f; background: ${cur === 'arcane' ? '#252026' : '#121216'}; color: #fef3c7; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                    Arcane Midnight
                   </button>
-                  <button type="button" class="btn-select-theme ${cur === 'glass' ? 'active-theme' : ''}" data-theme="glass" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid rgba(255,255,255,0.2); background: ${cur === 'glass' ? 'rgba(56,189,248,0.2)' : 'rgba(15,23,42,0.9)'}; color: #ffffff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                    <i class="fas fa-gem" style="color: #38bdf8; width: 16px;"></i> Tactical Glass
+                  <button type="button" class="btn-select-theme ${cur === 'glass' ? 'active-theme' : ''}" data-theme="glass" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid rgba(255,255,255,0.2); background: ${cur === 'glass' ? 'rgba(56,189,248,0.2)' : 'rgba(15,23,42,0.9)'}; color: #ffffff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                    Tactical Glass
                   </button>
                 </div>
               `,
