@@ -3308,6 +3308,279 @@ Click a numbered modifier badge to execute a roll.</div>
       render: (html) => {
         html.closest(".dialog").find(".dialog-buttons").remove();
 
+        const dialogApp = html.closest(".app.dialog");
+
+        // --- Theme Engine Setup ---
+        const THEME_STORAGE_KEY = "cheapdice_dice_stuff_theme";
+        const THEMES = [
+          { key: "default", label: "Default" },
+          { key: "slate", label: "Slate & Obsidian" },
+          { key: "arcane", label: "Arcane Midnight" },
+          { key: "glass", label: "Tactical Glass" }
+        ];
+
+        function applyTheme(themeKey) {
+          THEMES.forEach(t => dialogApp.removeClass(`cheapdice-theme-${t.key}`));
+          if (themeKey && themeKey !== "default") {
+            dialogApp.addClass(`cheapdice-theme-${themeKey}`);
+          }
+          try {
+            localStorage.setItem(THEME_STORAGE_KEY, themeKey);
+          } catch (e) {}
+        }
+
+        const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) || "default";
+        applyTheme(savedTheme);
+
+        // Inject Stylesheet if not already loaded
+        if (!document.getElementById("cheapdice-theme-styles")) {
+          const styleTag = document.createElement("style");
+          styleTag.id = "cheapdice-theme-styles";
+          styleTag.textContent = `
+            /* Dice Stuff Theme Engine Styles */
+            .app.dialog.cheapdice-theme-slate,
+            .app.dialog.cheapdice-theme-arcane,
+            .app.dialog.cheapdice-theme-glass {
+              color: #e2e8f0;
+              transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            }
+
+            /* Theme Selector in Window Header */
+            .dice-stuff-theme-select {
+              background: rgba(0, 0, 0, 0.45);
+              color: #f1f5f9;
+              border: 1px solid rgba(255, 255, 255, 0.25);
+              border-radius: 3px;
+              font-size: 0.72em;
+              font-weight: 600;
+              height: 20px;
+              padding: 0 4px;
+              cursor: pointer;
+              margin-right: 6px;
+              outline: none;
+            }
+            .dice-stuff-theme-select option {
+              background: #1e293b;
+              color: #f1f5f9;
+            }
+
+            /* ========================================================= */
+            /* 1. SLATE & OBSIDIAN THEME                                 */
+            /* ========================================================= */
+            .app.dialog.cheapdice-theme-slate {
+              background: #131722 !important;
+              border: 1px solid #334155 !important;
+              box-shadow: 0 10px 25px rgba(0, 0, 0, 0.75) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .window-header {
+              background: #1e2536 !important;
+              border-bottom: 1px solid #334155 !important;
+              color: #f8fafc !important;
+            }
+            .app.dialog.cheapdice-theme-slate .window-content {
+              background: #131722 !important;
+              color: #cbd5e1 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-left,
+            .app.dialog.cheapdice-theme-slate #dialog-panel-center {
+              border-right-color: #273142 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .custom-weapon-card,
+            .app.dialog.cheapdice-theme-slate .custom-spell-card,
+            .app.dialog.cheapdice-theme-slate #section-d20 > div {
+              background: #1b212f !important;
+              border-color: #2e3b52 !important;
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .custom-weapon-card.selected,
+            .app.dialog.cheapdice-theme-slate .custom-spell-card.selected {
+              background: #1e293b !important;
+              border-color: #38bdf8 !important;
+              box-shadow: 0 0 8px rgba(56, 189, 248, 0.25) !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right > div,
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="background: #f8fafc"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="background:#f8fafc"] {
+              background: #1b212f !important;
+              border-color: #2e3b52 !important;
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate input,
+            .app.dialog.cheapdice-theme-slate select,
+            .app.dialog.cheapdice-theme-slate textarea {
+              background: #0f131c !important;
+              color: #f8fafc !important;
+              border: 1px solid #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate button {
+              background: #232c3d !important;
+              color: #f1f5f9 !important;
+              border-color: #3b4b66 !important;
+            }
+            .app.dialog.cheapdice-theme-slate button:hover {
+              background: #2e3a50 !important;
+              border-color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate strong,
+            .app.dialog.cheapdice-theme-slate span[style*="color: #2b3a4a"],
+            .app.dialog.cheapdice-theme-slate span[style*="color:#2b3a4a"] {
+              color: #f1f5f9 !important;
+            }
+
+            /* ========================================================= */
+            /* 2. ARCANE MIDNIGHT THEME                                  */
+            /* ========================================================= */
+            .app.dialog.cheapdice-theme-arcane {
+              background: #121216 !important;
+              border: 1px solid #854d0e !important;
+              box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85), 0 0 10px rgba(217, 119, 6, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .window-header {
+              background: #1b171f !important;
+              border-bottom: 1px solid #78350f !important;
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .window-content {
+              background: #121216 !important;
+              color: #e5e5e5 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-left,
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-center {
+              border-right-color: #2e2624 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .custom-weapon-card,
+            .app.dialog.cheapdice-theme-arcane .custom-spell-card,
+            .app.dialog.cheapdice-theme-arcane #section-d20 > div {
+              background: #1c1a21 !important;
+              border-color: #38312e !important;
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .custom-weapon-card.selected,
+            .app.dialog.cheapdice-theme-arcane .custom-spell-card.selected {
+              background: #252026 !important;
+              border-color: #d97706 !important;
+              box-shadow: 0 0 8px rgba(217, 119, 6, 0.3) !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right > div,
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="background: #f8fafc"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="background:#f8fafc"] {
+              background: #1c1a21 !important;
+              border-color: #38312e !important;
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane input,
+            .app.dialog.cheapdice-theme-arcane select,
+            .app.dialog.cheapdice-theme-arcane textarea {
+              background: #0d0c0f !important;
+              color: #fef3c7 !important;
+              border: 1px solid #78350f !important;
+            }
+            .app.dialog.cheapdice-theme-arcane button {
+              background: #282124 !important;
+              color: #fef3c7 !important;
+              border-color: #78350f !important;
+            }
+            .app.dialog.cheapdice-theme-arcane button:hover {
+              background: #36292b !important;
+              border-color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane strong,
+            .app.dialog.cheapdice-theme-arcane span[style*="color: #2b3a4a"],
+            .app.dialog.cheapdice-theme-arcane span[style*="color:#2b3a4a"] {
+              color: #fbbf24 !important;
+            }
+
+            /* ========================================================= */
+            /* 3. TACTICAL GLASS THEME                                   */
+            /* ========================================================= */
+            .app.dialog.cheapdice-theme-glass {
+              background: rgba(15, 23, 42, 0.88) !important;
+              backdrop-filter: blur(14px) !important;
+              -webkit-backdrop-filter: blur(14px) !important;
+              border: 1px solid rgba(255, 255, 255, 0.16) !important;
+              box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .window-header {
+              background: rgba(15, 23, 42, 0.65) !important;
+              border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .window-content {
+              background: transparent !important;
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-left,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-center {
+              border-right-color: rgba(255, 255, 255, 0.12) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card,
+            .app.dialog.cheapdice-theme-glass #section-d20 > div {
+              background: rgba(255, 255, 255, 0.05) !important;
+              border-color: rgba(255, 255, 255, 0.1) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card.selected,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card.selected {
+              background: rgba(56, 189, 248, 0.15) !important;
+              border-color: #38bdf8 !important;
+              box-shadow: 0 0 12px rgba(56, 189, 248, 0.3) !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right > div,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right div[style*="background: #f8fafc"],
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right div[style*="background:#f8fafc"] {
+              background: rgba(255, 255, 255, 0.05) !important;
+              border-color: rgba(255, 255, 255, 0.1) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass input,
+            .app.dialog.cheapdice-theme-glass select,
+            .app.dialog.cheapdice-theme-glass textarea {
+              background: rgba(0, 0, 0, 0.4) !important;
+              color: #ffffff !important;
+              border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            }
+            .app.dialog.cheapdice-theme-glass button {
+              background: rgba(255, 255, 255, 0.08) !important;
+              color: #ffffff !important;
+              border-color: rgba(255, 255, 255, 0.18) !important;
+            }
+            .app.dialog.cheapdice-theme-glass button:hover {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass strong,
+            .app.dialog.cheapdice-theme-glass span[style*="color: #2b3a4a"],
+            .app.dialog.cheapdice-theme-glass span[style*="color:#2b3a4a"] {
+              color: #38bdf8 !important;
+            }
+          `;
+          document.head.appendChild(styleTag);
+        }
+
+        // Header Theme Selector Injection (Right beside GM Tools / Close)
+        const header = dialogApp.find(".window-header");
+        if (header.find(".dice-stuff-theme-select").length === 0) {
+          const themeOptions = THEMES.map(t => `<option value="${t.key}" ${savedTheme === t.key ? "selected" : ""}>Theme: ${t.label}</option>`).join("");
+          const themeSelect = $(`
+            <select class="dice-stuff-theme-select" title="Switch Dice Stuff Theme">
+              ${themeOptions}
+            </select>
+          `);
+          themeSelect.on("change", (e) => {
+            const chosen = $(e.target).val();
+            applyTheme(chosen);
+          });
+
+          // Insert before GM tools if present, else before close button
+          const gmBtn = header.find(".gm-tools-header-btn");
+          if (gmBtn.length > 0) {
+            gmBtn.before(themeSelect);
+          } else {
+            header.find(".close").before(themeSelect);
+          }
+        }
+
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
         const btnD20 = html.find("#tab-btn-d20");
@@ -3364,6 +3637,11 @@ Click a numbered modifier badge to execute a roll.</div>
               }, { width: 260 }).render(true);
             });
             header.find(".close").before(btn);
+            // Ensure Theme Selector stays to the left of GM Tools button
+            const existingSelect = header.find(".dice-stuff-theme-select");
+            if (existingSelect.length > 0) {
+              btn.before(existingSelect);
+            }
           }
         }
 
