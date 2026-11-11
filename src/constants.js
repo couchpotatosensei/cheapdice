@@ -2,7 +2,7 @@
 // CHEAP DICE: CONSTANTS & ENUMS
 // =============================================================================
 
-export const MODULE_ID = "cheapdice";
+export const MODULE_ID = "growingpotatoes";
 
 export const FLAGS = Object.freeze({
   SHOW_AC: "showAC",

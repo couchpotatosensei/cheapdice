@@ -2,12 +2,24 @@
 // SOCKETLIB REGISTRATION & EXECUTION HANDLERS
 // =============================================================================
 
+import { MODULE_ID, SETTINGS } from "../src/constants.js";
+
+function getSetting(key, fallback = true) {
+  if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
+    return game.settings.get(MODULE_ID, key);
+  }
+  if (game.settings.settings.has(`cheapdice.${key}`)) {
+    return game.settings.get("cheapdice", key);
+  }
+  return fallback;
+}
+
 function registerSocketHandlers() {
-  if (!game.settings.get("cheapdice", "featureSocketHandlers")) return;
+  if (!getSetting("featureSocketHandlers")) return;
   if (globalThis.attackSocket) return;
   let socket = null;
   if (typeof socketlib.registerModule === "function") {
-    socket = socketlib.registerModule("cheapdice");
+    socket = socketlib.registerModule(MODULE_ID) || socketlib.registerModule("cheapdice");
   }
   if (!socket && typeof socketlib.registerSystem === "function") {
     socket = socketlib.registerSystem("dnd5e");
@@ -19,7 +31,7 @@ function registerSocketHandlers() {
   globalThis.attackSocket = socket;
 
   // Expose socket on module public API
-  const mod = game.modules.get("cheapdice");
+  const mod = game.modules.get(MODULE_ID) || game.modules.get("cheapdice");
   if (mod) {
     mod.api = mod.api || {};
     mod.api.socket = socket;
@@ -184,7 +196,8 @@ function registerSocketHandlers() {
       abilityScore, damageType,
       weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
       HAS_HALFLING_LUCKY, HALFLING_LUCKY_REROLL_THRESHOLD, GWF_REROLL_THRESHOLD,
-      superAdv, additionalDamageComponents, chatCardTitle
+      superAdv, additionalDamageComponents, chatCardTitle,
+      extraAttackModifier, extraDamageModifier
     } = config;
 
     const isProficient = config.isProficient !== undefined ? (String(config.isProficient) === "true" || config.isProficient === true) : true;
@@ -211,7 +224,7 @@ function registerSocketHandlers() {
       ? config.targetIds.filter(Boolean)
       : Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
 
-    const animationsEnabled = game.settings.get("cheapdice", "featureAnimations");
+    const animationsEnabled = getSetting("featureAnimations");
     if (animationsEnabled && targetIds.length === 0 && token) {
       const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
       if (!isHostileNpc) {
@@ -275,68 +288,79 @@ function registerSocketHandlers() {
     }
 
     async function _rollAttackAndCheckCrit() {
-      async function _rollD20AttackSlot() {
-        let roll = await new Roll(`1d20 + ${totalAttackModifier}`).evaluate();
-        let d20Term = roll.terms.find(t => t.faces === 20) || roll.dice[0];
-        let val = Number(d20Term?.results?.[0]?.result ?? roll.total);
-        let rerollSummary = null;
+      const cleanExtraAtk = (extraAttackModifier || "").trim();
+      const atkSuffix = `${totalAttackModifier >= 0 ? `+ ${totalAttackModifier}` : `- ${Math.abs(totalAttackModifier)}`}${cleanExtraAtk ? (cleanExtraAtk.startsWith("+") || cleanExtraAtk.startsWith("-") ? ` ${cleanExtraAtk}` : ` + ${cleanExtraAtk}`) : ""}`;
 
-        if (isLucky && val <= luckyThreshold) {
-          let reroll = await new Roll(`1d20 + ${totalAttackModifier}`).evaluate();
-          let rerolledTerm = reroll.terms.find(t => t.faces === 20) || reroll.dice[0];
-          let newVal = Number(rerolledTerm?.results?.[0]?.result ?? reroll.total);
-          rerollSummary = { original: val, final: newVal };
-          val = newVal;
-          roll = reroll;
-        }
+      let roll1 = await new Roll(`1d20 ${atkSuffix}`).evaluate();
+      let d20Term1 = roll1.terms.find(t => t.faces === 20) || roll1.dice[0];
+      let val1 = Number(d20Term1?.results?.[0]?.result ?? roll1.total);
+      let rerollSummary1 = null;
 
-        let html = await roll.render();
-        if (val >= CRIT_THRESHOLD) html = html.replace('dice-total', 'dice-total critical');
-        else if (val === 1) html = html.replace('dice-total', 'dice-total fumble');
-
-        return { roll, html, val, rerollSummary };
+      if (isLucky && val1 <= luckyThreshold) {
+        let reroll1 = await new Roll(`1d20 ${atkSuffix}`).evaluate();
+        let rerolledTerm1 = reroll1.terms.find(t => t.faces === 20) || reroll1.dice[0];
+        let newVal1 = Number(rerolledTerm1?.results?.[0]?.result ?? reroll1.total);
+        rerollSummary1 = { original: val1, final: newVal1 };
+        val1 = newVal1;
+        roll1 = reroll1;
       }
 
-      const slot1 = await _rollD20AttackSlot();
+      let html1 = await roll1.render();
+      if (val1 >= CRIT_THRESHOLD) html1 = html1.replace('dice-total', 'dice-total critical');
+      else if (val1 === 1) html1 = html1.replace('dice-total', 'dice-total fumble');
 
-      let slot2;
+      const cloneTerm = (t) => {
+        if (typeof t.clone === "function") return t.clone();
+        if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
+        return RollTerm.fromJSON(JSON.stringify(t));
+      };
+
+      // Roll second d20 slot reusing evaluated modifier terms from roll1
+      let slot2D20 = null;
       let droppedCandidate = null;
       let extraRolls = [];
 
       if (isSuperAdv) {
-        const candidateA = await _rollD20AttackSlot();
-        const candidateB = await _rollD20AttackSlot();
-        extraRolls.push(candidateA.roll, candidateB.roll);
-
-        if (candidateA.val >= candidateB.val) {
-          slot2 = candidateA;
-          droppedCandidate = candidateB;
+        const candA = await _rollSingleD20();
+        const candB = await _rollSingleD20();
+        extraRolls.push(candA.roll, candB.roll);
+        if (candA.val >= candB.val) {
+          slot2D20 = candA;
+          droppedCandidate = candB;
         } else {
-          slot2 = candidateB;
-          droppedCandidate = candidateA;
+          slot2D20 = candB;
+          droppedCandidate = candA;
         }
       } else {
-        slot2 = await _rollD20AttackSlot();
-        extraRolls.push(slot2.roll);
+        slot2D20 = await _rollSingleD20();
+        extraRolls.push(slot2D20.roll);
       }
 
-      let rerollSummary2 = slot2.rerollSummary;
+      const terms2 = [cloneTerm(slot2D20.roll.terms[0]), ...roll1.terms.slice(1).map(cloneTerm)];
+      let roll2 = Roll.fromTerms(terms2);
+      if (!roll2._evaluated) {
+        await roll2.evaluate();
+      }
+      let html2 = await roll2.render();
+      if (slot2D20.val >= CRIT_THRESHOLD) html2 = html2.replace('dice-total', 'dice-total critical');
+      else if (slot2D20.val === 1) html2 = html2.replace('dice-total', 'dice-total fumble');
+
       if (isSuperAdv && droppedCandidate) {
         const superAdvHtml = `<div style="padding: 2px 4px; margin: 3px 0 0; border: 1px solid #7289DA; border-radius: 3px; background-color: #f0f4ff; font-size: 0.75em; text-align: center;">
-        <span style="font-weight: bold; color: #4b5d88;">Super Adv (Kept d20: ${slot2.val} | Dropped: ${droppedCandidate.val})</span>
+        <span style="font-weight: bold; color: #4b5d88;">Super Adv (Kept d20: ${slot2D20.val} | Dropped: ${droppedCandidate.val})</span>
       </div>`;
-        slot2.html += superAdvHtml;
+        html2 += superAdvHtml;
       }
 
-      const isCritical = slot1.val >= CRIT_THRESHOLD || slot2.val >= CRIT_THRESHOLD;
+      const isCritical = val1 >= CRIT_THRESHOLD || slot2D20.val >= CRIT_THRESHOLD;
 
       return {
-        attackRoll1: slot1.roll,
-        rollHtml1: slot1.html,
-        rerollSummary1: slot1.rerollSummary,
-        attackRoll2: slot2.roll,
-        rollHtml2: slot2.html,
-        rerollSummary2,
+        attackRoll1: roll1,
+        rollHtml1: html1,
+        rerollSummary1,
+        attackRoll2: roll2,
+        rollHtml2: html2,
+        rerollSummary2: slot2D20.rerollSummary,
         extraRolls,
         isCritical
       };
@@ -447,6 +471,16 @@ function registerSocketHandlers() {
     const { attackRoll1, rollHtml1, rerollSummary1, attackRoll2, rollHtml2, rerollSummary2, extraRolls, isCritical } = await _rollAttackAndCheckCrit();
     const { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary } = await _rollDamageDice();
     const activeComponents = (additionalDamageComponents || []).filter(c => c.isActive);
+    const cleanExtraDmg = (extraDamageModifier || "").trim();
+    if (cleanExtraDmg) {
+      activeComponents.push({
+        label: "Extra Dmg",
+        formula: cleanExtraDmg,
+        damageType: damageType,
+        isCrit: true,
+        isActive: true
+      });
+    }
     const { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults, allAdditionalDamageRolls } = await _rollAdditionalDamage(activeComponents, isCritical);
 
     let critAdditionalDamageComponent = 0;
@@ -669,9 +703,26 @@ function registerSocketHandlers() {
       </div>
     </details>`;
 
+    const perkBadges = [];
+    if (CRIT_THRESHOLD && CRIT_THRESHOLD < 20) perkBadges.push(`Crit ${CRIT_THRESHOLD}+`);
+    if (isSuperAdv) perkBadges.push("Super Adv");
+    if (isLucky) perkBadges.push("Lucky");
+    if (gwfThreshold > 0) perkBadges.push(`GWF ≤${gwfThreshold}`);
+    if (rawCritBonus !== "") perkBadges.push("Crit Bonus Dmg");
+
+    const allBadgesHtml = [
+      ...perkBadges.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.35); border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 600; color: #4b5d88;">${t}</span>`),
+      ...activeComponents.map(c => `<span style="background: #f1f3f5; border: 1px solid #ced4da; border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 600; color: #495057;">${c.label}</span>`)
+    ].join("");
+
+    const tagsBlock = allBadgesHtml
+      ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 5px;">${allBadgesHtml}</div>`
+      : "";
+
     const chatContent = `
-    <p><strong>${actorName}: ${chatCardTitle}</strong></p>
-    <hr>
+    <p style="margin: 0 0 4px 0;"><strong>${actorName}: ${chatCardTitle}</strong></p>
+    ${tagsBlock}
+    <hr style="margin: 4px 0;">
     <div style="display: flex; justify-content: space-around; align-items: flex-start; gap: 10px;">
       <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
         <p style="margin: 0; text-align: center;">Attack Roll</p>
@@ -706,6 +757,104 @@ function registerSocketHandlers() {
     });
 
     triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
+  });
+
+  // --- 2.2b Unarmed 5.5e Maneuver Handler (Grapple / Shove) ---
+  socket.register("runUnarmedManeuver", async (maneuverType, config, actorId, userId) => {
+    const actor = game.actors.get(actorId);
+    if (!actor) return ui.notifications.warn("Actor not found for Unarmed Maneuver.");
+    const token = actor.getActiveTokens()[0];
+
+    const rollUser = game.users.get(userId) || game.user;
+    const speaker = ChatMessage.getSpeaker({ actor });
+
+    const abilityScore = config.abilityScore || "str";
+    const abilityMod = actor.system.abilities?.[abilityScore]?.mod || 0;
+    const prof = actor.system.attributes?.prof || 0;
+    const wepMod = Number(config.weaponModifier) || 0;
+    const circMod = Number(config.attackCircumstanceModifier) || 0;
+    const saveDC = 8 + prof + abilityMod + wepMod + circMod;
+
+    let targetIds = Array.isArray(config?.targetIds) && config.targetIds.length > 0
+      ? config.targetIds.filter(Boolean)
+      : Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
+
+    let targetHtml = "";
+    if (targetIds.length > 0) {
+      const targetNames = targetIds.map(tid => {
+        const t = canvas.tokens.get(tid);
+        return t ? t.name : tid;
+      });
+      targetHtml = `
+        <div style="font-size: 0.82em; color: #555; margin-bottom: 5px;">
+          <strong>Target:</strong> ${targetNames.join(", ")}
+        </div>
+      `;
+    }
+
+    const isGrapple = maneuverType === "grapple";
+    const actionTitle = isGrapple ? "Unarmed Strike: Grapple" : "Unarmed Strike: Shove";
+    const badgeColor = isGrapple ? "#2b7489" : "#a34848";
+    const badgeIcon = isGrapple ? "fa-hand-holding-hand" : "fa-person-falling";
+
+    const effectDetails = isGrapple
+      ? `
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 4px; padding: 6px; font-size: 0.82em; color: #333; line-height: 1.4;">
+          <div style="font-weight: 700; color: #2b7489; margin-bottom: 2px;">
+            <i class="fas fa-hand-holding-hand"></i> Grapple Effect (5.5e)
+          </div>
+          <div><strong>Failed Save:</strong> The target has the <strong>Grappled</strong> condition. Its Speed is 0, and attack rolls against creatures other than you have Disadvantage.</div>
+          <div style="margin-top: 4px; font-size: 0.8em; color: #666;">Target can be up to one size larger than you. Target can escape by repeating the save as an action or at the end of its turns.</div>
+        </div>
+      `
+      : `
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 4px; padding: 6px; font-size: 0.82em; color: #333; line-height: 1.4;">
+          <div style="font-weight: 700; color: #a34848; margin-bottom: 2px;">
+            <i class="fas fa-person-falling"></i> Shove Effect (5.5e)
+          </div>
+          <div><strong>Failed Save:</strong> You push the target <strong>5 feet away</strong> from you, OR knock it <strong>Prone</strong> (attacker's choice).</div>
+          <div style="margin-top: 4px; font-size: 0.8em; color: #666;">Target can be up to one size larger than you.</div>
+        </div>
+      `;
+
+    const circDetails = circMod !== 0 ? ` + Circ (${circMod})` : '';
+    const wepDetails = wepMod !== 0 ? ` + Mod (${wepMod})` : '';
+
+    const chatContent = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <span style="font-weight: bold; font-size: 0.95em; color: #2b3a4a;">${actor.name}: ${actionTitle}</span>
+        <span style="font-size: 0.72em; font-weight: bold; color: #fff; background: ${badgeColor}; padding: 1px 6px; border-radius: 3px;">
+          <i class="fas ${badgeIcon}"></i> 5.5e
+        </span>
+      </div>
+      ${targetHtml}
+      <div style="background: rgba(43, 116, 137, 0.1); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 4px; padding: 6px; text-align: center; margin: 6px 0;">
+        <div style="font-size: 1.15em; font-weight: bold; color: #235d6e;">DC ${saveDC} Strength or Dexterity Save</div>
+        <div style="font-size: 0.8em; color: #555; margin-top: 2px;">Target's choice to resist</div>
+      </div>
+      ${effectDetails}
+      <details style="margin-top: 6px; padding: 2px 4px;">
+        <summary style="font-weight: 600; font-size: 0.78em; color: #666; cursor: pointer;">Formula Breakdown</summary>
+        <div style="padding-top: 4px; border-top: 1px solid #e0e0e0; font-size: 0.78em; color: #555; margin-top: 3px;">
+          <div><strong>Save DC:</strong> 8 + PB (${prof}) + ${abilityScore.toUpperCase()} (${abilityMod})${wepDetails}${circDetails} = DC ${saveDC}</div>
+        </div>
+      </details>
+    `;
+
+    await ChatMessage.create({
+      user: userId,
+      speaker: speaker,
+      content: getCardDispositionWrapper(actor, token, userId, chatContent),
+      sound: CONFIG.sounds.dice,
+      flags: {
+        "autoanimations": {
+          item: { name: isGrapple ? "Grapple" : "Shove" },
+          targets: targetIds
+        }
+      }
+    });
+
+    triggerSequencerAnimation(actor, config, rollUser, null);
   });
 
 
@@ -785,7 +934,7 @@ function registerSocketHandlers() {
       ? config.targetIds.filter(Boolean)
       : Array.from(rollUser?.targets || game.user.targets).map(t => t.id);
 
-    const animationsEnabled = game.settings.get("cheapdice", "featureAnimations");
+    const animationsEnabled = getSetting("featureAnimations");
     // If not self/point/healing and no targets, auto-target nearest hostile for player / non-hostile tokens
     if (animationsEnabled && targetIds.length === 0 && token && !isHealingType && targetType !== "self" && targetType !== "point") {
       const isHostileNpc = actor.type === "npc" && (token.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE);
@@ -870,7 +1019,7 @@ function registerSocketHandlers() {
 
     if (explodeModifier && resolutionMethod !== "auto" && !isHealingType) tags.push(`Explode [${explodeModifier}]`);
     if (chaosJump && !isHealingType) tags.push("Chaos Jump");
-    if (superAdv && resolutionMethod === "attack") tags.push("Elven Acc.");
+    if (superAdv && resolutionMethod === "attack") tags.push("Super Adv");
 
     const tagsHtml = tags.map(t => {
       const isConc = t === "Concentration";
@@ -1428,7 +1577,6 @@ function registerSocketHandlers() {
 
 
 
-
   // --- 2.4 D20 Test Execution Handler ---
   socket.register("runD20TestRoll", async (data, actorId, userId) => {
     const actor = game.actors.get(actorId);
@@ -1663,21 +1811,20 @@ function registerSocketHandlers() {
         rollD20Second = candidateB;
         droppedCandidate = candidateA;
       }
-
-      // Construct roll2 preserving the actual kept Die term so dice tooltip expands cleanly
-      const cloneTerm = (t) => {
-        if (typeof t.clone === "function") return t.clone();
-        if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
-        return RollTerm.fromJSON(JSON.stringify(t));
-      };
-      const terms2 = [cloneTerm(rollD20Second.terms[0]), ...roll1.terms.slice(1).map(cloneTerm)];
-      roll2 = Roll.fromTerms(terms2);
-      if (!roll2._evaluated) {
-        await roll2.evaluate();
-      }
     } else {
-      rollD20Second = await new Roll(fullFormula).evaluate();
-      roll2 = rollD20Second;
+      rollD20Second = await new Roll(dieFormula).evaluate();
+    }
+
+    // Construct roll2 reusing evaluated modifier terms from roll1 so extra dice (e.g. 1d4) are only rolled once
+    const cloneTerm = (t) => {
+      if (typeof t.clone === "function") return t.clone();
+      if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
+      return RollTerm.fromJSON(JSON.stringify(t));
+    };
+    const terms2 = [cloneTerm(rollD20Second.terms[0]), ...roll1.terms.slice(1).map(cloneTerm)];
+    roll2 = Roll.fromTerms(terms2);
+    if (!roll2._evaluated) {
+      await roll2.evaluate();
     }
 
     let d20_1 = roll1.dice[0]?.total ?? 0;
@@ -1883,6 +2030,11 @@ function registerSocketHandlers() {
       }
 
       await actor.update(updates);
+
+      // Recharges Tracking Stuff, class resources, and magic items on Long Rest
+      if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
+        await window.CustomRolls.rechargeActorTrackers(actor, "lr");
+      }
 
       summaryRows.push(`
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 2px; border-bottom: 1px dotted #ccc; font-size: 0.85em;">
@@ -2436,6 +2588,35 @@ function registerSocketHandlers() {
     }
   });
 
+  socket.register("saveProfileDataAsGM", async (actorId, category, data, userId) => {
+    const ALLOWED_CATEGORIES = new Set(["hudAssignedSlots", "attackConfigs", "spellConfigs"]);
+    if (!ALLOWED_CATEGORIES.has(category)) {
+      console.warn(`[growingpotatoes] saveProfileDataAsGM: rejected invalid category "${category}"`);
+      return false;
+    }
+
+    const actor = game.actors.get(actorId);
+    if (!actor) return false;
+
+    const callingUser = game.users.get(userId);
+    if (callingUser && !callingUser.isGM && !actor.testUserPermission(callingUser, "OWNER")) {
+      console.warn(`[growingpotatoes] saveProfileDataAsGM: User ${callingUser.name} lacks ownership permission on actor ${actor.name}`);
+      return false;
+    }
+
+    const isWorldSetting = game.settings.settings.has("world.customRollProfiles");
+    const scope = isWorldSetting ? "world" : MODULE_ID;
+    const key = isWorldSetting ? "customRollProfiles" : SETTINGS.CUSTOM_ROLL_PROFILES;
+    const store = foundry.utils.deepClone(game.settings.get(scope, key) || {});
+    if (!store[actor.id]) store[actor.id] = {};
+    store[actor.id][category] = data;
+    store[actor.id]._actorName = actor.name;
+    await game.settings.set(scope, key, store);
+
+    await actor.setFlag("world", category, data, { recursive: false });
+    return true;
+  });
+
   socket.register("closeMusicForAll", async () => {
     if (window._activeMusicPopup) {
       window._activeMusicPopup.close();
@@ -2457,7 +2638,7 @@ function registerSocketHandlers() {
 
 // --- Automated Animations & Sequencer Trigger ---
 async function triggerSequencerAnimation(actor, config, rollUser = null, autoTargetedToken = null) {
-  if (!game.settings.get("cheapdice", "featureAnimations")) return;
+  if (!getSetting("featureAnimations")) return;
   const aa = globalThis.AutomatedAnimations || globalThis.AutoAnimations;
   const token = actor.getActiveTokens()[0];
   if (!token) return;
@@ -2613,7 +2794,7 @@ globalThis.triggerSequencerAnimation = triggerSequencerAnimation;
 
 
 export function initSockets() {
-  if (!game.settings.get("cheapdice", "featureSocketHandlers")) return;
+  if (!getSetting("featureSocketHandlers")) return;
 
   const runSocketInit = () => {
     if (window.socketlib) {

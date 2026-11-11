@@ -2,8 +2,20 @@
 // CONFIGURATION EDITORS
 // =============================================================================
 
+import { MODULE_ID } from "../src/constants.js";
+
+function getSetting(key, fallback = true) {
+  if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
+    return game.settings.get(MODULE_ID, key);
+  }
+  if (game.settings.settings.has(`cheapdice.${key}`)) {
+    return game.settings.get("cheapdice", key);
+  }
+  return fallback;
+}
+
 export function initActionEditors() {
-  if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+  if (!getSetting("featurePresetEditors")) return;
 
   window.CustomRolls = window.CustomRolls || {};
 
@@ -28,7 +40,7 @@ export function initActionEditors() {
 
   // --- 4.1 D20 Preset Modifier Editor Launcher ---
   window.CustomRolls.openD20PresetEditor = function () {
-    if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+    if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
 
@@ -484,17 +496,17 @@ export function initActionEditors() {
   // =========================================================================
   // VERSION 2: D20 PRESET MODIFIER EDITOR (DISTINCT V2 DIALOG THEME)
   // =========================================================================
-  window.CustomRolls.openD20PresetEditorV2 = function () {
-    if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+  window.CustomRolls.openD20PresetEditorV2 = function (targetActor = null) {
+    if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
+    const actor = targetActor || token?.actor;
 
-    if (!token) {
+    if (!actor) {
       return ui.notifications.warn("Please select your token first.");
     }
 
-    const actor = token.actor;
-    if (!actor || !actor.isOwner) {
+    if (!actor.isOwner && !game.user.isGM) {
       return ui.notifications.warn("You don't have permissions to use this token.");
     }
 
@@ -958,11 +970,11 @@ export function initActionEditors() {
 
 
   // --- 4.2 Unified Action Generator (Weapons & Spells) ---
-  window.CustomRolls.openActionGenerator = async function () {
-    if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+  window.CustomRolls.openActionGenerator = async function (targetActor = null) {
+    if (!getSetting("featurePresetEditors")) return;
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
-    const actor = token?.actor;
+    const actor = targetActor || token?.actor;
     if (!actor) {
       return ui.notifications.warn("Please select your token first.");
     }
@@ -1221,7 +1233,7 @@ export function initActionEditors() {
                     formula: formula,
                     label: getVal(`damage${i}_label`) || `Extra Damage ${i}`,
                     damageType: getVal(`damage${i}_type`) || "slashing",
-                    isActive: true,
+                    isActive: false,
                     isCrit: getCheck(`damage${i}_isCrit`),
                     onlyCrit: getCheck(`damage${i}_onlyCrit`),
                     id: `extra_gen_${i}`
@@ -1875,16 +1887,28 @@ export function initActionEditors() {
   };
 
   // --- 4.3 Unified Action Editor & Manager (Weapons & Spells) ---
-  window.CustomRolls.openActionEditor = function (initialCategory = "weapons") {
-    if (!game.settings.get("cheapdice", "featurePresetEditors")) return;
+  window.CustomRolls.openActionEditor = async function (initialCategory = "weapons", targetActor = null) {
+    if (!getSetting("featurePresetEditors")) return;
+
+    // Support flexible argument order if targetActor passed as first arg
+    let category = initialCategory;
+    let explicitActor = targetActor;
+    if (typeof initialCategory === "object" && initialCategory?.documentName === "Actor") {
+      explicitActor = initialCategory;
+      category = "weapons";
+    }
 
     const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
-    const actor = token?.actor;
+    const actor = explicitActor || token?.actor;
     if (!actor) {
       return ui.notifications.warn("Please select your token first.");
     }
 
-    let activeCategory = initialCategory;
+    if (window.CustomRolls?.ensureStandardAttacks) {
+      await window.CustomRolls.ensureStandardAttacks(actor);
+    }
+
+    let activeCategory = category;
 
     const DAMAGE_TYPES = [
       { label: "Acid", value: "acid" },
@@ -1983,9 +2007,10 @@ export function initActionEditors() {
           </div>
           <select id="action-hud-slot" style="height: 28px; font-size: 0.85em; border-radius: 4px; border: 1px solid #2b7489; padding: 2px 6px;">
             <option value="">None</option>
-            <option value="1">Button 1 (Slot 48 fallback)</option>
-            <option value="2">Button 2 (Slot 49 fallback)</option>
-            <option value="3">Button 3 (Slot 50 fallback)</option>
+            <option value="1">Button 1 (Slot 47 fallback)</option>
+            <option value="2">Button 2 (Slot 48 fallback)</option>
+            <option value="3">Button 3 (Slot 49 fallback)</option>
+            <option value="4">Button 4 (Slot 50 fallback)</option>
           </select>
         </div>
       </div>
@@ -2504,7 +2529,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
                 const formula = getVal(`damage${i}_formula`)?.trim();
                 if (formula) {
-                  const prevActive = existingComponents[i - 1]?.isActive ?? true;
+                  const prevActive = existingComponents[i - 1]?.isActive ?? false;
                   components.push({
                     formula: formula,
                     label: getVal(`damage${i}_label`) || `Extra Damage ${i}`,

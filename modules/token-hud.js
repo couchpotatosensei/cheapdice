@@ -1,13 +1,22 @@
 import { renderTokenAcBadge } from "./token-ac.js";
+import { MODULE_ID, SETTINGS } from "../src/constants.js";
+
+function getSetting(key, fallback = true) {
+  if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
+    return game.settings.get(MODULE_ID, key);
+  }
+  if (game.settings.settings.has(`cheapdice.${key}`)) {
+    return game.settings.get("cheapdice", key);
+  }
+  return fallback;
+}
 
 export function initTokenHud() {
-  if (!game.settings.get("cheapdice", "featureTokenHud")) return;
-
-
+  if (!getSetting("featureTokenHud")) return;
 
   // 3. Token HUD adjustments
   Hooks.on("renderTokenHUD", (app, html, data) => {
-    if (!game.settings.get("cheapdice", "featureTokenHud")) return;
+    if (!getSetting("featureTokenHud")) return;
     const root = html instanceof HTMLElement ? html : (html[0] ?? html);
     if (!root) return;
 
@@ -62,7 +71,7 @@ export function initTokenHud() {
           return ui.notifications.warn(`Assigned action "${assignment.name}" not found in actor configurations.`);
         }
 
-        const socket = game.modules.get("cheapdice")?.api?.socket || globalThis.attackSocket;
+        const socket = game.modules.get(MODULE_ID)?.api?.socket || game.modules.get("cheapdice")?.api?.socket || globalThis.attackSocket;
         if (!socket) {
           return ui.notifications.error("SocketLib handler is not initialized.");
         }
@@ -230,7 +239,7 @@ export function initTokenHud() {
       }
 
       // AC Toggle Button
-      if (game.settings.get("cheapdice", "featureTokenAc") && !colRight.querySelector(".ac-toggle-btn")) {
+      if (getSetting("featureTokenAc") && !colRight.querySelector(".ac-toggle-btn")) {
         const isAcVisible = Boolean(token.document.getFlag("world", "showAC"));
 
         const acToggleBtn = document.createElement("div");
@@ -316,9 +325,9 @@ export function initTokenHud() {
         if (dispIcon) dispIcon.style.color = currentMeta.color;
         flyoutMenu.appendChild(dispositionBtn);
 
-        // Button 2: D20 Test (Updated to V2 Dialog)
+        // Button 2: D20 Test (Dice Stuff)
         const d20Btn = makeButton(
-          "Roll D20 (V2)",
+          "Dice Stuff",
           "docs/assets/fvtt.png",
           (e) => {
             e.preventDefault();
@@ -408,7 +417,7 @@ export function initTokenHud() {
     root.querySelector('.control-icon[data-action="target"]')?.remove();
 
     const d20Btn = makeButton(
-      "Roll D20",
+      "Dice Stuff",
       "docs/assets/fvtt.png",
       () => {
         window.CustomRolls?.openD20DialogV2();
@@ -566,18 +575,6 @@ export function initTokenHud() {
       hpContainer.appendChild(btnRow);
     }
 
-    const actionBtn = makeButton(
-      "Attacks",
-      "icons/logo-scifi.png",
-      () => {
-        window.CustomRolls?.openActionDialog();
-      },
-      "32px"
-    );
-    colRight.appendChild(actionBtn);
-
-    // (Previously NPCs returned early with only Slot 1 and Slot 2 pointing to 46 and 47)
-
     const leftFlyoutWrapper = document.createElement("div");
     leftFlyoutWrapper.className = "control-icon left-flyout-parent";
     leftFlyoutWrapper.title = "Quick Menu";
@@ -632,12 +629,14 @@ export function initTokenHud() {
       return { title: `Slot ${btnNum} (Hotbar ${slotIdx})`, icon: `fas fa-square-${btnNum}` };
     };
 
-    const b1 = getButtonInfo(1, 48);
-    const b2 = getButtonInfo(2, 49);
-    const b3 = getButtonInfo(3, 50);
+    const b1 = getButtonInfo(1, 47);
+    const b2 = getButtonInfo(2, 48);
+    const b3 = getButtonInfo(3, 49);
+    const b4 = getButtonInfo(4, 50);
 
-    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(1, 48)));
-    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(2, 49)));
-    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(3, 50)));
+    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(1, 47)));
+    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(2, 48)));
+    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(3, 49)));
+    colRight.appendChild(makeButton(b4.title, b4.icon, () => runHudButtonSlot(4, 50)));
   });
 }
