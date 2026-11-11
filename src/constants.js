@@ -2,7 +2,9 @@
 // CHEAP DICE: CONSTANTS & ENUMS
 // =============================================================================
 
-export const MODULE_ID = "growingpotatoes";
+export const MODULE_ID = (typeof game !== "undefined" && game.modules?.get("growingpotatoes")?.active)
+  ? "growingpotatoes"
+  : "cheapdice";
 
 export const FLAGS = Object.freeze({
   SHOW_AC: "showAC",
