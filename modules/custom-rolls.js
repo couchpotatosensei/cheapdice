@@ -3074,11 +3074,11 @@ Click a numbered modifier badge to execute a roll.</div>
               <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 2px;">
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.95em; font-weight: 600;">Attack:</span>
-                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">1d20 ${d.atkSign}</strong>
+                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">1d20 ${d.atkSign}</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.95em; font-weight: 600;">Damage:</span>
-                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">${d.dmgFormula} <small style="font-weight: 600; font-size: 0.8em; color: #666;">(${d.dmgType.toLowerCase()})</small></strong>
+                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.dmgFormula} <small style="font-weight: 600; font-size: 0.8em; color: #666;">(${d.dmgType.toLowerCase()})</small></strong>
                 </div>
               </div>
               ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">${tagsHtml}</div>` : ""}
@@ -3091,11 +3091,11 @@ Click a numbered modifier badge to execute a roll.</div>
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.92em; font-weight: 700;">Total Atk:</span>
-                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">1d20 ${d.atkSign}</strong>
+                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">1d20 ${d.atkSign}</strong>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span style="color: #555; font-size: 0.92em; font-weight: 700;">Total Dmg:</span>
-                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800; line-height: 1.4; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 4px 8px;">
+                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700; line-height: 1.4; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 4px 8px;">
                     ${d.dmgFormula} ${d.dmgType.toLowerCase()}
                   </div>
                 </div>
@@ -3178,8 +3178,8 @@ Click a numbered modifier badge to execute a roll.</div>
             <span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${lvlLabel}</span>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px;">
-            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">${d.actionVal}</strong></span>
-            <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.25em; font-weight: 800;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
+            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.actionVal}</strong></span>
+            <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
           ${hudSlotControls}
