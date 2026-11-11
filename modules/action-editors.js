@@ -2007,9 +2007,10 @@ export function initActionEditors() {
           </div>
           <select id="action-hud-slot" style="height: 28px; font-size: 0.85em; border-radius: 4px; border: 1px solid #2b7489; padding: 2px 6px;">
             <option value="">None</option>
-            <option value="1">Button 1 (Slot 48 fallback)</option>
-            <option value="2">Button 2 (Slot 49 fallback)</option>
-            <option value="3">Button 3 (Slot 50 fallback)</option>
+            <option value="1">Button 1 (Slot 47 fallback)</option>
+            <option value="2">Button 2 (Slot 48 fallback)</option>
+            <option value="3">Button 3 (Slot 49 fallback)</option>
+            <option value="4">Button 4 (Slot 50 fallback)</option>
           </select>
         </div>
       </div>

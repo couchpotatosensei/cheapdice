@@ -575,18 +575,6 @@ export function initTokenHud() {
       hpContainer.appendChild(btnRow);
     }
 
-    const actionBtn = makeButton(
-      "Attacks",
-      "icons/logo-scifi.png",
-      () => {
-        window.CustomRolls?.openActionDialog();
-      },
-      "32px"
-    );
-    colRight.appendChild(actionBtn);
-
-    // (Previously NPCs returned early with only Slot 1 and Slot 2 pointing to 46 and 47)
-
     const leftFlyoutWrapper = document.createElement("div");
     leftFlyoutWrapper.className = "control-icon left-flyout-parent";
     leftFlyoutWrapper.title = "Quick Menu";
@@ -641,12 +629,14 @@ export function initTokenHud() {
       return { title: `Slot ${btnNum} (Hotbar ${slotIdx})`, icon: `fas fa-square-${btnNum}` };
     };
 
-    const b1 = getButtonInfo(1, 48);
-    const b2 = getButtonInfo(2, 49);
-    const b3 = getButtonInfo(3, 50);
+    const b1 = getButtonInfo(1, 47);
+    const b2 = getButtonInfo(2, 48);
+    const b3 = getButtonInfo(3, 49);
+    const b4 = getButtonInfo(4, 50);
 
-    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(1, 48)));
-    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(2, 49)));
-    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(3, 50)));
+    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(1, 47)));
+    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(2, 48)));
+    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(3, 49)));
+    colRight.appendChild(makeButton(b4.title, b4.icon, () => runHudButtonSlot(4, 50)));
   });
 }

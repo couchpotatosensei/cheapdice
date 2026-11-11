@@ -2098,6 +2098,7 @@ Click a numbered modifier badge to execute a roll.</div>
       html: htmlContent,
       setupEvents: (containerHtml) => {
         const refreshChips = () => {
+          trackers = actor.getFlag("world", "trackingStuff") || [];
           containerHtml.find('#tracking-chips-container').html(renderChips());
           bindChipEvents();
         };
@@ -2108,15 +2109,15 @@ Click a numbered modifier badge to execute a roll.</div>
           const newVal = Math.clamp(targetVal, 0, live.max);
           if (newVal === live.value && directValue === null) return;
 
+          t.value = newVal;
           if (t.type === "item" && t.itemRefId) {
             const item = actor.items.get(t.itemRefId);
             if (item) await item.update({ "system.uses.value": newVal });
           } else if (t.type === "resource" && t.resourceSlot) {
             await actor.update({ [`system.resources.${t.resourceSlot}.value`]: newVal });
-          } else {
-            t.value = newVal;
-            await actor.setFlag("world", "trackingStuff", trackers);
           }
+          await actor.setFlag("world", "trackingStuff", trackers);
+
           containerHtml.find(`.chip-val-input[data-id="${t.id}"]`).val(newVal);
           containerHtml.find(`.tracker-val-display[data-id="${t.id}"], .chip-val-display[data-id="${t.id}"]`).text(`${newVal} / ${live.max}`);
         };
@@ -2281,17 +2282,72 @@ Click a numbered modifier badge to execute a roll.</div>
             }
           }
 
+          const syncResources = async () => {
+            const slots = ["primary", "secondary", "tertiary"];
+            const prevSlots = new Set(trackers.filter(t => t.type === "resource" && t.resourceSlot).map(t => t.resourceSlot));
+            const nonItemTrackers = trackers.filter(t => t.type !== "item");
+            const updateData = {};
+            const newOccupiedSlots = new Set();
+
+            for (let i = 0; i < slots.length; i++) {
+              const slot = slots[i];
+              const cand = nonItemTrackers[i];
+              if (cand) {
+                cand.type = "resource";
+                cand.resourceSlot = slot;
+                newOccupiedSlots.add(slot);
+                updateData[`system.resources.${slot}.label`] = cand.label || "";
+                updateData[`system.resources.${slot}.value`] = Number(cand.value) || 0;
+                updateData[`system.resources.${slot}.max`] = Number(cand.max) || 1;
+                updateData[`system.resources.${slot}.sr`] = (cand.resetOn || "").startsWith("sr");
+                updateData[`system.resources.${slot}.lr`] = (cand.resetOn || "").startsWith("lr");
+              }
+            }
+
+            for (const prevSlot of prevSlots) {
+              if (!newOccupiedSlots.has(prevSlot)) {
+                updateData[`system.resources.${prevSlot}.label`] = "";
+                updateData[`system.resources.${prevSlot}.value`] = 0;
+                updateData[`system.resources.${prevSlot}.max`] = 0;
+                updateData[`system.resources.${prevSlot}.sr`] = false;
+                updateData[`system.resources.${prevSlot}.lr`] = false;
+              }
+            }
+
+            for (let i = slots.length; i < nonItemTrackers.length; i++) {
+              nonItemTrackers[i].type = "custom";
+              nonItemTrackers[i].resourceSlot = null;
+            }
+
+            if (Object.keys(updateData).length > 0) {
+              await actor.update(updateData);
+            }
+          };
+
           function renderActiveTrackersList() {
             if (!trackers || trackers.length === 0) {
               return `<div style="font-size: 0.82em; color: #888; font-style: italic; padding: 8px;">No active trackers. Add one below.</div>`;
             }
-            return trackers.map(t => {
+            return trackers.map((t, idx) => {
               const live = getLiveTracker(t);
               const label = live.label || t.label || t.name || (t.resourceSlot ? `Resource: ${t.resourceSlot}` : "Tracker");
+              let slotBadge = "";
+              if (t.type === "resource" && t.resourceSlot) {
+                const sName = t.resourceSlot.charAt(0).toUpperCase() + t.resourceSlot.slice(1);
+                slotBadge = `<span style="font-size: 0.70em; color: #2e6b35; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 3px; padding: 1px 5px; font-weight: 600;">Sheet: ${sName}</span>`;
+              } else if (t.type === "item") {
+                slotBadge = `<span style="font-size: 0.70em; color: #1e5a6a; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 5px; font-weight: 600;">Sheet: Feature</span>`;
+              } else {
+                slotBadge = `<span style="font-size: 0.70em; color: #777; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; padding: 1px 5px; font-weight: 500;">Tracker only</span>`;
+              }
+
               return `
                 <div class="manage-tracker-row" data-id="${t.id}" style="border: 1px solid #d2d7df; border-radius: 4px; padding: 6px 8px; background: #fafbfc; margin-bottom: 6px;">
                   <div style="margin-bottom: 5px;">
-                    <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">NAME</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600;">NAME</label>
+                      ${slotBadge}
+                    </div>
                     <input type="text" class="manage-input-name" data-id="${t.id}" value="${label}" style="height: 24px; font-size: 0.82em; font-weight: 600; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box; color: #2b3a4a;" />
                   </div>
                   <div style="display: grid; grid-template-columns: 75px 1fr 1fr; gap: 6px; align-items: center;">
@@ -2325,7 +2381,11 @@ Click a numbered modifier badge to execute a roll.</div>
                       </select>
                     </div>
                   </div>
-                  <div style="display: flex; justify-content: flex-end; margin-top: 5px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                    <div style="display: flex; gap: 4px;">
+                      <button type="button" class="btn-manage-move-up" data-id="${t.id}" ${idx === 0 ? 'disabled style="opacity:0.3; cursor:default;' : 'style="cursor:pointer;'} height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 6px; border: 1px solid #b0b8c4; background: #fff; color: #333; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center;" title="Move Up">▲</button>
+                      <button type="button" class="btn-manage-move-down" data-id="${t.id}" ${idx === trackers.length - 1 ? 'disabled style="opacity:0.3; cursor:default;' : 'style="cursor:pointer;'} height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 6px; border: 1px solid #b0b8c4; background: #fff; color: #333; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center;" title="Move Down">▼</button>
+                    </div>
                     <button type="button" class="btn-manage-remove" data-id="${t.id}" title="Remove Tracker" style="height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 6px; border: 1px solid #e07a7a; background: #fff5f5; color: #c82333; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
                       Remove
                     </button>
@@ -2421,7 +2481,10 @@ Click a numbered modifier badge to execute a roll.</div>
                   if (!t) return;
                   const newName = $(this).val()?.trim() || "Tracker";
                   t.label = newName;
-                  if (t.type === "resource" && t.resourceSlot) {
+                  if (t.type === "item" && t.itemRefId) {
+                    const it = actor.items.get(t.itemRefId);
+                    if (it) await it.update({ name: newName });
+                  } else if (t.type === "resource" && t.resourceSlot) {
                     await actor.update({ [`system.resources.${t.resourceSlot}.label`]: newName });
                   }
                   await actor.setFlag("world", "trackingStuff", trackers);
@@ -2458,7 +2521,44 @@ Click a numbered modifier badge to execute a roll.</div>
                   const t = trackers.find(x => x.id === id);
                   if (!t) return;
                   t.resetOn = $(this).val();
+                  if (t.type === "resource" && t.resourceSlot) {
+                    await actor.update({
+                      [`system.resources.${t.resourceSlot}.sr`]: t.resetOn.startsWith("sr"),
+                      [`system.resources.${t.resourceSlot}.lr`]: t.resetOn.startsWith("lr")
+                    });
+                  }
                   await actor.setFlag("world", "trackingStuff", trackers);
+                  refreshChips();
+                });
+
+                modalHtml.find('.btn-manage-move-up').off('click').on('click', async function () {
+                  const id = $(this).data('id');
+                  const idx = trackers.findIndex(x => x.id === id);
+                  if (idx > 0) {
+                    const temp = trackers[idx];
+                    trackers[idx] = trackers[idx - 1];
+                    trackers[idx - 1] = temp;
+                    await syncResources();
+                    await actor.setFlag("world", "trackingStuff", trackers);
+                    refreshChips();
+                    modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
+                    bindActiveTrackerEvents();
+                  }
+                });
+
+                modalHtml.find('.btn-manage-move-down').off('click').on('click', async function () {
+                  const id = $(this).data('id');
+                  const idx = trackers.findIndex(x => x.id === id);
+                  if (idx !== -1 && idx < trackers.length - 1) {
+                    const temp = trackers[idx];
+                    trackers[idx] = trackers[idx + 1];
+                    trackers[idx + 1] = temp;
+                    await syncResources();
+                    await actor.setFlag("world", "trackingStuff", trackers);
+                    refreshChips();
+                    modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
+                    bindActiveTrackerEvents();
+                  }
                 });
 
                 modalHtml.find('.btn-manage-remove').off('click').on('click', async function () {
@@ -2466,11 +2566,8 @@ Click a numbered modifier badge to execute a roll.</div>
                   const t = trackers.find(x => x.id === id);
                   if (!t) return;
 
-                  if (t.type === "resource" && t.isCustom && t.resourceSlot) {
-                    await actor.update({ [`system.resources.${t.resourceSlot}`]: { label: "", value: 0, max: 0 } });
-                  }
-
                   trackers = trackers.filter(x => x.id !== id);
+                  await syncResources();
                   await actor.setFlag("world", "trackingStuff", trackers);
                   refreshChips();
 
@@ -2503,6 +2600,7 @@ Click a numbered modifier badge to execute a roll.</div>
                   resetOn: itemData.resetOn || "lr"
                 });
 
+                await syncResources();
                 await actor.setFlag("world", "trackingStuff", trackers);
                 $(this).prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;').text('Added');
                 refreshChips();
@@ -2518,58 +2616,23 @@ Click a numbered modifier badge to execute a roll.</div>
 
                 if (!name) return ui.notifications.warn("Please enter a counter name.");
 
-                const res = actor.system.resources || {};
-                let targetSlot = null;
-                for (const slot of ["primary", "secondary", "tertiary"]) {
-                  if (!res[slot] || !res[slot].label) {
-                    targetSlot = slot;
-                    break;
-                  }
-                }
-
                 const isReset1 = resetOn.endsWith("_reset_1");
                 const isReset0 = resetOn.endsWith("_reset_0");
                 const startVal = isReset1 ? 1 : (isReset0 ? 0 : max);
 
-                const newId = targetSlot ? `resource_${targetSlot}` : `custom_${Date.now()}`;
-                if (targetSlot) {
-                  await actor.update({
-                    [`system.resources.${targetSlot}`]: {
-                      label: name,
-                      value: startVal,
-                      max: max,
-                      sr: resetOn.startsWith("sr"),
-                      lr: resetOn.startsWith("lr")
-                    }
-                  });
-                  trackers.push({
-                    id: newId,
-                    type: "resource",
-                    resourceSlot: targetSlot,
-                    isCustom: true,
-                    label: name,
-                    value: startVal,
-                    max: max,
-                    rechargeFormula: formula,
-                    resetOn
-                  });
-                  const availBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${newId}"]`);
-                  if (availBtn.length) {
-                    availBtn.prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;').text('Added');
-                  }
-                } else {
-                  trackers.push({
-                    id: newId,
-                    type: "custom",
-                    isCustom: true,
-                    label: name,
-                    value: startVal,
-                    max: max,
-                    rechargeFormula: formula,
-                    resetOn
-                  });
-                }
+                const newId = `custom_${Date.now()}`;
+                trackers.push({
+                  id: newId,
+                  type: "custom",
+                  isCustom: true,
+                  label: name,
+                  value: startVal,
+                  max: max,
+                  rechargeFormula: formula,
+                  resetOn
+                });
 
+                await syncResources();
                 await actor.setFlag("world", "trackingStuff", trackers);
                 refreshChips();
                 modalHtml.find('#new-custom-name').val('');
@@ -2604,7 +2667,7 @@ Click a numbered modifier badge to execute a roll.</div>
     attacks = await ensureStandardAttacks(actor, attacks);
     const spellConfigs = window.CustomRolls.getProfileData(actor, "spellConfigs") || actor.getFlag("world", "spellConfigs") || {};
 
-    const attackNames = Object.keys(attacks);
+    let attackNames = Object.keys(attacks);
     const spellKeys = Object.keys(spellConfigs);
 
     let currentMode = initialMode;
@@ -2797,40 +2860,57 @@ Click a numbered modifier badge to execute a roll.</div>
       return html;
     }
 
-    function renderWeaponCards() {
+    function renderCustomWeaponCards() {
       const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
       const customNames = attackNames.filter(k => !STANDARD_KEYS.includes(k));
-      const standardNames = STANDARD_KEYS.filter(k => attacks[k]);
+      const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
+        || actor.getFlag("world", "hudAssignedSlots")
+        || {};
 
-      let customHtml = "";
-      if (customNames.length > 0) {
-        customHtml = customNames.map(name => {
-          const conf = attacks[name];
-          const isSel = name === selectedWeaponKey;
-          const d = getWeaponDetails(conf);
-          const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
-
-          return `
-          <div class="action-card weapon-card" data-key="${name}" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-              <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a;">${name}</span>
-              <span style="font-size: 0.75em; font-weight: bold; color: #555;">${d.dmgType}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-              <span>Atk: <strong style="color: #2b3a4a;">${d.atkSign}</strong></span>
-              <span>Dmg: <strong style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
-            </div>
-            ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
-          </div>
-        `;
-        }).join("");
-      } else {
-        customHtml = `
+      if (customNames.length === 0) {
+        return `
           <div style="color: #888; font-size: 0.8em; font-style: italic; text-align: center; padding: 16px 8px;">
             No custom weapons configured.<br><small style="color: #aaa;">Click GM Tools &gt; Generate Actions to generate from inventory.</small>
           </div>
         `;
       }
+
+      return customNames.map(name => {
+        const conf = attacks[name];
+        const isSel = name === selectedWeaponKey;
+        const d = getWeaponDetails(conf);
+        const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
+
+        const assignedSlot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === "weapons" && data?.name === name)?.[0];
+        const hudBadge = assignedSlot
+          ? `<span style="font-size: 0.70em; font-weight: 700; color: #1e5a6a; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 4px; display: inline-flex; align-items: center; gap: 3px;" title="Assigned to HUD Button ${assignedSlot}">HUD <i class="fas fa-square-${assignedSlot}"></i></span>`
+          : "";
+
+        return `
+        <div class="action-card weapon-card custom-weapon-card" data-key="${name}" draggable="true" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: grab; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+            <div style="display: flex; align-items: center; gap: 5px; overflow: hidden; min-width: 0;">
+              <i class="fas fa-grip-vertical" style="color: #aaa; font-size: 0.75em; cursor: grab;"></i>
+              <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${name}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+              ${hudBadge}
+              <span style="font-size: 0.75em; font-weight: bold; color: #555;">${d.dmgType}</span>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
+            <span>Atk: <strong style="color: #2b3a4a;">${d.atkSign}</strong></span>
+            <span>Dmg: <strong style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
+          </div>
+          ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+        </div>
+      `;
+      }).join("");
+    }
+
+    function renderWeaponCards() {
+      const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+      const standardNames = STANDARD_KEYS.filter(k => attacks[k]);
 
       let standardRowHtml = "";
       if (standardNames.length > 0) {
@@ -2868,7 +2948,7 @@ Click a numbered modifier badge to execute a roll.</div>
         }).join("");
 
         standardRowHtml = `
-          <div style="display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; margin-top: auto; padding-top: 5px; border-top: 1px dashed #bcc5d3;">
+          <div style="display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px dashed #bcc5d3;">
             <div style="font-weight: 700; font-size: 0.65em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px;">Standard Attacks</div>
             <div style="display: flex; gap: 4px; width: 100%;">
               ${miniCards}
@@ -2878,14 +2958,18 @@ Click a numbered modifier badge to execute a roll.</div>
       }
 
       return `
-        <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding-right: 2px;">
-          ${customHtml}
-        </div>
         ${standardRowHtml}
+        <div id="custom-weapons-list" style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding-right: 2px;">
+          ${renderCustomWeaponCards()}
+        </div>
       `;
     }
 
     function renderSpellCards() {
+      const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
+        || actor.getFlag("world", "hudAssignedSlots")
+        || {};
+
       return spellKeys.map(key => {
         const sp = spellConfigs[key];
         const isSel = key === selectedSpellKey;
@@ -2893,11 +2977,19 @@ Click a numbered modifier badge to execute a roll.</div>
         const lvlLabel = Number(sp.baseLevel) === 0 ? "Cantrip" : `Lvl ${sp.baseLevel}`;
         const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
 
+        const assignedSlot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === "spells" && data?.name === key)?.[0];
+        const hudBadge = assignedSlot
+          ? `<span style="font-size: 0.70em; font-weight: 700; color: #1e5a6a; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 4px; display: inline-flex; align-items: center; gap: 3px;" title="Assigned to HUD Button ${assignedSlot}">HUD <i class="fas fa-square-${assignedSlot}"></i></span>`
+          : "";
+
         return `
         <div class="action-card spell-card" data-key="${key}" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
             <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a;">${key}</span>
-            <span style="font-size: 0.75em; font-weight: bold; color: #7289da;">${lvlLabel}</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              ${hudBadge}
+              <span style="font-size: 0.75em; font-weight: bold; color: #7289da;">${lvlLabel}</span>
+            </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
             <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a;">${d.actionVal}</strong></span>
@@ -2913,6 +3005,11 @@ Click a numbered modifier badge to execute a roll.</div>
       const config = attacks[selectedWeaponKey];
       const d = config ? getWeaponDetails(config) : null;
       const tagsHtml = d ? d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ") : "";
+
+      const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
+        || actor.getFlag("world", "hudAssignedSlots")
+        || {};
+      const curSlot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === "weapons" && data?.name === selectedWeaponKey)?.[0] || "";
 
       let gwmHtml = "";
       if (config?.hasGWM) {
@@ -2944,6 +3041,19 @@ Click a numbered modifier badge to execute a roll.</div>
         `;
       }
 
+      const hudSlotControls = config ? `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #d8dee6;">
+          <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px;">HUD ACTION:</span>
+          <div style="display: inline-flex; gap: 3px;">
+            <button type="button" class="btn-assign-hud-slot ${!curSlot ? 'active' : ''}" data-category="weapons" data-slot="" title="Unassign from HUD" style="height: 20px; line-height: 18px; font-size: 0.70em; font-weight: 600; padding: 0 5px; border-radius: 3px; border: 1px solid ${!curSlot ? '#2b7489' : '#ccc'}; background: ${!curSlot ? '#2b7489' : '#fff'}; color: ${!curSlot ? '#fff' : '#555'}; cursor: pointer;">None</button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '1' ? 'active' : ''}" data-category="weapons" data-slot="1" title="Assign to HUD Button 1 (Slot 47)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '1' ? '#2b7489' : '#ccc'}; background: ${curSlot === '1' ? '#2b7489' : '#fff'}; color: ${curSlot === '1' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-1"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '2' ? 'active' : ''}" data-category="weapons" data-slot="2" title="Assign to HUD Button 2 (Slot 48)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '2' ? '#2b7489' : '#ccc'}; background: ${curSlot === '2' ? '#2b7489' : '#fff'}; color: ${curSlot === '2' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-2"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '3' ? 'active' : ''}" data-category="weapons" data-slot="3" title="Assign to HUD Button 3 (Slot 49)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '3' ? '#2b7489' : '#ccc'}; background: ${curSlot === '3' ? '#2b7489' : '#fff'}; color: ${curSlot === '3' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-3"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '4' ? 'active' : ''}" data-category="weapons" data-slot="4" title="Assign to HUD Button 4 (Slot 50)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '4' ? '#2b7489' : '#ccc'}; background: ${curSlot === '4' ? '#2b7489' : '#fff'}; color: ${curSlot === '4' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-4"></i></button>
+          </div>
+        </div>
+      ` : "";
+
       return `
         <!-- Weapon Overview Card (Static space taking remainder) -->
         <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border-radius: 5px; padding: 6px 8px; border: 1px solid #bcc5d3; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
@@ -2967,6 +3077,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 </div>
               </div>
               ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+              ${hudSlotControls}
 
               <!-- Live Estimated Formula Totals (Expanded & Larger Font) -->
               <div id="weapon-live-formula-section" style="margin-top: auto; padding-top: 5px; border-top: 1px dashed #bcc5d3; display: flex; flex-direction: column; gap: 3px;">
@@ -3036,6 +3147,24 @@ Click a numbered modifier badge to execute a roll.</div>
       const lvlLabel = Number(sp.baseLevel) === 0 ? "Cantrip" : `Level ${sp.baseLevel}`;
       const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
 
+      const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
+        || actor.getFlag("world", "hudAssignedSlots")
+        || {};
+      const curSlot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === "spells" && data?.name === selectedSpellKey)?.[0] || "";
+
+      const hudSlotControls = sp ? `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #d8dee6;">
+          <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px;">HUD ACTION:</span>
+          <div style="display: inline-flex; gap: 3px;">
+            <button type="button" class="btn-assign-hud-slot ${!curSlot ? 'active' : ''}" data-category="spells" data-slot="" title="Unassign from HUD" style="height: 20px; line-height: 18px; font-size: 0.70em; font-weight: 600; padding: 0 5px; border-radius: 3px; border: 1px solid ${!curSlot ? '#2b7489' : '#ccc'}; background: ${!curSlot ? '#2b7489' : '#fff'}; color: ${!curSlot ? '#fff' : '#555'}; cursor: pointer;">None</button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '1' ? 'active' : ''}" data-category="spells" data-slot="1" title="Assign to HUD Button 1 (Slot 47)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '1' ? '#2b7489' : '#ccc'}; background: ${curSlot === '1' ? '#2b7489' : '#fff'}; color: ${curSlot === '1' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-1"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '2' ? 'active' : ''}" data-category="spells" data-slot="2" title="Assign to HUD Button 2 (Slot 48)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '2' ? '#2b7489' : '#ccc'}; background: ${curSlot === '2' ? '#2b7489' : '#fff'}; color: ${curSlot === '2' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-2"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '3' ? 'active' : ''}" data-category="spells" data-slot="3" title="Assign to HUD Button 3 (Slot 49)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '3' ? '#2b7489' : '#ccc'}; background: ${curSlot === '3' ? '#2b7489' : '#fff'}; color: ${curSlot === '3' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-3"></i></button>
+            <button type="button" class="btn-assign-hud-slot ${curSlot === '4' ? 'active' : ''}" data-category="spells" data-slot="4" title="Assign to HUD Button 4 (Slot 50)" style="height: 20px; line-height: 18px; font-size: 0.75em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid ${curSlot === '4' ? '#2b7489' : '#ccc'}; background: ${curSlot === '4' ? '#2b7489' : '#fff'}; color: ${curSlot === '4' ? '#fff' : '#555'}; cursor: pointer;"><i class="fas fa-square-4"></i></button>
+          </div>
+        </div>
+      ` : "";
+
       return `
         <!-- Spell Overview Card -->
         <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
@@ -3048,6 +3177,7 @@ Click a numbered modifier badge to execute a roll.</div>
             <span>Effect: <strong style="color: #2b3a4a;">${d.valFormula}</strong> <small style="color: #666;">${d.typeLabel}</small></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+          ${hudSlotControls}
         </div>
 
         <!-- Upcast & Slot Options Card -->
@@ -3492,6 +3622,125 @@ Click a numbered modifier badge to execute a roll.</div>
           selectedSpellKey = $(this).data("key");
           updateCardStyles();
           html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+        });
+
+        function bindWeaponDragAndDrop() {
+          const list = html.find("#custom-weapons-list");
+          list.find(".custom-weapon-card").off("dragstart dragend dragover dragleave drop");
+
+          list.find(".custom-weapon-card").on("dragstart", function (e) {
+            e.originalEvent.dataTransfer.setData("text/plain", $(this).data("key"));
+            e.originalEvent.dataTransfer.effectAllowed = "move";
+            $(this).css("opacity", "0.4");
+          });
+
+          list.find(".custom-weapon-card").on("dragend", function () {
+            $(this).css("opacity", "1");
+            list.find(".custom-weapon-card").css({ "border-top": "", "border-bottom": "" });
+          });
+
+          list.find(".custom-weapon-card").on("dragover", function (e) {
+            e.preventDefault();
+            e.originalEvent.dataTransfer.dropEffect = "move";
+            const rect = this.getBoundingClientRect();
+            const relY = e.clientY - rect.top;
+            if (relY < rect.height / 2) {
+              $(this).css({ "border-top": "3px solid #7289da", "border-bottom": "" });
+            } else {
+              $(this).css({ "border-bottom": "3px solid #7289da", "border-top": "" });
+            }
+          });
+
+          list.find(".custom-weapon-card").on("dragleave", function () {
+            $(this).css({ "border-top": "", "border-bottom": "" });
+          });
+
+          list.find(".custom-weapon-card").on("drop", async function (e) {
+            e.preventDefault();
+            $(this).css({ "border-top": "", "border-bottom": "" });
+            const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
+            const targetKey = $(this).data("key");
+            if (!draggedKey || draggedKey === targetKey) return;
+
+            const rect = this.getBoundingClientRect();
+            const relY = e.clientY - rect.top;
+            const insertBefore = relY < rect.height / 2;
+
+            const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+            const curCustom = attackNames.filter(k => !STANDARD_KEYS.includes(k));
+            const fromIdx = curCustom.indexOf(draggedKey);
+            const toIdx = curCustom.indexOf(targetKey);
+            if (fromIdx === -1 || toIdx === -1) return;
+
+            curCustom.splice(fromIdx, 1);
+            const newTargetIdx = curCustom.indexOf(targetKey);
+            const finalIdx = insertBefore ? newTargetIdx : newTargetIdx + 1;
+            curCustom.splice(finalIdx, 0, draggedKey);
+
+            const newAttacks = {};
+            for (const k of curCustom) {
+              if (attacks[k]) newAttacks[k] = attacks[k];
+            }
+            for (const k of STANDARD_KEYS) {
+              if (attacks[k]) newAttacks[k] = attacks[k];
+            }
+
+            await window.CustomRolls.setProfileData(actor, "attackConfigs", newAttacks);
+            await actor.setFlag("world", "attackConfigs", newAttacks, { recursive: false });
+
+            attacks = newAttacks;
+            attackNames = Object.keys(attacks);
+
+            html.find("#custom-weapons-list").html(renderCustomWeaponCards());
+            bindWeaponDragAndDrop();
+            updateCardStyles();
+          });
+        }
+
+        bindWeaponDragAndDrop();
+
+        html.on("click", ".btn-assign-hud-slot", async function (e) {
+          e.stopPropagation();
+          const category = $(this).data("category") || "weapons";
+          const slot = String($(this).data("slot") || "");
+          const targetName = category === "weapons" ? selectedWeaponKey : selectedSpellKey;
+          if (!targetName) return;
+
+          let assignedSlots = foundry.utils.deepClone(
+            window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots") ||
+            actor.getFlag("world", "hudAssignedSlots") || {}
+          );
+
+          for (const [sNum, data] of Object.entries(assignedSlots)) {
+            if (data?.category === category && data?.name === targetName) {
+              delete assignedSlots[sNum];
+            }
+          }
+
+          if (slot) {
+            assignedSlots[slot] = {
+              category: category,
+              name: targetName,
+              handler: category === "weapons" ? "runAttackRoll" : "runSpellAttackRoll"
+            };
+          }
+
+          await window.CustomRolls.setProfileData(actor, "hudAssignedSlots", assignedSlots);
+          await actor.setFlag("world", "hudAssignedSlots", assignedSlots);
+
+          ui.notifications.info(slot ? `Assigned "${targetName}" to HUD Button ${slot}.` : `Unassigned "${targetName}" from HUD.`);
+
+          if (category === "weapons") {
+            html.find("#custom-weapons-list").html(renderCustomWeaponCards());
+            bindWeaponDragAndDrop();
+            updateCardStyles();
+            html.find("#inspector-weapon").html(getSelectedWeaponInspectorHtml());
+            updateWeaponOverviewTotals();
+          } else {
+            html.find("#section-spell").html(renderSpellCards());
+            updateCardStyles();
+            html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+          }
         });
       }
     }, {
