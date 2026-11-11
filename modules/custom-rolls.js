@@ -3660,14 +3660,14 @@ Click a numbered modifier badge to execute a roll.</div>
             /* 3. TACTICAL GLASS THEME                                   */
             /* ========================================================= */
             .app.dialog.cheapdice-theme-glass {
-              background: rgba(15, 23, 42, 0.88) !important;
-              backdrop-filter: blur(14px) !important;
-              -webkit-backdrop-filter: blur(14px) !important;
-              border: 1px solid rgba(255, 255, 255, 0.16) !important;
-              box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6) !important;
+              background: rgba(15, 23, 42, 0.72) !important;
+              backdrop-filter: blur(16px) !important;
+              -webkit-backdrop-filter: blur(16px) !important;
+              border: 1px solid rgba(255, 255, 255, 0.18) !important;
+              box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5) !important;
             }
             .app.dialog.cheapdice-theme-glass .window-header {
-              background: rgba(15, 23, 42, 0.65) !important;
+              background: rgba(15, 23, 42, 0.55) !important;
               border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
               color: #ffffff !important;
             }
