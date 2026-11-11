@@ -3345,6 +3345,96 @@ Click a numbered modifier badge to execute a roll.</div>
               transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
             }
 
+            /* Common Elements Across All Themes */
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="init"],
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="init"],
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="init"] {
+              background: rgba(56, 189, 248, 0.15) !important;
+              border-color: rgba(56, 189, 248, 0.4) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="init"] .entry-label,
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="init"] .entry-label,
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="init"] .entry-label {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="concentration"],
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="concentration"],
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="concentration"] {
+              background: rgba(244, 63, 94, 0.15) !important;
+              border-color: rgba(244, 63, 94, 0.4) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="concentration"] .entry-label,
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="concentration"] .entry-label,
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="concentration"] .entry-label {
+              color: #fb7185 !important;
+            }
+
+            /* Tracking Chip Inputs and Inc/Dec Buttons */
+            .app.dialog.cheapdice-theme-slate .tracking-chip,
+            .app.dialog.cheapdice-theme-arcane .tracking-chip,
+            .app.dialog.cheapdice-theme-glass .tracking-chip {
+              background: rgba(0, 0, 0, 0.3) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .tracking-chip span,
+            .app.dialog.cheapdice-theme-arcane .tracking-chip span,
+            .app.dialog.cheapdice-theme-glass .tracking-chip span {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .chip-val-input,
+            .app.dialog.cheapdice-theme-arcane .chip-val-input,
+            .app.dialog.cheapdice-theme-glass .chip-val-input {
+              background: rgba(0, 0, 0, 0.5) !important;
+              color: #38bdf8 !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-chip-dec,
+            .app.dialog.cheapdice-theme-slate .btn-chip-inc,
+            .app.dialog.cheapdice-theme-arcane .btn-chip-dec,
+            .app.dialog.cheapdice-theme-arcane .btn-chip-inc,
+            .app.dialog.cheapdice-theme-glass .btn-chip-dec,
+            .app.dialog.cheapdice-theme-glass .btn-chip-inc {
+              background: #252f42 !important;
+              border: 1px solid #38bdf8 !important;
+              color: #38bdf8 !important;
+              font-weight: 800 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-chip-dec,
+            .app.dialog.cheapdice-theme-arcane .btn-chip-inc {
+              background: #252026 !important;
+              border: 1px solid #d97706 !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-chip-dec,
+            .app.dialog.cheapdice-theme-glass .btn-chip-inc {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border: 1px solid #38bdf8 !important;
+              color: #ffffff !important;
+            }
+
+            /* D20 Overview & Options (Super Advantage, Reliable Talent, Halfling Luck) */
+            .app.dialog.cheapdice-theme-slate #inspector-d20 label,
+            .app.dialog.cheapdice-theme-slate #inspector-d20 label span {
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #inspector-d20 label,
+            .app.dialog.cheapdice-theme-arcane #inspector-d20 label span {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #inspector-d20 label,
+            .app.dialog.cheapdice-theme-glass #inspector-d20 label span {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right span,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right strong,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right div {
+              color: #f1f5f9;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right span[style*="color: #666"],
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right small[style*="color: #666"] {
+              color: #94a3b8 !important;
+            }
+
             /* Theme Selector in Window Header */
             .dice-stuff-theme-select {
               background: rgba(0, 0, 0, 0.45);
