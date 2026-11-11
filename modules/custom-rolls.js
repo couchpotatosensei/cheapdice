@@ -2389,11 +2389,11 @@ Click a numbered modifier badge to execute a roll.</div>
                     </div>
                   </div>
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                    <div style="display: flex; gap: 4px;">
-                      <button type="button" class="btn-manage-move-up" data-id="${t.id}" ${idx === 0 ? 'disabled style="opacity:0.3; cursor:default;' : 'style="cursor:pointer;'} height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 6px; border: 1px solid #b0b8c4; background: #fff; color: #333; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center;" title="Move Up">▲</button>
-                      <button type="button" class="btn-manage-move-down" data-id="${t.id}" ${idx === trackers.length - 1 ? 'disabled style="opacity:0.3; cursor:default;' : 'style="cursor:pointer;'} height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 6px; border: 1px solid #b0b8c4; background: #fff; color: #333; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center;" title="Move Down">▼</button>
+                    <div style="display: flex; gap: 4px; width: auto; flex: 0 0 auto;">
+                      <button type="button" class="btn-manage-move-up" data-id="${t.id}" ${idx === 0 ? 'disabled style="opacity:0.3; cursor:default;' : 'style="cursor:pointer;'} width: 28px; min-width: 28px; max-width: 28px; height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 4px; border: 1px solid #b0b8c4; background: #fff; color: #333; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; margin: 0; flex: 0 0 auto;" title="Move Up">▲</button>
+                      <button type="button" class="btn-manage-move-down" data-id="${t.id}" ${idx === trackers.length - 1 ? 'disabled style="opacity:0.3; cursor:default;' : 'style="cursor:pointer;'} width: 28px; min-width: 28px; max-width: 28px; height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 4px; border: 1px solid #b0b8c4; background: #fff; color: #333; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; margin: 0; flex: 0 0 auto;" title="Move Down">▼</button>
                     </div>
-                    <button type="button" class="btn-manage-remove" data-id="${t.id}" title="Remove Tracker" style="height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 6px; border: 1px solid #e07a7a; background: #fff5f5; color: #c82333; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                    <button type="button" class="btn-manage-remove" data-id="${t.id}" title="Remove Tracker" style="width: auto; min-width: 70px; max-width: 20%; flex: 0 0 auto; margin: 0; height: 20px; line-height: 18px; font-size: 0.72em; font-weight: 600; padding: 0 8px; border: 1px solid #e07a7a; background: #fff5f5; color: #c82333; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
                       Remove
                     </button>
                   </div>
@@ -2409,7 +2409,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 <div style="font-size: 0.84em; color: #2b3a4a;">
                   <strong>${a.label}</strong> <small style="color: #666;">(${a.value}/${a.max}${a.rechargeFormula ? ` • 🔄 ${a.rechargeFormula}` : ''})</small>
                 </div>
-                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;"'}>
+                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777; width: auto; min-width: 60px; max-width: 20%; flex: 0 0 auto; margin: 0; display: inline-flex; align-items: center; justify-content: center;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff; width: auto; min-width: 60px; max-width: 20%; flex: 0 0 auto; margin: 0; display: inline-flex; align-items: center; justify-content: center;"'}>
                   ${a.isAdded ? 'Added' : 'Add'}
                 </button>
               </div>
@@ -2430,35 +2430,47 @@ Click a numbered modifier badge to execute a roll.</div>
                 <label style="font-weight: 700; font-size: 0.78em; color: #3b4d6b; display: block; margin-bottom: 6px; letter-spacing: 0.3px;">
                   CREATE CUSTOM COUNTER
                 </label>
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 6px; margin-bottom: 6px;">
-                  <input type="text" id="new-custom-name" placeholder="Counter Name (e.g. Grit, Torches)" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
-                  <input type="number" id="new-custom-max" placeholder="Max" value="3" min="1" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                  <select id="new-custom-reset" style="height: 26px; font-size: 0.80em; border: 1px solid #ccc; border-radius: 3px;">
-                    <optgroup label="Recharge (to Max)">
-                      <option value="lr">Recharge on Long Rest</option>
-                      <option value="sr">Recharge on Short Rest</option>
-                      <option value="dawn">Daily at Dawn</option>
-                    </optgroup>
-                    <optgroup label="Reset (Count Up / Tally)">
-                      <option value="lr_reset_1">Reset on Long Rest (to 1)</option>
-                      <option value="lr_reset_0">Reset on Long Rest (to 0)</option>
-                      <option value="sr_reset_1">Reset on Short Rest (to 1)</option>
-                      <option value="sr_reset_0">Reset on Short Rest (to 0)</option>
-                      <option value="dawn_reset_1">Reset at Dawn (to 1)</option>
-                      <option value="dawn_reset_0">Reset at Dawn (to 0)</option>
-                    </optgroup>
-                    <optgroup label="Manual">
-                      <option value="none">Manual Only</option>
-                    </optgroup>
-                  </select>
-                  <input type="text" id="new-custom-formula" placeholder="Recharge Formula (e.g. 1d6+1)" style="height: 26px; font-size: 0.82em; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px;" />
-                </div>
-                <div style="display: flex; justify-content: flex-end;">
-                  <button type="button" id="btn-submit-new-custom" style="height: 24px; line-height: 22px; font-weight: 600; font-size: 0.78em; padding: 0 12px; background: #28a745; color: #fff; border: 1px solid #218838; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
-                    Create Tracker
-                  </button>
+                <div style="border: 1px solid #d2d7df; border-radius: 4px; padding: 6px 8px; background: #fafbfc;">
+                  <div style="margin-bottom: 5px;">
+                    <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">NAME</label>
+                    <input type="text" id="new-custom-name" placeholder="Counter Name (e.g. Grit, Torches)" style="height: 24px; font-size: 0.82em; font-weight: 600; padding: 2px 6px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box; color: #2b3a4a;" />
+                  </div>
+                  <div style="display: grid; grid-template-columns: 75px 1fr 1fr; gap: 6px; align-items: center;">
+                    <div>
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">MAX</label>
+                      <input type="number" id="new-custom-max" placeholder="Max" value="3" min="1" style="height: 24px; font-size: 0.82em; padding: 2px 5px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;" />
+                    </div>
+                    <div>
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">FORMULA</label>
+                      <input type="text" id="new-custom-formula" placeholder="e.g. 1d6+1" style="height: 24px; font-size: 0.82em; padding: 2px 5px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;" />
+                    </div>
+                    <div>
+                      <label style="font-size: 0.70em; color: #666; font-weight: 600; display: block; margin-bottom: 2px;">RECHARGE / RESET</label>
+                      <select id="new-custom-reset" style="height: 24px; font-size: 0.78em; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;">
+                        <optgroup label="Recharge (to Max)">
+                          <option value="lr">Recharge: Long Rest</option>
+                          <option value="sr">Recharge: Short Rest</option>
+                          <option value="dawn">Recharge: Dawn</option>
+                        </optgroup>
+                        <optgroup label="Reset (Count Up)">
+                          <option value="lr_reset_1">Reset to 1 (Long Rest)</option>
+                          <option value="lr_reset_0">Reset to 0 (Long Rest)</option>
+                          <option value="sr_reset_1">Reset to 1 (Short Rest)</option>
+                          <option value="sr_reset_0">Reset to 0 (Short Rest)</option>
+                          <option value="dawn_reset_1">Reset to 1 (Dawn)</option>
+                          <option value="dawn_reset_0">Reset to 0 (Dawn)</option>
+                        </optgroup>
+                        <optgroup label="Manual">
+                          <option value="none">Manual Only</option>
+                        </optgroup>
+                      </select>
+                    </div>
+                  </div>
+                  <div style="display: flex; justify-content: flex-end; align-items: center; margin-top: 5px;">
+                    <button type="button" id="btn-submit-new-custom" style="width: auto; min-width: 100px; max-width: 25%; flex: 0 0 auto; margin: 0; height: 22px; line-height: 20px; font-weight: 600; font-size: 0.76em; padding: 0 10px; background: #28a745; color: #fff; border: 1px solid #218838; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                      Create Tracker
+                    </button>
+                  </div>
                 </div>
               </div>
 
