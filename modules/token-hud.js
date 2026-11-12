@@ -11,6 +11,149 @@ function getSetting(key, fallback = true) {
   return fallback;
 }
 
+export function getButtonInfo(actor, btnNum, slotIdx) {
+  const macroId = game.user?.hotbar?.[slotIdx];
+  const macro = game.macros?.get(macroId);
+  if (macro) {
+    return { title: `Hotbar ${slotIdx}: ${macro.name}`, icon: `fas fa-square-${btnNum}`, name: macro.name, type: "Macro" };
+  }
+
+  const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
+    || actor?.getFlag?.("cheapdice", "hudAssignedSlots")
+    || actor?.getFlag?.("world", "hudAssignedSlots")
+    || {};
+  const assignment = assignedSlots[btnNum] || assignedSlots[String(btnNum)];
+  if (assignment?.name) {
+    const typeLabel = assignment.category === "spells" ? "Spell" : "Weapon";
+    return { title: `HUD ${btnNum} (${typeLabel}): ${assignment.name}`, icon: `fas fa-square-${btnNum}`, name: assignment.name, type: typeLabel };
+  }
+
+  return { title: `Slot ${btnNum} (Hotbar ${slotIdx})`, icon: `fas fa-square-${btnNum}`, name: `Slot ${btnNum}`, type: "Empty" };
+}
+
+export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = null) {
+  if (!actor && token) actor = token.actor;
+  if (!actor) return;
+  if (!token) {
+    token = actor.token?.object || canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id) || null;
+  }
+
+  // 1. Priority: User's hotbar slot macro
+  const macroId = game.user?.hotbar?.[slotIndex];
+  const macro = game.macros?.get(macroId);
+  if (macro) {
+    return macro.execute({ actor: actor, token: token });
+  }
+
+  // 2. Fallback: DM assigned action on the actor
+  const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
+    || actor.getFlag("cheapdice", "hudAssignedSlots")
+    || actor.getFlag("world", "hudAssignedSlots")
+    || {};
+  const assignment = assignedSlots[buttonNumber] || assignedSlots[String(buttonNumber)];
+
+  if (assignment?.name) {
+    const flagKey = assignment.category === "spells" ? "spellConfigs" : "attackConfigs";
+    const configs = window.CustomRolls?.getProfileData?.(actor, flagKey)
+      || actor.getFlag("cheapdice", flagKey)
+      || actor.getFlag("world", flagKey)
+      || {};
+    const config = configs[assignment.name];
+
+    if (!config) {
+      return ui.notifications.warn(`Assigned action "${assignment.name}" not found in actor configurations.`);
+    }
+
+    const socket = game.modules.get(MODULE_ID)?.api?.socket || game.modules.get("cheapdice")?.api?.socket || globalThis.attackSocket;
+    if (!socket) {
+      return ui.notifications.error("SocketLib handler is not initialized.");
+    }
+
+    const handler = assignment.handler || (assignment.category === "spells" ? "runSpellAttackRoll" : "runAttackRoll");
+    const rollConfig = foundry.utils.deepClone(config);
+    const extras = (rollConfig.additionalDamageComponents || []).filter(c => c && c.formula);
+    const hasGWM = Boolean(rollConfig.hasGWM);
+
+    // If extra damage components or GWM are present, prompt a quick toggle dialog
+    if (extras.length > 0 || hasGWM) {
+      let gwmHtml = "";
+      if (hasGWM) {
+        gwmHtml = `
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #a34848; padding: 4px 6px; background: rgba(163,72,72,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+            <span>GWM / Sharpshooter (-5 / +10)</span>
+            <input type="checkbox" id="hud-prompt-gwm" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let extrasHtml = "";
+      if (extras.length > 0) {
+        extrasHtml = `
+          <div style="margin-bottom: 6px;">
+            <span style="font-weight: 700; font-size: 0.78em; color: #4b5d88; display: block; margin-bottom: 4px;">EXTRA DAMAGE SOURCES:</span>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              ${extras.map((ex, i) => `
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; padding: 3px 6px; background: rgba(0,0,0,0.03); border: 1px solid #e0e0e0; border-radius: 4px; cursor: pointer;">
+                  <span><strong>${ex.label || 'Extra ' + (i + 1)}</strong> <small style="color: #666;">(${ex.formula})</small></span>
+                  <input type="checkbox" class="hud-prompt-extra" data-index="${i}" style="margin: 0;">
+                </label>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      const promptHtml = `
+        <div style="font-family: inherit; padding: 4px 2px;">
+          ${gwmHtml}
+          ${extrasHtml}
+        </div>
+      `;
+
+      return new Dialog({
+        title: `${assignment.name}`,
+        content: promptHtml,
+        buttons: {
+          roll: {
+            icon: '<i class="fas fa-dice-d20"></i>',
+            label: "Roll",
+            callback: async (html) => {
+              if (hasGWM && html.find("#hud-prompt-gwm").is(":checked")) {
+                rollConfig.attackCircumstanceModifier = (Number(rollConfig.attackCircumstanceModifier) || 0) - 5;
+                rollConfig.damageModifier = (Number(rollConfig.damageModifier) || 0) + 10;
+                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [GWM/SS]`;
+              }
+
+              if (rollConfig.additionalDamageComponents) {
+                html.find(".hud-prompt-extra").each(function () {
+                  const idx = $(this).data("index");
+                  if (extras[idx]) {
+                    extras[idx].isActive = $(this).is(":checked");
+                  }
+                });
+              }
+
+              rollConfig.targetIds = Array.from(game.user.targets).map(t => t.id);
+              return await globalThis.attackSocket.executeAsGM(handler, rollConfig, actor.id, game.user.id);
+            }
+          },
+          cancel: { label: "Cancel" }
+        },
+        default: "roll"
+      }, { width: 310, height: "auto" }).render(true);
+    }
+
+    // Capture caller's selected target IDs so GM receives them reliably
+    rollConfig.targetIds = Array.from(game.user.targets).map(t => t.id);
+
+    // Direct roll when no extras or GWM exist
+    return await globalThis.attackSocket.executeAsGM(handler, rollConfig, actor.id, game.user.id);
+  }
+
+  // 3. Neither hotbar macro nor assigned action configured
+  ui.notifications.info(`Button ${buttonNumber}: Hotbar slot ${slotIndex} is empty and no action is assigned.`);
+}
+
 export function initTokenHud() {
   if (!getSetting("featureTokenHud")) return;
 
@@ -41,124 +184,6 @@ export function initTokenHud() {
 
       btn.addEventListener("click", onClick);
       return btn;
-    };
-
-    // Helper: HUD Button Slot Runner (Player Hotbar Priority, DM Assigned Action Fallback)
-    const runHudButtonSlot = async (buttonNumber, slotIndex) => {
-      // 1. Priority: User's hotbar slot macro
-      const macroId = game.user.hotbar[slotIndex];
-      const macro = game.macros.get(macroId);
-      if (macro) {
-        return macro.execute({ actor: token.actor, token: token });
-      }
-
-      // 2. Fallback: DM assigned action on the actor
-      const assignedSlots = window.CustomRolls?.getProfileData?.(token.actor, "hudAssignedSlots")
-        || token.actor.getFlag("cheapdice", "hudAssignedSlots")
-        || token.actor.getFlag("world", "hudAssignedSlots")
-        || {};
-      const assignment = assignedSlots[buttonNumber] || assignedSlots[String(buttonNumber)];
-
-      if (assignment?.name) {
-        const flagKey = assignment.category === "spells" ? "spellConfigs" : "attackConfigs";
-        const configs = window.CustomRolls?.getProfileData?.(token.actor, flagKey)
-          || token.actor.getFlag("cheapdice", flagKey)
-          || token.actor.getFlag("world", flagKey)
-          || {};
-        const config = configs[assignment.name];
-
-        if (!config) {
-          return ui.notifications.warn(`Assigned action "${assignment.name}" not found in actor configurations.`);
-        }
-
-        const socket = game.modules.get(MODULE_ID)?.api?.socket || game.modules.get("cheapdice")?.api?.socket || globalThis.attackSocket;
-        if (!socket) {
-          return ui.notifications.error("SocketLib handler is not initialized.");
-        }
-
-        const handler = assignment.handler || (assignment.category === "spells" ? "runSpellAttackRoll" : "runAttackRoll");
-        const rollConfig = foundry.utils.deepClone(config);
-        const extras = (rollConfig.additionalDamageComponents || []).filter(c => c && c.formula);
-        const hasGWM = Boolean(rollConfig.hasGWM);
-
-        // If extra damage components or GWM are present, prompt a quick toggle dialog
-        if (extras.length > 0 || hasGWM) {
-          let gwmHtml = "";
-          if (hasGWM) {
-            gwmHtml = `
-              <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #a34848; padding: 4px 6px; background: rgba(163,72,72,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
-                <span>GWM / Sharpshooter (-5 / +10)</span>
-                <input type="checkbox" id="hud-prompt-gwm" style="margin: 0;">
-              </label>
-            `;
-          }
-
-          let extrasHtml = "";
-          if (extras.length > 0) {
-            extrasHtml = `
-              <div style="margin-bottom: 6px;">
-                <span style="font-weight: 700; font-size: 0.78em; color: #4b5d88; display: block; margin-bottom: 4px;">EXTRA DAMAGE SOURCES:</span>
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                  ${extras.map((ex, i) => `
-                    <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; padding: 3px 6px; background: rgba(0,0,0,0.03); border: 1px solid #e0e0e0; border-radius: 4px; cursor: pointer;">
-                      <span><strong>${ex.label || 'Extra ' + (i + 1)}</strong> <small style="color: #666;">(${ex.formula})</small></span>
-                      <input type="checkbox" class="hud-prompt-extra" data-index="${i}" style="margin: 0;">
-                    </label>
-                  `).join("")}
-                </div>
-              </div>
-            `;
-          }
-
-          const promptHtml = `
-            <div style="font-family: inherit; padding: 4px 2px;">
-              ${gwmHtml}
-              ${extrasHtml}
-            </div>
-          `;
-
-          return new Dialog({
-            title: `${assignment.name}`,
-            content: promptHtml,
-            buttons: {
-              roll: {
-                icon: '<i class="fas fa-dice-d20"></i>',
-                label: "Roll",
-                callback: async (html) => {
-                  if (hasGWM && html.find("#hud-prompt-gwm").is(":checked")) {
-                    rollConfig.attackCircumstanceModifier = (Number(rollConfig.attackCircumstanceModifier) || 0) - 5;
-                    rollConfig.damageModifier = (Number(rollConfig.damageModifier) || 0) + 10;
-                    rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [GWM/SS]`;
-                  }
-
-                  if (rollConfig.additionalDamageComponents) {
-                    html.find(".hud-prompt-extra").each(function () {
-                      const idx = $(this).data("index");
-                      if (extras[idx]) {
-                        extras[idx].isActive = $(this).is(":checked");
-                      }
-                    });
-                  }
-
-                  rollConfig.targetIds = Array.from(game.user.targets).map(t => t.id);
-                  return await globalThis.attackSocket.executeAsGM(handler, rollConfig, token.actor.id, game.user.id);
-                }
-              },
-              cancel: { label: "Cancel" }
-            },
-            default: "roll"
-          }, { width: 310, height: "auto" }).render(true);
-        }
-
-        // Capture caller's selected target IDs so GM receives them reliably
-        rollConfig.targetIds = Array.from(game.user.targets).map(t => t.id);
-
-        // Direct roll when no extras or GWM exist
-        return await globalThis.attackSocket.executeAsGM(handler, rollConfig, token.actor.id, game.user.id);
-      }
-
-      // 3. Neither hotbar macro nor assigned action configured
-      ui.notifications.info(`Button ${buttonNumber}: Hotbar slot ${slotIndex} is empty and no action is assigned.`);
     };
 
     // Helper: Hotbar Slot Runner
@@ -610,33 +635,14 @@ export function initTokenHud() {
     leftFlyoutWrapper.appendChild(leftFlyout);
     colLeft.appendChild(leftFlyoutWrapper);
 
-    const getButtonInfo = (btnNum, slotIdx) => {
-      const macroId = game.user.hotbar[slotIdx];
-      const macro = game.macros.get(macroId);
-      if (macro) {
-        return { title: `Hotbar ${slotIdx}: ${macro.name}`, icon: `fas fa-square-${btnNum}` };
-      }
+    const b1 = getButtonInfo(token.actor, 1, 47);
+    const b2 = getButtonInfo(token.actor, 2, 48);
+    const b3 = getButtonInfo(token.actor, 3, 49);
+    const b4 = getButtonInfo(token.actor, 4, 50);
 
-      const assignedSlots = window.CustomRolls?.getProfileData?.(token.actor, "hudAssignedSlots")
-        || token.actor.getFlag("world", "hudAssignedSlots")
-        || {};
-      const assignment = assignedSlots[btnNum] || assignedSlots[String(btnNum)];
-      if (assignment?.name) {
-        const typeLabel = assignment.category === "spells" ? "Spell" : "Weapon";
-        return { title: `HUD ${btnNum} (${typeLabel}): ${assignment.name}`, icon: `fas fa-square-${btnNum}` };
-      }
-
-      return { title: `Slot ${btnNum} (Hotbar ${slotIdx})`, icon: `fas fa-square-${btnNum}` };
-    };
-
-    const b1 = getButtonInfo(1, 47);
-    const b2 = getButtonInfo(2, 48);
-    const b3 = getButtonInfo(3, 49);
-    const b4 = getButtonInfo(4, 50);
-
-    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(1, 47)));
-    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(2, 48)));
-    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(3, 49)));
-    colRight.appendChild(makeButton(b4.title, b4.icon, () => runHudButtonSlot(4, 50)));
+    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(token.actor, 1, 47, token)));
+    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(token.actor, 2, 48, token)));
+    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(token.actor, 3, 49, token)));
+    colRight.appendChild(makeButton(b4.title, b4.icon, () => runHudButtonSlot(token.actor, 4, 50, token)));
   });
 }

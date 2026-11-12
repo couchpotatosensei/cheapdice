@@ -1,4 +1,5 @@
 import { MODULE_ID, SETTINGS } from "../src/constants.js";
+import { getButtonInfo, runHudButtonSlot } from "./token-hud.js";
 
 // Helper: Resolve Module Socket
 export function getSocket() {
@@ -4946,7 +4947,89 @@ Click a numbered modifier badge to execute a roll.</div>
             updateCardStyles();
             html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
           }
+          renderSideTabs();
         });
+
+        // --- Render Right-Side Action Tabs ---
+        function renderSideTabs() {
+          let sideTabs = dialogApp.find(".dice-stuff-side-tabs");
+          if (sideTabs.length === 0) {
+            sideTabs = $(`
+              <div class="dice-stuff-side-tabs" style="
+                position: absolute;
+                top: 30px;
+                right: -36px;
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+                z-index: 100;
+              "></div>
+            `);
+            dialogApp.append(sideTabs);
+          }
+          sideTabs.empty();
+
+          const slots = [
+            { num: 1, hotbar: 47 },
+            { num: 2, hotbar: 48 },
+            { num: 3, hotbar: 49 },
+            { num: 4, hotbar: 50 }
+          ];
+
+          for (const s of slots) {
+            const info = getButtonInfo(actor, s.num, s.hotbar);
+            const isAssigned = info.type !== "Empty";
+            const tabBtn = $(`
+              <button type="button" class="dice-stuff-side-tab-btn" data-slot="${s.num}" data-hotbar="${s.hotbar}" title="${info.title}" style="
+                width: 34px;
+                height: 34px;
+                padding: 0;
+                margin: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 1px solid rgba(0, 0, 0, 0.45);
+                border-left: none;
+                border-radius: 0 6px 6px 0;
+                background: ${isAssigned ? '#2c2f33' : 'rgba(30, 33, 36, 0.75)'};
+                color: ${isAssigned ? '#e0e7ff' : '#888'};
+                cursor: pointer;
+                box-shadow: 2px 2px 5px rgba(0,0,0,0.35);
+                font-size: 15px;
+                transition: transform 0.1s ease, background 0.15s ease, color 0.15s ease;
+              ">
+                <i class="${info.icon}"></i>
+              </button>
+            `);
+
+            tabBtn.hover(
+              function () {
+                $(this).css({
+                  background: "#4f545c",
+                  color: "#fff",
+                  transform: "translateX(2px)"
+                });
+              },
+              function () {
+                $(this).css({
+                  background: isAssigned ? '#2c2f33' : 'rgba(30, 33, 36, 0.75)',
+                  color: isAssigned ? '#e0e7ff' : '#888',
+                  transform: "translateX(0)"
+                });
+              }
+            );
+
+            tabBtn.on("click", async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              await runHudButtonSlot(actor, s.num, s.hotbar);
+            });
+
+            sideTabs.append(tabBtn);
+          }
+        }
+
+        renderSideTabs();
       }
     }, {
       width: isInitiallyCompact ? 310 : 980,
