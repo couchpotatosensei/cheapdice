@@ -3841,10 +3841,49 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
     }
 
+    function getSpellcastingSummaryHtml() {
+      const sys = actor?.system || {};
+      const pb = Number(sys.attributes?.prof ?? 0);
+      const spellcastingAbility = sys.attributes?.spellcasting;
+      const hasSpellcasting = Boolean(spellcastingAbility && spellcastingAbility !== "" && spellcastingAbility !== "none");
+      
+      const abilLabel = hasSpellcasting ? String(spellcastingAbility).toUpperCase() : "—";
+      const abilModVal = hasSpellcasting ? Number(sys.abilities?.[spellcastingAbility]?.mod ?? 0) : null;
+      const abilModDisplay = abilModVal !== null ? (abilModVal >= 0 ? `+${abilModVal}` : `${abilModVal}`) : "—";
+      const abilFullDisplay = hasSpellcasting ? `${abilLabel} (${abilModDisplay})` : "—";
+
+      const rawAtk = sys.attributes?.spell?.attack;
+      const spellAtkVal = rawAtk !== undefined ? Number(rawAtk) : (hasSpellcasting ? (pb + (abilModVal ?? 0)) : null);
+      const spellAtkDisplay = spellAtkVal !== null ? (spellAtkVal >= 0 ? `+${spellAtkVal}` : `${spellAtkVal}`) : "—";
+
+      const rawDC = sys.attributes?.spell?.dc ?? sys.attributes?.spelldc;
+      const spellDCDisplay = rawDC !== undefined ? String(rawDC) : (hasSpellcasting ? String(8 + pb + (abilModVal ?? 0)) : "—");
+
+      return `
+        <!-- Static Spellcasting Summary Bar -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1.2; border-right: 1px solid #e0e6ed; padding: 0 4px;">
+            <span style="font-size: 0.65em; font-weight: 700; color: #4b5d88; letter-spacing: 0.4px; text-transform: uppercase;">Ability</span>
+            <span style="font-size: 0.88em; font-weight: 800; color: #2b3a4a; white-space: nowrap;">${abilFullDisplay}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1; border-right: 1px solid #e0e6ed; padding: 0 4px;">
+            <span style="font-size: 0.65em; font-weight: 700; color: #4b5d88; letter-spacing: 0.4px; text-transform: uppercase;">Spell Atk</span>
+            <span style="font-size: 0.88em; font-weight: 800; color: #2b3a4a;">${spellAtkDisplay}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 4px;">
+            <span style="font-size: 0.65em; font-weight: 700; color: #4b5d88; letter-spacing: 0.4px; text-transform: uppercase;">Save DC</span>
+            <span style="font-size: 0.88em; font-weight: 800; color: #2b3a4a;">${spellDCDisplay}</span>
+          </div>
+        </div>
+      `;
+    }
+
     function getSelectedSpellInspectorHtml() {
+      const summaryHtml = getSpellcastingSummaryHtml();
       const sp = spellConfigs[selectedSpellKey];
       if (!sp) {
         return `
+          ${summaryHtml}
           <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 0.85em; font-style: italic;">
             Select a spell from the list.
           </div>
@@ -3858,6 +3897,18 @@ Click a numbered modifier badge to execute a roll.</div>
         || actor.getFlag("world", "hudAssignedSlots")
         || {};
       const curSlot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === "spells" && data?.name === selectedSpellKey)?.[0] || "";
+
+      const fullSpellDesc = (sp.description || sp.summary || "").trim();
+      const descHtmlBlock = fullSpellDesc ? `
+        <div style="margin-top: 6px; border: 1px solid rgba(75, 93, 136, 0.25); border-radius: 4px; padding: 5px 7px; background: rgba(75, 93, 136, 0.04);">
+          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; border-bottom: 1px solid rgba(75, 93, 136, 0.15); padding-bottom: 2px;">
+            <i class="fas fa-sparkles" style="margin-right: 3px;"></i> Spell Description
+          </div>
+          <div class="spell-description-content" style="max-height: 130px; overflow-y: auto; font-size: 0.82em; line-height: 1.45; color: #2b3a4a;">
+            ${fullSpellDesc}
+          </div>
+        </div>
+      ` : "";
 
       const hudSlotControls = sp ? `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8dee6;">
@@ -3873,6 +3924,8 @@ Click a numbered modifier badge to execute a roll.</div>
       ` : "";
 
       return `
+        ${summaryHtml}
+
         <!-- Spell Overview Card -->
         <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 5px;">
@@ -3884,6 +3937,7 @@ Click a numbered modifier badge to execute a roll.</div>
             <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+          ${descHtmlBlock}
           ${hudSlotControls}
         </div>
 
