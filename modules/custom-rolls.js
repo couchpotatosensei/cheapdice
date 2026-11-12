@@ -183,6 +183,289 @@ export async function ensureStandardAttacks(actor, attacks = null) {
   return currentAttacks;
 }
 
+/**
+ * Builds a default spell config object by parsing a Foundry dnd5e spell item.
+ * @param {object} item - The Foundry spell item document
+ * @param {object} actor - The owning actor
+ * @returns {object} The configured spell object
+ */
+export function buildSpellConfigFromItem(item, actor) {
+  if (!item || item.type !== "spell") return null;
+
+  const sys = item.system || {};
+  const sheetSpellAbil = sys.ability || actor.system?.attributes?.spellcasting || "int";
+
+  const act = sys.activation;
+  const castStr = act?.cost ? `${act.cost} ${act.type || 'Action'}` : "1 Action";
+
+  const rng = sys.range;
+  const rangeStr = rng?.value ? `${rng.value} ${rng.units || 'ft'}` : (rng?.units || "Touch");
+
+  const dur = sys.duration;
+  const durStr = dur?.value ? `${dur.value} ${dur.units || ''}` : (dur?.units || "Instantaneous");
+
+  const isConc = Boolean(sys.properties?.has?.("concentration") || sys.components?.concentration);
+
+  const comps = sys.properties || sys.components || {};
+  const hasV = Boolean(comps.has ? comps.has("vocal") : comps.vocal);
+  const hasS = Boolean(comps.has ? comps.has("somatic") : comps.somatic);
+  const hasM = Boolean(comps.has ? comps.has("material") : comps.material);
+  const isCostly = Boolean(sys.materials?.cost || sys.materials?.consumed);
+  const matDesc = sys.materials?.value || "";
+
+  let targetType = "creature";
+  let areaShape = "cone";
+  let areaSize = "";
+  const targetUnits = sys.target?.units;
+  const tType = sys.target?.type;
+  if (["cone", "cube", "line", "sphere", "cylinder", "radius"].includes(tType) || ["cone", "cube", "line", "sphere"].includes(targetUnits)) {
+    targetType = "area";
+    areaShape = (tType === "cylinder" || tType === "radius") ? "sphere" : (tType || "cone");
+    areaSize = sys.target?.value ? `${sys.target.value} ft` : "";
+  } else if (tType === "self" || rangeStr.toLowerCase() === "self") {
+    targetType = "self";
+  }
+
+  const rawDesc = sys.description?.value || "";
+  const cleanSummary = rawDesc.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+
+  let resolutionMethod = "attack";
+  let saveAbility = "dex";
+  let saveSuccess = "half";
+  const actionType = sys.actionType;
+  if (actionType === "save") {
+    resolutionMethod = "save";
+    saveAbility = sys.save?.ability || "dex";
+    saveSuccess = sys.save?.scaling === "half" ? "half" : "none";
+  } else if (actionType === "heal") {
+    resolutionMethod = "heal";
+  } else if (actionType === "rsak" || actionType === "msak") {
+    resolutionMethod = "attack";
+  } else if (actionType === "util" || !actionType) {
+    resolutionMethod = "other";
+  }
+
+  let damageDiceCount = 0;
+  let damageDieSize = "d6";
+  let damageType = "fire";
+  const parts = sys.damage?.parts || [];
+  if (parts.length > 0) {
+    const firstPart = parts[0];
+    const formula = firstPart[0] || "";
+    damageType = (firstPart[1] || "fire").toLowerCase();
+    const diceMatch = formula.match(/(\d*)d(\d+)/i);
+    if (diceMatch) {
+      damageDiceCount = parseInt(diceMatch[1]) || 1;
+      damageDieSize = `d${diceMatch[2]}`;
+    }
+  }
+
+  const isCantrip = Number(sys.level ?? 0) === 0;
+  const isCantripScale = isCantrip && sys.scaling?.mode === "cantrip";
+
+  let upcastDiceFormula = "";
+  if (!isCantrip && sys.scaling?.formula) {
+    upcastDiceFormula = sys.scaling.formula;
+  }
+
+  return {
+    itemId: item.id,
+    spellName: item.name,
+    spellAbility: sheetSpellAbil,
+    baseLevel: Number(sys.level ?? 0),
+    resolutionMethod,
+    saveAbility,
+    saveSuccess,
+    isMultiAttack: false,
+    attackCount: 1,
+    upcastAttacks: 0,
+    cantripAttackScaling: false,
+    projectileCount: 3,
+    upcastProjectiles: 1,
+    addAbilityModToValue: false,
+    castingTime: castStr,
+    range: rangeStr,
+    duration: durStr,
+    concentration: isConc,
+    targetType,
+    areaShape,
+    areaSize,
+    summary: cleanSummary,
+    damageDiceCount,
+    damageDieSize,
+    extraDiceFormula: "",
+    upcastDiceFormula,
+    damageMode: "static",
+    damageType,
+    flatDamageBonus: 0,
+    explodeCondition: "",
+    chaosJump: false,
+    CRIT_THRESHOLD: 20,
+    attackModifier: 0,
+    isCantripScale,
+    superAdv: false,
+    components: {
+      v: hasV,
+      s: hasS,
+      m: hasM,
+      costly: isCostly,
+      description: matDesc
+    }
+  };
+}
+
+/**
+ * Synchronizes actor's configured spells with the spell items on their sheet.
+ * Prompts user with a confirmation dialog when differences are detected.
+ * @param {object} actor - The Foundry actor
+ * @param {object} options
+ * @param {boolean} [options.promptUser=true] - Whether to show confirmation dialog
+ * @returns {Promise<boolean>} True if changes were applied
+ */
+export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
+  if (!actor) return false;
+
+  const currentSpells = foundry.utils.deepClone(
+    getProfileData(actor, "spellConfigs") ||
+    actor.getFlag?.("world", "spellConfigs") || {}
+  );
+
+  const sheetSpells = (actor.itemTypes?.spell || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const sheetSpellNames = new Set(sheetSpells.map(s => s.name));
+  const sheetSpellIds = new Set(sheetSpells.map(s => s.id));
+
+  // Determine spells to add (present on sheet, not in spellConfigs)
+  const toAdd = [];
+  for (const spItem of sheetSpells) {
+    const exists = currentSpells[spItem.name] || Object.values(currentSpells).find(c => c.itemId === spItem.id);
+    if (!exists) {
+      toAdd.push(spItem);
+    }
+  }
+
+  // Determine spells to remove (in spellConfigs, originated from sheet, but no longer on sheet)
+  const toRemove = [];
+  for (const [key, cfg] of Object.entries(currentSpells)) {
+    // Only auto-prune if config was linked to a sheet item or matched a sheet spell name
+    if (cfg?.itemId && !sheetSpellIds.has(cfg.itemId) && !sheetSpellNames.has(key)) {
+      toRemove.push(key);
+    }
+  }
+
+  if (toAdd.length === 0 && toRemove.length === 0) {
+    return false;
+  }
+
+  if (promptUser) {
+    const addListHtml = toAdd.length > 0
+      ? `<div style="margin-bottom: 8px;">
+          <div style="font-weight: bold; font-size: 0.85em; color: #2e7d32; margin-bottom: 4px;">
+            <i class="fas fa-plus-circle"></i> Spells to Add (${toAdd.length}):
+          </div>
+          <ul style="margin: 0; padding-left: 18px; font-size: 0.82em; color: #333;">
+            ${toAdd.map(s => `<li><strong>${s.name}</strong> <span style="color: #666;">(Level ${s.system.level ?? 0})</span></li>`).join("")}
+          </ul>
+        </div>`
+      : "";
+
+    const removeListHtml = toRemove.length > 0
+      ? `<div style="margin-bottom: 8px;">
+          <div style="font-weight: bold; font-size: 0.85em; color: #c62828; margin-bottom: 4px;">
+            <i class="fas fa-minus-circle"></i> Spells to Remove (${toRemove.length}):
+          </div>
+          <ul style="margin: 0; padding-left: 18px; font-size: 0.82em; color: #333;">
+            ${toRemove.map(name => `<li><strong>${name}</strong> <span style="color: #888;">(no longer on sheet)</span></li>`).join("")}
+          </ul>
+          <div style="font-size: 0.72em; color: #888; font-style: italic; margin-top: 2px;">
+            Note: Removing these will also unassign them from any HUD slots.
+          </div>
+        </div>`
+      : "";
+
+    const content = `
+      <div style="padding: 6px; font-family: inherit;">
+        <p style="margin: 0 0 8px 0; font-size: 0.88em; color: #333;">
+          Differences were detected between the character sheet and Dice Stuff spell configurations:
+        </p>
+        ${addListHtml}
+        ${removeListHtml}
+        <p style="margin: 8px 0 0 0; font-size: 0.85em; font-weight: bold; color: #4b5d88;">
+          Apply these changes now?
+        </p>
+      </div>
+    `;
+
+    const confirmed = await new Promise(resolve => {
+      new Dialog({
+        title: `Sync Spells: ${actor.name}`,
+        content,
+        buttons: {
+          confirm: {
+            icon: '<i class="fas fa-sync-alt"></i>',
+            label: "Sync Changes",
+            callback: () => resolve(true)
+          },
+          cancel: {
+            icon: '<i class="fas fa-times"></i>',
+            label: "Cancel",
+            callback: () => resolve(false)
+          }
+        },
+        default: "confirm",
+        close: () => resolve(false)
+      }, { width: 380 }).render(true);
+    });
+
+    if (!confirmed) return false;
+  }
+
+  // Apply additions
+  for (const spItem of toAdd) {
+    const cfg = buildSpellConfigFromItem(spItem, actor);
+    if (cfg) {
+      currentSpells[spItem.name] = cfg;
+    }
+  }
+
+  // Apply removals
+  let assignedSlots = foundry.utils.deepClone(
+    getProfileData(actor, "hudAssignedSlots") ||
+    actor.getFlag?.("world", "hudAssignedSlots") || {}
+  );
+  let hudModified = false;
+
+  for (const remKey of toRemove) {
+    delete currentSpells[remKey];
+    for (const [slotNum, slotData] of Object.entries(assignedSlots)) {
+      if (slotData?.category === "spells" && slotData?.name === remKey) {
+        delete assignedSlots[slotNum];
+        hudModified = true;
+      }
+    }
+  }
+
+  // Save updated spell configs
+  await setProfileData(actor, "spellConfigs", currentSpells);
+  if (game.user.isGM) {
+    await actor.setFlag("world", "spellConfigs", currentSpells, { recursive: false });
+  }
+
+  if (hudModified) {
+    await setProfileData(actor, "hudAssignedSlots", assignedSlots);
+    if (game.user.isGM) {
+      await actor.setFlag("world", "hudAssignedSlots", assignedSlots, { recursive: false });
+    }
+    canvas.tokens?.controlled?.forEach(t => t.hud?.render());
+  }
+
+  const changeMsg = [];
+  if (toAdd.length > 0) changeMsg.push(`added ${toAdd.length} spell${toAdd.length === 1 ? '' : 's'}`);
+  if (toRemove.length > 0) changeMsg.push(`removed ${toRemove.length} spell${toRemove.length === 1 ? '' : 's'}`);
+  ui.notifications.info(`Spells synced with character sheet: ${changeMsg.join(", ")}.`);
+
+  return true;
+}
+
 export function initCustomRolls() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.CUSTOM_ROLLS)) return;
 
@@ -190,12 +473,16 @@ export function initCustomRolls() {
   window.CustomRolls.getProfileData = getProfileData;
   window.CustomRolls.setProfileData = setProfileData;
   window.CustomRolls.ensureStandardAttacks = ensureStandardAttacks;
+  window.CustomRolls.syncSpellsWithSheet = syncSpellsWithSheet;
+  window.CustomRolls.buildSpellConfigFromItem = buildSpellConfigFromItem;
 
   const mod = game.modules.get(MODULE_ID);
   if (mod?.api) {
     mod.api.getProfileData = getProfileData;
     mod.api.setProfileData = setProfileData;
     mod.api.ensureStandardAttacks = ensureStandardAttacks;
+    mod.api.syncSpellsWithSheet = syncSpellsWithSheet;
+    mod.api.buildSpellConfigFromItem = buildSpellConfigFromItem;
   }
 
   // Hook into D&D 5e rest completion to auto-recharge tracking stuff
@@ -4280,6 +4567,14 @@ Click a numbered modifier badge to execute a roll.</div>
           refreshBtnElem.on("click", async (e) => {
             e.preventDefault();
             e.stopPropagation();
+
+            // Run spell synchronization check with confirmation dialog
+            try {
+              await syncSpellsWithSheet(actor, { promptUser: true });
+            } catch (err) {
+              console.error("[Dice Stuff] Error during spell synchronization:", err);
+            }
+
             dlg.close();
             await window.CustomRolls.openActionDialog(currentMode, actor);
           });
@@ -5254,6 +5549,80 @@ Click a numbered modifier badge to execute a roll.</div>
         function bindSpellDragAndDrop() {
           const list = html.find("#section-spell");
           list.find(".custom-spell-card").off("dragstart dragend dragover dragleave drop");
+          list.off("dragover dragleave drop");
+
+          // Helper to import a spell item dropped from an actor's sheet
+          async function importSpellFromDrop(item) {
+            if (!item || item.type !== "spell") {
+              ui.notifications.warn("Only spells can be added to the spell column.");
+              return;
+            }
+
+            const freshSpells = foundry.utils.deepClone(
+              window.CustomRolls?.getProfileData?.(actor, "spellConfigs") ||
+              actor.getFlag?.("world", "spellConfigs") ||
+              spellConfigs
+            );
+
+            const existingConfig = freshSpells[item.name] || Object.values(freshSpells).find(s => s.itemId === item.id);
+            if (existingConfig) {
+              return ui.notifications.info(`"${item.name}" is already in your spell list.`);
+            }
+
+            const newCfg = buildSpellConfigFromItem(item, actor);
+            if (!newCfg) return;
+
+            freshSpells[item.name] = newCfg;
+
+            await window.CustomRolls.setProfileData(actor, "spellConfigs", freshSpells);
+            if (game.user.isGM) {
+              await actor.setFlag("world", "spellConfigs", freshSpells, { recursive: false });
+            }
+
+            spellConfigs = freshSpells;
+            spellKeys = Object.keys(spellConfigs);
+            selectedSpellKey = item.name;
+
+            html.find("#section-spell").html(renderSpellCards());
+            html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+            bindSpellDragAndDrop();
+            updateCardStyles();
+            renderSideTabs();
+            ui.notifications.info(`Added "${item.name}" to spell list.`);
+          }
+
+          list.on("dragover", function (e) {
+            e.preventDefault();
+            e.originalEvent.dataTransfer.dropEffect = "copy";
+          });
+
+          list.on("drop", async function (e) {
+            let data = null;
+            try {
+              data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
+            } catch (err) {
+              return;
+            }
+
+            if (!data || data.type !== "Item") return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            let droppedItem = null;
+            if (data.uuid) {
+              droppedItem = fromUuidSync(data.uuid);
+            } else if (data.data) {
+              droppedItem = data.data;
+            }
+
+            const actorItem = actor.items.get(droppedItem?.id) || (droppedItem?.parent?.id === actor.id ? droppedItem : null);
+            if (!actorItem || actorItem.type !== "spell") {
+              return ui.notifications.warn("Please add the spell to your character sheet first, then drag it here.");
+            }
+
+            await importSpellFromDrop(actorItem);
+          });
 
           list.find(".custom-spell-card").on("dragstart", function (e) {
             e.originalEvent.dataTransfer.setData("text/plain", $(this).data("key"));
