@@ -3975,6 +3975,12 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass .entry-label {
               color: #ffffff !important;
             }
+            .app.dialog.cheapdice-theme-glass #dialog-sidebar-left .roll-btn-v2 {
+              background: rgba(56, 189, 248, 0.45) !important;
+              border-color: #38bdf8 !important;
+              color: #000000 !important;
+              font-weight: 800 !important;
+            }
             .app.dialog.cheapdice-theme-glass .roll-btn-v2 {
               background: rgba(56, 189, 248, 0.18) !important;
               border-color: #38bdf8 !important;
