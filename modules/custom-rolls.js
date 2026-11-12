@@ -3589,7 +3589,7 @@ Click a numbered modifier badge to execute a roll.</div>
               color: #93c5fd !important;
             }
             .app.dialog.cheapdice-theme-slate span[style*="background: rgba(114, 137, 218"],
-            .app.dialog.cheapdice-theme-slate span[style*="HUD"] {
+            .app.dialog.cheapdice-theme-slate span[title*="Assigned to HUD"] {
               color: #7dd3fc !important;
               background: rgba(56, 189, 248, 0.12) !important;
               border-color: rgba(56, 189, 248, 0.3) !important;
@@ -3788,7 +3788,7 @@ Click a numbered modifier badge to execute a roll.</div>
               color: #f87171 !important;
             }
             .app.dialog.cheapdice-theme-arcane span[style*="background: rgba(114, 137, 218"],
-            .app.dialog.cheapdice-theme-arcane span[style*="HUD"] {
+            .app.dialog.cheapdice-theme-arcane span[title*="Assigned to HUD"] {
               color: #fef3c7 !important;
               background: rgba(120, 53, 15, 0.4) !important;
               border-color: rgba(217, 119, 6, 0.35) !important;
@@ -4064,11 +4064,18 @@ Click a numbered modifier badge to execute a roll.</div>
               background: rgba(56, 189, 248, 0.25) !important;
               border-color: #38bdf8 !important;
             }
-            .app.dialog.cheapdice-theme-glass span[style*="background: rgba(114, 137, 218"],
-            .app.dialog.cheapdice-theme-glass span[style*="HUD"] {
+            .app.dialog.cheapdice-theme-glass span[style*="background: rgba(114, 137, 218"] {
               color: #38bdf8 !important;
               background: rgba(56, 189, 248, 0.15) !important;
               border-color: rgba(56, 189, 248, 0.35) !important;
+            }
+            .app.dialog.cheapdice-theme-glass span[title*="Assigned to HUD"] {
+              color: #38bdf8 !important;
+              background: rgba(15, 23, 42, 0.75) !important;
+              border: 1px solid rgba(56, 189, 248, 0.6) !important;
+            }
+            .app.dialog.cheapdice-theme-glass span[title*="Assigned to HUD"] i {
+              color: #ffffff !important;
             }
             .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label {
               background: rgba(0, 0, 0, 0.35) !important;
@@ -4476,6 +4483,7 @@ Click a numbered modifier badge to execute a roll.</div>
             }
 
             dialogApp.css({ width: "310px", "min-width": "310px" });
+            if (dlg?.position) dlg.position.width = 310;
           } else {
             collapseBtn.find("i").removeClass("fa-expand-alt").addClass("fa-compress-alt");
             collapseBtn.find(".collapse-label-text").show().text("Compact");
@@ -4493,6 +4501,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
             setTab(currentMode);
             dialogApp.css({ width: "980px", "min-width": "980px" });
+            if (dlg?.position) dlg.position.width = 980;
           }
         }
 
@@ -4644,6 +4653,15 @@ Click a numbered modifier badge to execute a roll.</div>
           setTab(currentMode);
           updateWeaponOverviewTotals();
         }
+
+        // Intercept native minimize/maximize to maintain compact dimensions
+        const origMaximize = dlg.maximize.bind(dlg);
+        dlg.maximize = async function () {
+          await origMaximize();
+          if (isCompact) {
+            updateCompactView();
+          }
+        };
         function updateWeaponOverviewTotals() {
           const config = attacks[selectedWeaponKey];
           if (!config) return;
