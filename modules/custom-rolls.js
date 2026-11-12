@@ -3857,22 +3857,27 @@ Click a numbered modifier badge to execute a roll.</div>
       const spellAtkDisplay = spellAtkVal !== null ? (spellAtkVal >= 0 ? `+${spellAtkVal}` : `${spellAtkVal}`) : "—";
 
       const rawDC = sys.attributes?.spell?.dc ?? sys.attributes?.spelldc;
-      const spellDCDisplay = rawDC !== undefined ? String(rawDC) : (hasSpellcasting ? String(8 + pb + (abilModVal ?? 0)) : "—");
+      const spellDCVal = rawDC !== undefined ? Number(rawDC) : (hasSpellcasting ? (8 + pb + (abilModVal ?? 0)) : null);
+      const spellDCDisplay = spellDCVal !== null ? String(spellDCVal) : "—";
 
       return `
         <!-- Static Spellcasting Summary Bar -->
-        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
-          <div style="display: flex; flex-direction: column; align-items: center; flex: 1.2; border-right: 1px solid #e0e6ed; padding: 0 4px;">
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 4px 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; gap: 4px;">
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1.1; border-right: 1px solid #e0e6ed; padding: 0 3px;">
             <span style="font-size: 0.65em; font-weight: 700; color: #4b5d88; letter-spacing: 0.4px; text-transform: uppercase;">Ability</span>
             <span style="font-size: 0.88em; font-weight: 800; color: #2b3a4a; white-space: nowrap;">${abilFullDisplay}</span>
           </div>
-          <div style="display: flex; flex-direction: column; align-items: center; flex: 1; border-right: 1px solid #e0e6ed; padding: 0 4px;">
-            <span style="font-size: 0.65em; font-weight: 700; color: #4b5d88; letter-spacing: 0.4px; text-transform: uppercase;">Spell Atk</span>
-            <span style="font-size: 0.88em; font-weight: 800; color: #2b3a4a;">${spellAtkDisplay}</span>
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1; border-right: 1px solid #e0e6ed; padding: 0 3px;">
+            <button type="button" class="btn-spell-atk-roll" data-atk-bonus="${spellAtkVal ?? 0}" title="Roll Generic Spell Attack (${spellAtkDisplay})" style="width: 100%; height: 26px; line-height: 1; padding: 2px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a;">
+              <span style="font-size: 0.62em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase; line-height: 1;"><i class="fas fa-dice-d20" style="margin-right: 2px;"></i>Atk</span>
+              <span style="font-size: 0.88em; font-weight: 800; color: #7289da; line-height: 1.1;">${spellAtkDisplay}</span>
+            </button>
           </div>
-          <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 4px;">
-            <span style="font-size: 0.65em; font-weight: 700; color: #4b5d88; letter-spacing: 0.4px; text-transform: uppercase;">Save DC</span>
-            <span style="font-size: 0.88em; font-weight: 800; color: #2b3a4a;">${spellDCDisplay}</span>
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 3px;">
+            <button type="button" class="btn-spell-dc-card" data-save-dc="${spellDCVal ?? 10}" title="Post Generic Save DC Card (DC ${spellDCDisplay})" style="width: 100%; height: 26px; line-height: 1; padding: 2px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a;">
+              <span style="font-size: 0.62em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase; line-height: 1;"><i class="fas fa-shield-alt" style="margin-right: 2px;"></i>Save DC</span>
+              <span style="font-size: 0.88em; font-weight: 800; color: #7289da; line-height: 1.1;">${spellDCDisplay}</span>
+            </button>
           </div>
         </div>
       `;
@@ -4896,6 +4901,21 @@ Click a numbered modifier badge to execute a roll.</div>
               background: rgba(56, 189, 248, 0.25) !important;
               border-color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-glass .btn-spell-subtab {
+              background: rgba(255, 255, 255, 0.06) !important;
+              color: #94a3b8 !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-subtab.active-subtab {
+              background: rgba(56, 189, 248, 0.22) !important;
+              color: #38bdf8 !important;
+              border: 1px solid #38bdf8 !important;
+              border-bottom: 2px solid #38bdf8 !important;
+              box-shadow: 0 0 10px rgba(56, 189, 248, 0.35) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-subtab.active-subtab i {
+              color: #38bdf8 !important;
+            }
             .app.dialog.cheapdice-theme-glass span[style*="background: rgba(114, 137, 218"] {
               color: #38bdf8 !important;
               background: rgba(56, 189, 248, 0.15) !important;
@@ -5395,6 +5415,101 @@ Click a numbered modifier badge to execute a roll.</div>
 
           config.targetIds = Array.from(game.user.targets).map(t => t.id);
           await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+        });
+
+        // Generic Spell Attack Roll Handler
+        html.on("click", ".btn-spell-atk-roll", async function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const bonus = Number($(this).data("atk-bonus")) || 0;
+          const sign = bonus >= 0 ? "+" : "-";
+          const formula = bonus !== 0 ? `1d20 ${sign} ${Math.abs(bonus)}` : "1d20";
+          try {
+            const roll = await new Roll(formula).evaluate();
+            if (game.dice3d) {
+              await game.dice3d.showForRoll(roll, game.user, true);
+            }
+            const rollHtml = await roll.render();
+            const content = `
+              <div style="font-family: inherit; color: #333;">
+                <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #7289da; padding-bottom: 3px; margin-bottom: 6px;">
+                  <span style="font-size: 1.05em; font-weight: bold; color: #2b3a4a;"><i class="fas fa-dice-d20" style="color: #7289da; margin-right: 4px;"></i>Spell Attack Roll</span>
+                  <span style="font-size: 0.8em; color: #777;">${actor.name}</span>
+                </div>
+                <div style="margin-top: 4px;">
+                  ${rollHtml}
+                </div>
+              </div>
+            `;
+            await ChatMessage.create({
+              user: game.user.id,
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content,
+              rolls: [roll],
+              sound: CONFIG.sounds?.dice
+            });
+          } catch (err) {
+            console.error("Failed to roll generic spell attack:", err);
+            ui.notifications.error("Failed to execute spell attack roll.");
+          }
+        });
+
+        // Generic Spell Save DC Chat Card Handler
+        html.on("click", ".btn-spell-dc-card", async function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const dc = $(this).data("save-dc") || 10;
+          const abilities = [
+            { key: "str", label: "STR", name: "Strength" },
+            { key: "dex", label: "DEX", name: "Dexterity" },
+            { key: "con", label: "CON", name: "Constitution" },
+            { key: "int", label: "INT", name: "Intelligence" },
+            { key: "wis", label: "WIS", name: "Wisdom" },
+            { key: "cha", label: "CHA", name: "Charisma" }
+          ];
+
+          const saveButtonsHtml = abilities.map(a => {
+            return `
+              <div style="display: inline-block; margin: 2px;">
+                [[/r 1d20 + @abilities.${a.key}.save]]{${a.label} Save}
+              </div>
+            `;
+          }).join("");
+
+          const content = `
+            <div style="font-family: inherit; color: #2b3a4a;">
+              <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #7289da; padding-bottom: 4px; margin-bottom: 6px;">
+                <span style="font-size: 1.05em; font-weight: 800; color: #2b3a4a;">
+                  <i class="fas fa-shield-alt" style="color: #7289da; margin-right: 4px;"></i>Spell Save DC
+                </span>
+                <span style="font-size: 1.1em; font-weight: 800; color: #fff; background: #7289da; padding: 1px 7px; border-radius: 4px;">
+                  DC ${dc}
+                </span>
+              </div>
+              <div style="font-size: 0.85em; color: #555; margin-bottom: 6px;">
+                <strong>${actor.name}</strong> forces a saving throw:
+              </div>
+              <div style="background: rgba(114, 137, 218, 0.08); border: 1px solid rgba(114, 137, 218, 0.25); border-radius: 4px; padding: 6px 8px; text-align: center;">
+                <div style="font-size: 0.72em; font-weight: 700; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                  Click to Roll Save
+                </div>
+                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 4px;">
+                  ${saveButtonsHtml}
+                </div>
+              </div>
+            </div>
+          `;
+
+          try {
+            await ChatMessage.create({
+              user: game.user.id,
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content
+            });
+          } catch (err) {
+            console.error("Failed to create spell save DC card:", err);
+            ui.notifications.error("Failed to post Save DC card to chat.");
+          }
         });
 
         // Spell Inspector Sub-Tab Switcher
