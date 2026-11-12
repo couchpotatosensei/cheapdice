@@ -3901,8 +3901,13 @@ Click a numbered modifier badge to execute a roll.</div>
       const fullSpellDesc = (sp.description || sp.summary || "").trim();
       const descHtmlBlock = fullSpellDesc ? `
         <div style="margin-top: 6px; border: 1px solid rgba(75, 93, 136, 0.25); border-radius: 4px; padding: 5px 7px; background: rgba(75, 93, 136, 0.04);">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; border-bottom: 1px solid rgba(75, 93, 136, 0.15); padding-bottom: 2px;">
-            <i class="fas fa-sparkles" style="margin-right: 3px;"></i> Spell Description
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; border-bottom: 1px solid rgba(75, 93, 136, 0.15); padding-bottom: 2px;">
+            <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px;">
+              <i class="fas fa-sparkles" style="margin-right: 3px;"></i> Spell Description
+            </span>
+            <button type="button" class="btn-send-spell-desc-chat" title="Send description to chat" style="height: 18px; line-height: 16px; font-size: 0.70em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid #7289da; background: #fff; color: #4b5d88; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;">
+              Chat <i class="fas fa-arrow-right"></i>
+            </button>
           </div>
           <div class="spell-description-content" style="max-height: 130px; overflow-y: auto; font-size: 0.82em; line-height: 1.45; color: #2b3a4a;">
             ${fullSpellDesc}
@@ -4332,6 +4337,16 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate #desc-body-v2 {
               color: #e2e8f0 !important;
             }
+            /* Slate: Spell Description Content (Inspector right-panel only) */
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right .spell-description-content,
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right .spell-description-content * {
+              color: #f8fafc !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right .btn-send-spell-desc-chat {
+              background: #1e293b !important;
+              border-color: #3b4b66 !important;
+              color: #38bdf8 !important;
+            }
             .app.dialog.cheapdice-theme-slate input,
             .app.dialog.cheapdice-theme-slate select,
             .app.dialog.cheapdice-theme-slate textarea {
@@ -4549,6 +4564,16 @@ Click a numbered modifier badge to execute a roll.</div>
             }
             .app.dialog.cheapdice-theme-arcane #desc-body-v2 {
               color: #fef3c7 !important;
+            }
+            /* Arcane Midnight: Spell Description Content (Inspector right-panel only) */
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right .spell-description-content,
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right .spell-description-content * {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right .btn-send-spell-desc-chat {
+              background: #1c1a21 !important;
+              border-color: #78350f !important;
+              color: #fbbf24 !important;
             }
             .app.dialog.cheapdice-theme-arcane input,
             .app.dialog.cheapdice-theme-arcane select,
@@ -5297,6 +5322,49 @@ Click a numbered modifier badge to execute a roll.</div>
 
           config.targetIds = Array.from(game.user.targets).map(t => t.id);
           await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+        });
+
+        // Send Spell Description to Chat Handler
+        html.on("click", ".btn-send-spell-desc-chat", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const sp = spellConfigs[selectedSpellKey];
+          if (!sp) return;
+
+          const desc = (sp.description || sp.summary || "").trim();
+          if (!desc) {
+            return ui.notifications.warn(`No description available for "${selectedSpellKey}".`);
+          }
+
+          const lvlLabel = Number(sp.baseLevel) === 0 ? "Cantrip" : `Level ${sp.baseLevel}`;
+          const d = getSpellDetails(sp, sp.baseLevel);
+          const tagsHtml = d.tags.map(t => {
+            const isConc = t === "Concentration";
+            const isSlot = t.startsWith("Slot:");
+            const bg = isConc ? "rgba(163, 72, 72, 0.15)" : (isSlot ? "rgba(43, 116, 137, 0.15)" : "rgba(114, 137, 218, 0.18)");
+            const border = isConc ? "rgba(163, 72, 72, 0.4)" : (isSlot ? "rgba(43, 116, 137, 0.4)" : "rgba(114, 137, 218, 0.4)");
+            const color = isConc ? "#a34848" : (isSlot ? "#235d6e" : "#4b5d88");
+            return `<span style="display: inline-block; background: ${bg}; border: 1px solid ${border}; border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: ${color};">${t}</span>`;
+          }).join(" ");
+
+          const chatContent = `
+            <div style="font-family: inherit; color: #333;">
+              <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #343a40; padding-bottom: 3px; margin-bottom: 6px;">
+                <span style="font-size: 1.05em; font-weight: bold; color: #2b3a4a;">${selectedSpellKey}</span>
+                <span style="font-size: 0.8em; color: #777;">${actor.name} (${lvlLabel})</span>
+              </div>
+              ${tagsHtml ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px;">${tagsHtml}</div>` : ""}
+              <div style="font-size: 0.9em; line-height: 1.45; color: #2b3a4a; border-top: 1px solid rgba(75, 93, 136, 0.15); padding-top: 5px;">
+                ${desc}
+              </div>
+            </div>
+          `;
+
+          await ChatMessage.create({
+            user: game.user.id,
+            speaker: ChatMessage.getSpeaker({ actor }),
+            content: chatContent
+          });
         });
 
         function updateCardStyles() {
