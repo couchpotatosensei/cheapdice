@@ -3049,6 +3049,9 @@ Click a numbered modifier badge to execute a roll.</div>
         <div id="custom-weapons-list" style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding-right: 2px;">
           ${renderCustomWeaponCards()}
         </div>
+        <div id="weapon-trash-zone" style="display: none; height: 32px; border: 2px dashed #e57373; background: #ffebee; color: #c62828; border-radius: 4px; font-size: 0.8em; font-weight: 700; align-items: center; justify-content: center; gap: 6px; margin-top: 4px; flex-shrink: 0; transition: background 0.15s;">
+          <i class="fas fa-trash-alt"></i> Drop here to remove
+        </div>
       `;
     }
 
@@ -3112,6 +3115,17 @@ Click a numbered modifier badge to execute a roll.</div>
           <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #a34848; cursor: pointer; padding: 3px 6px; background: rgba(163, 72, 72, 0.08); border-radius: 3px; border: 1px solid rgba(163, 72, 72, 0.25);">
             <span>GWM / Sharpshooter (-5 / +10)</span>
             <input type="checkbox" id="gwm-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let versatileHtml = "";
+      if (config?.isVersatile) {
+        const vDie = config.versatileDie || "10";
+        versatileHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #2b7489; cursor: pointer; padding: 3px 6px; background: rgba(43, 116, 137, 0.08); border-radius: 3px; border: 1px solid rgba(43, 116, 137, 0.25);">
+            <span>Two-Handed / Versatile (d${vDie})</span>
+            <input type="checkbox" id="versatile-toggle" style="margin: 0;">
           </label>
         `;
       }
@@ -3212,9 +3226,10 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
         </div>
 
-        <!-- Optional Damage & GWM Card -->
-        ${(gwmHtml || extrasHtml) ? `
+        <!-- Optional Damage & GWM / Versatile Card -->
+        ${(gwmHtml || versatileHtml || extrasHtml) ? `
           <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
+            ${versatileHtml}
             ${gwmHtml}
             ${extrasHtml}
           </div>
@@ -4367,6 +4382,12 @@ Click a numbered modifier badge to execute a roll.</div>
             config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [GWM/SS -5/+10]`;
           }
 
+          if (config.isVersatile && html.find("#versatile-toggle").is(":checked")) {
+            const vDie = config.versatileDie || "10";
+            config.damageDieSize = `d${vDie}`;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [Two-Handed 2H]`;
+          }
+
           if (config.additionalDamageComponents) {
             html.find(".extra-dmg-toggle").each(function () {
               const idx = $(this).data("index");
@@ -4807,6 +4828,13 @@ Click a numbered modifier badge to execute a roll.</div>
             dmgMod += 10;
           }
 
+          // Check Versatile toggle
+          let baseDieSize = d.dieSize;
+          const isVersatileChecked = html.find("#versatile-toggle").is(":checked");
+          if (config.isVersatile && isVersatileChecked) {
+            baseDieSize = config.versatileDie || "10";
+          }
+
           // Check extra attack input
           const extraAtk = (html.find("#weapon-extra-atk").val() || "").trim();
           if (extraAtk) {
@@ -4835,8 +4863,8 @@ Click a numbered modifier badge to execute a roll.</div>
           // Format total damage string
           const dmgModSign = dmgMod >= 0 ? `+ ${dmgMod}` : `- ${Math.abs(dmgMod)}`;
           let totalDmgStr = "";
-          if (d.diceCount > 0 && d.dieSize) {
-            totalDmgStr = `${d.diceCount}d${d.dieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim();
+          if (d.diceCount > 0 && baseDieSize) {
+            totalDmgStr = `${d.diceCount}d${baseDieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim();
           } else {
             totalDmgStr = `${dmgMod}`;
           }
@@ -4863,7 +4891,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Live formula updates on keystroke and checkbox changes
         html.on("input", "#weapon-extra-atk, #weapon-extra-dmg", updateWeaponOverviewTotals);
-        html.on("change", "#gwm-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
+        html.on("change", "#gwm-toggle, #versatile-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
 
         html.on("click", ".weapon-card", function () {
           selectedWeaponKey = $(this).data("key");
@@ -4880,17 +4908,154 @@ Click a numbered modifier badge to execute a roll.</div>
 
         function bindWeaponDragAndDrop() {
           const list = html.find("#custom-weapons-list");
+          const trashZone = html.find("#weapon-trash-zone");
+
           list.find(".custom-weapon-card").off("dragstart dragend dragover dragleave drop");
+          list.off("dragover dragleave drop");
+          trashZone.off("dragover dragleave drop");
+
+          // Helper to import a weapon item dropped from an actor's sheet
+          async function importWeaponFromDrop(item) {
+            if (!item || item.type !== "weapon") {
+              ui.notifications.warn("Only weapons can be added to the weapon column.");
+              return;
+            }
+
+            const sys = item.system || {};
+            const isFinesse = Boolean(sys.properties?.has ? sys.properties.has("fin") : sys.properties?.fin);
+            const isRanged = sys.actionType === "rwak";
+            const strMod = actor.system.abilities?.str?.mod || 0;
+            const dexMod = actor.system.abilities?.dex?.mod || 0;
+            const abilityScore = (isRanged || (isFinesse && dexMod > strMod)) ? "dex" : "str";
+
+            let formula = "";
+            let dmgType = "slashing";
+            if (sys.damage?.base?.formula) {
+              formula = sys.damage.base.formula;
+              dmgType = sys.damage.base.types?.first?.() || sys.damage.base.types?.[0] || "slashing";
+            } else if (sys.damage?.parts?.[0]) {
+              formula = sys.damage.parts[0][0] || "";
+              dmgType = sys.damage.parts[0][1] || "slashing";
+            }
+
+            let damageDiceCount = 1;
+            let damageDieSize = "d8";
+            const match = formula.match(/(\d*)d(\d+)/i);
+            if (match) {
+              damageDiceCount = parseInt(match[1]) || 1;
+              damageDieSize = `d${match[2]}`;
+            }
+
+            let weaponModifier = 0;
+            if (typeof sys.magicalBonus === "number" && sys.magicalBonus !== 0) {
+              weaponModifier = sys.magicalBonus;
+            } else if (typeof sys.attackBonus === "number" && sys.attackBonus !== 0) {
+              weaponModifier = sys.attackBonus;
+            }
+
+            const isProf = sys.proficient !== undefined ? Boolean(sys.proficient) : true;
+            const isVersatile = Boolean(sys.properties?.has ? sys.properties.has("ver") : sys.properties?.ver);
+            let versatileDie = "10";
+            if (sys.damage?.versatile) {
+              const vm = String(sys.damage.versatile).match(/d(\d+)/i);
+              if (vm) versatileDie = vm[1];
+            }
+
+            // Determine if GWM can be allowed (heavy weapons)
+            const isHeavy = Boolean(sys.properties?.has ? sys.properties.has("hvy") : sys.properties?.hvy);
+
+            const newAttackConfig = {
+              itemId: item.id,
+              macroName: item.name,
+              chatCardTitle: item.name,
+              abilityScore: abilityScore,
+              isProficient: isProf,
+              damageDiceCount: damageDiceCount,
+              damageDieSize: damageDieSize,
+              damageType: (dmgType || "slashing").toLowerCase(),
+              weaponModifier: weaponModifier,
+              attackCircumstanceModifier: 0,
+              damageModifier: 0,
+              CRIT_THRESHOLD: 20,
+              extraCriticalBonus: "",
+              GWF_REROLL_THRESHOLD: 0,
+              HAS_HALFLING_LUCKY: false,
+              HALFLING_LUCKY_REROLL_THRESHOLD: 0,
+              superAdv: false,
+              hasGWM: isHeavy || isRanged,
+              isVersatile: isVersatile,
+              versatileDie: versatileDie,
+              addedBy: "player",
+              additionalDamageComponents: []
+            };
+
+            const updatedAttacks = foundry.utils.deepClone(attacks);
+            updatedAttacks[item.name] = newAttackConfig;
+
+            await window.CustomRolls.setProfileData(actor, "attackConfigs", updatedAttacks);
+            if (game.user.isGM) {
+              await actor.setFlag("world", "attackConfigs", updatedAttacks, { recursive: false });
+            }
+
+            attacks = updatedAttacks;
+            attackNames = Object.keys(attacks);
+            selectedWeaponKey = item.name;
+
+            html.find("#custom-weapons-list").html(renderCustomWeaponCards());
+            html.find("#inspector-weapon").html(getSelectedWeaponInspectorHtml());
+            bindWeaponDragAndDrop();
+            updateCardStyles();
+            updateWeaponOverviewTotals();
+            ui.notifications.info(`Added "${item.name}" to weapon attacks.`);
+          }
+
+          // Container-level drop listener for dropping an item from the character sheet
+          list.on("dragover", function (e) {
+            e.preventDefault();
+            e.originalEvent.dataTransfer.dropEffect = "copy";
+          });
+
+          list.on("drop", async function (e) {
+            let data = null;
+            try {
+              data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
+            } catch (err) {
+              data = null;
+            }
+
+            // If it's a reorder of an existing action card, the card drop listener handles it
+            if (!data || data.type !== "Item") return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            let droppedItem = null;
+            if (data.uuid) {
+              droppedItem = fromUuidSync(data.uuid);
+            } else if (data.data) {
+              droppedItem = data.data;
+            }
+
+            // Verify the item belongs directly to the character sheet of the active actor
+            const actorItem = actor.items.get(droppedItem?.id) || (droppedItem?.parent?.id === actor.id ? droppedItem : null);
+            if (!actorItem) {
+              return ui.notifications.warn("Please add the weapon to your character sheet first, then drag it here.");
+            }
+
+            await importWeaponFromDrop(actorItem);
+          });
 
           list.find(".custom-weapon-card").on("dragstart", function (e) {
             e.originalEvent.dataTransfer.setData("text/plain", $(this).data("key"));
             e.originalEvent.dataTransfer.effectAllowed = "move";
             $(this).css("opacity", "0.4");
+            trashZone.css("display", "flex");
           });
 
           list.find(".custom-weapon-card").on("dragend", function () {
             $(this).css("opacity", "1");
             list.find(".custom-weapon-card").css({ "border-top": "", "border-bottom": "" });
+            trashZone.css("display", "none");
           });
 
           list.find(".custom-weapon-card").on("dragover", function (e) {
@@ -4910,9 +5075,27 @@ Click a numbered modifier badge to execute a roll.</div>
           });
 
           list.find(".custom-weapon-card").on("drop", async function (e) {
+            let plainText = "";
+            try {
+              plainText = e.originalEvent.dataTransfer.getData("text/plain");
+            } catch (err) {}
+
+            // Check if this was an Item drop from character sheet
+            let isItemDrop = false;
+            try {
+              const parsed = JSON.parse(plainText);
+              if (parsed?.type === "Item") isItemDrop = true;
+            } catch (err) {}
+
+            if (isItemDrop) {
+              // Defer to container drop handler
+              return;
+            }
+
             e.preventDefault();
+            e.stopPropagation();
             $(this).css({ "border-top": "", "border-bottom": "" });
-            const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
+            const draggedKey = plainText;
             const targetKey = $(this).data("key");
             if (!draggedKey || draggedKey === targetKey) return;
 
@@ -4950,6 +5133,59 @@ Click a numbered modifier badge to execute a roll.</div>
             html.find("#custom-weapons-list").html(renderCustomWeaponCards());
             bindWeaponDragAndDrop();
             updateCardStyles();
+          });
+
+          // Trash Zone Drag and Drop Handlers
+          trashZone.on("dragover", function (e) {
+            e.preventDefault();
+            e.originalEvent.dataTransfer.dropEffect = "move";
+            $(this).css({ "background": "#ffcdd2", "border-color": "#b71c1c" });
+          });
+
+          trashZone.on("dragleave", function () {
+            $(this).css({ "background": "#ffebee", "border-color": "#e57373" });
+          });
+
+          trashZone.on("drop", async function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            trashZone.css("display", "none");
+
+            const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
+            if (!draggedKey || !attacks[draggedKey]) return;
+
+            const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+            if (STANDARD_KEYS.includes(draggedKey)) {
+              return ui.notifications.warn(`"${draggedKey}" is a standard attack and cannot be removed.`);
+            }
+
+            const targetConfig = attacks[draggedKey];
+            const isPlayerAdded = targetConfig?.addedBy === "player" && !targetConfig?.gmModified;
+
+            if (!game.user.isGM && !isPlayerAdded) {
+              return ui.notifications.warn(`"${draggedKey}" was configured by the GM and cannot be removed.`);
+            }
+
+            const newAttacks = foundry.utils.deepClone(attacks);
+            delete newAttacks[draggedKey];
+
+            await window.CustomRolls.setProfileData(actor, "attackConfigs", newAttacks);
+            if (game.user.isGM) {
+              await actor.setFlag("world", "attackConfigs", newAttacks, { recursive: false });
+            }
+
+            attacks = newAttacks;
+            attackNames = Object.keys(attacks);
+            if (selectedWeaponKey === draggedKey) {
+              selectedWeaponKey = attackNames[0] || null;
+            }
+
+            html.find("#custom-weapons-list").html(renderCustomWeaponCards());
+            html.find("#inspector-weapon").html(getSelectedWeaponInspectorHtml());
+            bindWeaponDragAndDrop();
+            updateCardStyles();
+            updateWeaponOverviewTotals();
+            ui.notifications.info(`Removed "${draggedKey}".`);
           });
         }
 

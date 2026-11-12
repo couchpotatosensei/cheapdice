@@ -1182,6 +1182,16 @@ export function initActionEditors() {
                 <span>Allow GWM / Sharpshooter (-5 / +10)</span>
                 <input type="checkbox" name="hasGWM"/>
               </label>
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer; color: #2b7489; font-weight: bold;">
+                  <input type="checkbox" name="isVersatile"/>
+                  <span>Versatile Weapon</span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <span style="font-size: 0.75em; color: #555;">2H Die: d</span>
+                  <input type="text" name="versatileDie" value="10" style="width: 36px; height: 22px; font-size: 0.8em; text-align: center;"/>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1224,6 +1234,8 @@ export function initActionEditors() {
               const HALFLING_LUCKY_REROLL_THRESHOLD = parseInt(getVal("HALFLING_LUCKY_REROLL_THRESHOLD")) || 0;
               const superAdv = getCheck("superAdv");
               const hasGWM = getCheck("hasGWM");
+              const isVersatile = getCheck("isVersatile");
+              const versatileDie = getVal("versatileDie")?.replace(/^d/i, "").trim() || "10";
 
               const components = [];
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
@@ -1247,6 +1259,8 @@ export function initActionEditors() {
                 weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
                 extraCriticalBonus, GWF_REROLL_THRESHOLD, HAS_HALFLING_LUCKY,
                 HALFLING_LUCKY_REROLL_THRESHOLD, superAdv, hasGWM,
+                isVersatile, versatileDie,
+                addedBy: "gm", gmModified: true,
                 additionalDamageComponents: components
               };
 
@@ -1336,6 +1350,16 @@ export function initActionEditors() {
             // Proficiency check
             const isProf = sys.proficient !== undefined ? Boolean(sys.proficient) : true;
             html.find('input[name="isProficient"]').prop('checked', isProf);
+
+            // Versatile check & auto-detection
+            const isVersatile = Boolean(sys.properties?.has ? sys.properties.has("ver") : sys.properties?.ver);
+            let vDie = "10";
+            if (sys.damage?.versatile) {
+              const vm = String(sys.damage.versatile).match(/d(\d+)/i);
+              if (vm) vDie = vm[1];
+            }
+            html.find('input[name="isVersatile"]').prop('checked', isVersatile);
+            html.find('input[name="versatileDie"]').val(vDie);
           });
         }
       }, { width: 480, height: "auto" }).render(true);
@@ -2490,6 +2514,16 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                 <span>Allow GWM / Sharpshooter (-5 / +10)</span>
                 <input type="checkbox" name="hasGWM" ${item.hasGWM ? 'checked' : ''}/>
               </label>
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer; color: #2b7489; font-weight: bold;">
+                  <input type="checkbox" name="isVersatile" ${item.isVersatile ? 'checked' : ''}/>
+                  <span>Versatile Weapon</span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <span style="font-size: 0.75em; color: #555;">2H Die: d</span>
+                  <input type="text" name="versatileDie" value="${item.versatileDie || '10'}" style="width: 36px; height: 22px; font-size: 0.8em; text-align: center;"/>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2524,6 +2558,8 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               const HALFLING_LUCKY_REROLL_THRESHOLD = parseInt(getVal("HALFLING_LUCKY_REROLL_THRESHOLD")) || 0;
               const superAdv = getCheck("superAdv");
               const hasGWM = getCheck("hasGWM");
+              const isVersatile = getCheck("isVersatile");
+              const versatileDie = getVal("versatileDie")?.replace(/^d/i, "").trim() || "10";
 
               const components = [];
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
@@ -2547,6 +2583,8 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                 weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
                 extraCriticalBonus, GWF_REROLL_THRESHOLD, HAS_HALFLING_LUCKY,
                 HALFLING_LUCKY_REROLL_THRESHOLD, superAdv, hasGWM,
+                isVersatile, versatileDie,
+                addedBy: "gm", gmModified: true,
                 additionalDamageComponents: components
               };
 
