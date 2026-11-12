@@ -59,6 +59,81 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(cfg.damageDiceCount, 1);
   });
 
+  it('buildSpellConfigFromItem correctly handles modern dnd5e activities (v3/v4)', () => {
+    // 1. Save spell with damage (e.g. Fireball)
+    const modernFireball = {
+      id: "spellFireball",
+      name: "Fireball",
+      type: "spell",
+      system: {
+        level: 3,
+        activities: new Map([
+          ["actSave", {
+            type: "save",
+            save: { ability: "dex", dc: { calculation: "spellcasting" } },
+            damage: {
+              parts: [{
+                number: 8,
+                denomination: 6,
+                types: new Set(["fire"])
+              }]
+            }
+          }]
+        ])
+      }
+    };
+    const fbCfg = buildSpellConfigFromItem(modernFireball, mockActor);
+    assert.equal(fbCfg.resolutionMethod, "save");
+    assert.equal(fbCfg.saveAbility, "dex");
+    assert.equal(fbCfg.damageDiceCount, 8);
+    assert.equal(fbCfg.damageDieSize, "d6");
+    assert.equal(fbCfg.damageType, "fire");
+
+    // 2. Utility spell without attack or save (e.g. Mage Armor)
+    const modernMageArmor = {
+      id: "spellMageArmor",
+      name: "Mage Armor",
+      type: "spell",
+      system: {
+        level: 1,
+        activities: new Map([
+          ["actUtil", {
+            type: "utility"
+          }]
+        ])
+      }
+    };
+    const maCfg = buildSpellConfigFromItem(modernMageArmor, mockActor);
+    assert.equal(maCfg.resolutionMethod, "other");
+    assert.equal(maCfg.damageDiceCount, 0);
+
+    // 3. Heal spell (e.g. Healing Word)
+    const modernHealingWord = {
+      id: "spellHeal",
+      name: "Healing Word",
+      type: "spell",
+      system: {
+        level: 1,
+        activities: new Map([
+          ["actHeal", {
+            type: "heal",
+            healing: {
+              parts: [{
+                number: 1,
+                denomination: 4,
+                types: new Set(["healing"])
+              }]
+            }
+          }]
+        ])
+      }
+    };
+    const hwCfg = buildSpellConfigFromItem(modernHealingWord, mockActor);
+    assert.equal(hwCfg.resolutionMethod, "heal");
+    assert.equal(hwCfg.damageDiceCount, 1);
+    assert.equal(hwCfg.damageDieSize, "d4");
+  });
+
   it('isSpellPrepared recognizes cantrips, prepared spells, and wizard rituals', () => {
     const cantrip = {
       type: "spell",

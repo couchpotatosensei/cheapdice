@@ -232,31 +232,83 @@ export function buildSpellConfigFromItem(item, actor) {
   let resolutionMethod = "attack";
   let saveAbility = "dex";
   let saveSuccess = "half";
-  const actionType = sys.actionType;
-  if (actionType === "save") {
-    resolutionMethod = "save";
-    saveAbility = sys.save?.ability || "dex";
-    saveSuccess = sys.save?.scaling === "half" ? "half" : "none";
-  } else if (actionType === "heal") {
-    resolutionMethod = "heal";
-  } else if (actionType === "rsak" || actionType === "msak") {
-    resolutionMethod = "attack";
-  } else if (actionType === "util" || !actionType) {
-    resolutionMethod = "other";
-  }
-
   let damageDiceCount = 0;
   let damageDieSize = "d6";
   let damageType = "fire";
-  const parts = sys.damage?.parts || [];
-  if (parts.length > 0) {
-    const firstPart = parts[0];
-    const formula = firstPart[0] || "";
-    damageType = (firstPart[1] || "fire").toLowerCase();
-    const diceMatch = formula.match(/(\d*)d(\d+)/i);
-    if (diceMatch) {
-      damageDiceCount = parseInt(diceMatch[1]) || 1;
-      damageDieSize = `d${diceMatch[2]}`;
+
+  // Check modern dnd5e Activities (v3 / v4) first
+  if (sys.activities && (sys.activities.size > 0 || (typeof sys.activities.values === "function" && Array.from(sys.activities.values()).length > 0))) {
+    const activities = Array.from(sys.activities.values());
+    const saveAct = activities.find(a => a.type === "save" || a.save);
+    const healAct = activities.find(a => a.type === "heal" || a.healing);
+    const attackAct = activities.find(a => a.type === "attack" || a.attack);
+    const damageAct = activities.find(a => a.type === "damage" || (a.damage?.parts && a.damage.parts.length > 0));
+
+    if (saveAct) {
+      resolutionMethod = "save";
+      saveAbility = saveAct.save?.ability || "dex";
+      saveSuccess = saveAct.save?.scaling === "half" ? "half" : "none";
+    } else if (healAct) {
+      resolutionMethod = "heal";
+    } else if (attackAct) {
+      resolutionMethod = "attack";
+    } else if (damageAct) {
+      resolutionMethod = "other";
+    } else {
+      resolutionMethod = "other";
+    }
+
+    // Parse damage / healing from activities
+    const primaryDmgAct = damageAct || saveAct || attackAct || healAct;
+    const parts = primaryDmgAct?.damage?.parts || primaryDmgAct?.healing?.parts || [];
+    if (parts.length > 0) {
+      const firstPart = parts[0];
+      if (typeof firstPart === "object" && (firstPart.number || firstPart.denomination || firstPart.formula)) {
+        damageDiceCount = Number(firstPart.number) || 1;
+        damageDieSize = firstPart.denomination ? `d${firstPart.denomination}` : "d6";
+        if (firstPart.types && firstPart.types.size > 0) {
+          damageType = Array.from(firstPart.types)[0].toLowerCase();
+        } else if (firstPart.types?.[0]) {
+          damageType = String(firstPart.types[0]).toLowerCase();
+        } else if (primaryDmgAct === healAct) {
+          damageType = "healing";
+        }
+      } else if (Array.isArray(firstPart)) {
+        const formula = firstPart[0] || "";
+        damageType = (firstPart[1] || (primaryDmgAct === healAct ? "healing" : "fire")).toLowerCase();
+        const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
+        if (diceMatch) {
+          damageDiceCount = parseInt(diceMatch[1]) || 1;
+          damageDieSize = `d${diceMatch[2]}`;
+        }
+      }
+    }
+  } else {
+    // Legacy actionType / damage.parts fallback
+    const actionType = sys.actionType;
+    if (actionType === "save") {
+      resolutionMethod = "save";
+      saveAbility = sys.save?.ability || "dex";
+      saveSuccess = sys.save?.scaling === "half" ? "half" : "none";
+    } else if (actionType === "heal") {
+      resolutionMethod = "heal";
+      damageType = "healing";
+    } else if (actionType === "rsak" || actionType === "msak") {
+      resolutionMethod = "attack";
+    } else if (actionType === "util" || !actionType) {
+      resolutionMethod = "other";
+    }
+
+    const parts = sys.damage?.parts || [];
+    if (parts.length > 0) {
+      const firstPart = parts[0];
+      const formula = firstPart[0] || "";
+      damageType = (firstPart[1] || (actionType === "heal" ? "healing" : "fire")).toLowerCase();
+      const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
+      if (diceMatch) {
+        damageDiceCount = parseInt(diceMatch[1]) || 1;
+        damageDieSize = `d${diceMatch[2]}`;
+      }
     }
   }
 
@@ -3248,6 +3300,9 @@ Click a numbered modifier badge to execute a roll.</div>
       } else if (isHealing) {
         actionVal = "HEAL";
         typeLabel = "RECOVERY";
+      } else if (cfg.resolutionMethod === "other") {
+        actionVal = "Cast";
+        typeLabel = "UTILITY";
       }
 
       const tags = [];
@@ -3491,6 +3546,21 @@ Click a numbered modifier badge to execute a roll.</div>
           : `<i class="far fa-star btn-toggle-spell-favorite" data-key="${key}" title="Add to Favorites" style="cursor: pointer; color: #aaa; font-size: 0.85em; padding: 2px;"></i>`;
 
         const isHealing = ["heal", "temp_hp", "max_hp"].includes(sp.resolutionMethod);
+        const isUtility = sp.resolutionMethod === "other";
+
+        let atkLabel = "Atk:";
+        if (sp.resolutionMethod === "save") atkLabel = "Save:";
+        else if (isHealing) atkLabel = "Heal:";
+        else if (isUtility) atkLabel = "Cast:";
+
+        let rightSideHtml = "";
+        if (isHealing) {
+          rightSideHtml = `<span class="weapon-card-dmg-line">Heal: <strong class="weapon-card-dmg-val" style="color: #2e7d32;">${d.valFormula}</strong></span>`;
+        } else if (isUtility) {
+          rightSideHtml = `<span class="weapon-card-dmg-line" style="color: #64748b; font-weight: 600;">Utility</span>`;
+        } else {
+          rightSideHtml = `<span class="weapon-card-dmg-line">Dmg: <strong class="weapon-card-dmg-val" style="color: #2b3a4a;">${d.valFormula}</strong></span>`;
+        }
 
         return `
         <div class="action-card spell-card custom-spell-card" data-key="${key}" data-level="${sp.baseLevel ?? 0}" data-scope="${scope}" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
@@ -3506,12 +3576,12 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
             <span class="weapon-card-atk-line" style="display: inline-flex; align-items: center; gap: 4px;">
-              ${sp.resolutionMethod === 'save' ? 'Save:' : 'Atk:'} 
+              ${atkLabel} 
               <button type="button" class="quick-roll-spell-btn" data-key="${key}" title="Click to Quick Cast / Roll" style="cursor: pointer; font-size: 0.9em; font-weight: 800; color: #235d6e; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 6px; line-height: 1.2;">
                 ${d.actionVal}
               </button>
             </span>
-            <span class="weapon-card-dmg-line">${isHealing ? 'Heal:' : 'Dmg:'} <strong class="weapon-card-dmg-val" style="color: #2b3a4a;">${d.valFormula}</strong></span>
+            ${rightSideHtml}
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
         </div>
@@ -3523,17 +3593,14 @@ Click a numbered modifier badge to execute a roll.</div>
       // Section: Favorites (shown if no filters active OR if 'fav' filter is explicitly active)
       const showFavSection = favorites.length > 0 && (!hasActiveFilters || activeFilters.has("fav"));
       if (showFavSection) {
-        const isCollapsed = Boolean(collapsedState["fav"]);
-        const chevron = isCollapsed ? "fa-chevron-right" : "fa-chevron-down";
         outputHtml += `
           <div class="spell-group-section" style="margin-bottom: 6px;">
-            <div class="spell-group-header" data-group="fav" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: rgba(241, 196, 15, 0.12); border: 1px solid rgba(241, 196, 15, 0.35); border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; user-select: none;">
+            <div class="spell-group-header" data-group="fav" style="display: flex; align-items: center; justify-content: space-between; background: rgba(241, 196, 15, 0.12); border: 1px solid rgba(241, 196, 15, 0.35); border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; user-select: none;">
               <span style="font-weight: 700; font-size: 0.75em; color: #b78103; display: flex; align-items: center; gap: 5px;">
-                <i class="fas ${chevron}"></i>
                 <i class="fas fa-star" style="color: #f1c40f;"></i> FAVORITES (${favorites.length})
               </span>
             </div>
-            <div class="spell-group-cards" data-group="fav" style="display: ${isCollapsed ? 'none' : 'flex'}; flex-direction: column; gap: 3px;">
+            <div class="spell-group-cards" data-group="fav" style="display: flex; flex-direction: column; gap: 3px;">
               ${favorites.map(k => renderCard(k, "fav")).join("")}
             </div>
           </div>
@@ -3551,21 +3618,18 @@ Click a numbered modifier badge to execute a roll.</div>
         if (hasActiveFilters && !activeFilters.has(String(lvl))) continue;
 
         renderedLevelGroups++;
-        const isCollapsed = Boolean(collapsedState[`lvl_${lvl}`]);
-        const chevron = isCollapsed ? "fa-chevron-right" : "fa-chevron-down";
         const groupTitle = lvl === 0 ? "CANTRIPS" : `LEVEL ${lvl}`;
         const slotInfo = getSlotInfo(lvl);
         const slotLabel = lvl === 0 ? "" : ` • Slots: ${slotInfo.label}`;
 
         outputHtml += `
           <div class="spell-group-section" style="margin-bottom: 6px;">
-            <div class="spell-group-header" data-group="lvl_${lvl}" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: rgba(114, 137, 218, 0.08); border: 1px solid rgba(114, 137, 218, 0.25); border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; user-select: none;">
+            <div class="spell-group-header" data-group="lvl_${lvl}" style="display: flex; align-items: center; justify-content: space-between; background: rgba(114, 137, 218, 0.08); border: 1px solid rgba(114, 137, 218, 0.25); border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; user-select: none;">
               <span style="font-weight: 700; font-size: 0.74em; color: #4b5d88; display: flex; align-items: center; gap: 5px;">
-                <i class="fas ${chevron}"></i>
                 ${groupTitle} (${groupKeys.length}${slotLabel})
               </span>
             </div>
-            <div class="spell-group-cards" data-group="lvl_${lvl}" style="display: ${isCollapsed ? 'none' : 'flex'}; flex-direction: column; gap: 3px;">
+            <div class="spell-group-cards" data-group="lvl_${lvl}" style="display: flex; flex-direction: column; gap: 3px;">
               ${groupKeys.map(k => renderCard(k, "level")).join("")}
             </div>
           </div>
@@ -3767,7 +3831,7 @@ Click a numbered modifier badge to execute a roll.</div>
             <span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${lvlLabel}</span>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px;">
-            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.actionVal}</strong></span>
+            <span>${sp.resolutionMethod === 'save' ? 'Save' : (['heal', 'temp_hp', 'max_hp'].includes(sp.resolutionMethod) ? 'Heal' : (sp.resolutionMethod === 'other' ? 'Action' : 'Roll'))}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.actionVal}</strong></span>
             <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
@@ -5922,29 +5986,6 @@ Click a numbered modifier badge to execute a roll.</div>
           spellConfigs = freshSpells;
           html.find("#section-spell").html(renderSpellCards());
           updateCardStyles();
-        });
-
-        // Collapsible Group Header Click Handler
-        html.on("click", ".spell-group-header", function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-
-          const groupKey = $(this).data("group");
-          const cardsContainer = html.find(`.spell-group-cards[data-group="${groupKey}"]`);
-          const icon = $(this).find("i.fas.fa-chevron-down, i.fas.fa-chevron-right");
-
-          window.CustomRolls._collapsedSpellLevels = window.CustomRolls._collapsedSpellLevels || {};
-          const isCurrentlyCollapsed = cardsContainer.css("display") === "none";
-
-          if (isCurrentlyCollapsed) {
-            cardsContainer.css("display", "flex");
-            icon.removeClass("fa-chevron-right").addClass("fa-chevron-down");
-            window.CustomRolls._collapsedSpellLevels[groupKey] = false;
-          } else {
-            cardsContainer.css("display", "none");
-            icon.removeClass("fa-chevron-down").addClass("fa-chevron-right");
-            window.CustomRolls._collapsedSpellLevels[groupKey] = true;
-          }
         });
 
         html.on("click", ".btn-assign-hud-slot", async function (e) {
