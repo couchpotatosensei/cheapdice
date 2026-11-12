@@ -3450,6 +3450,8 @@ Click a numbered modifier badge to execute a roll.</div>
           ? `<i class="fas fa-star btn-toggle-spell-favorite" data-key="${key}" title="Remove from Favorites" style="cursor: pointer; color: #f1c40f; font-size: 0.85em; padding: 2px;"></i>`
           : `<i class="far fa-star btn-toggle-spell-favorite" data-key="${key}" title="Add to Favorites" style="cursor: pointer; color: #aaa; font-size: 0.85em; padding: 2px;"></i>`;
 
+        const isHealing = ["heal", "temp_hp", "max_hp"].includes(sp.resolutionMethod);
+
         return `
         <div class="action-card spell-card custom-spell-card" data-key="${key}" data-level="${sp.baseLevel ?? 0}" data-scope="${scope}" draggable="true" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: grab; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
