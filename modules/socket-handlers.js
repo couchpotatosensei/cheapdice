@@ -1030,6 +1030,14 @@ function registerSocketHandlers() {
       return `<span style="display: inline-block; background: ${bg}; border: 1px solid ${border}; border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: ${color};">${t}</span>`;
     }).join("");
 
+    const fullSpellDescription = (config.description || config.summary || "").trim();
+    const descriptionHtmlBlock = fullSpellDescription ? `
+      <details style="margin-bottom: 6px; font-size: 0.82em; color: #444; border: 1px solid #e0e0e0; border-radius: 3px; padding: 3px 6px; background: rgba(0,0,0,0.015);">
+        <summary style="font-weight: 600; color: #4b5d88; cursor: pointer; user-select: none;">Description</summary>
+        <div class="spell-description-content" style="margin-top: 4px; line-height: 1.4; color: #2b3a4a;">${fullSpellDescription}</div>
+      </details>
+    ` : "";
+
     // --- Healing Branch ---
     if (isHealingType) {
       let effectiveFlat = Number(flatDamageBonus) || 0;
@@ -1082,6 +1090,8 @@ function registerSocketHandlers() {
           <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px;">
             ${tagsHtml}
           </div>
+
+          ${descriptionHtmlBlock}
 
           <div style="background: ${headerBg}; border: 1px solid ${headerBorder}; border-radius: 4px; padding: 5px; text-align: center; margin-bottom: 6px;">
             <span style="font-weight: bold; font-size: 0.9em; color: ${headerColor};"><i class="fas ${icon}"></i> ${titleText}</span>
@@ -1140,9 +1150,9 @@ function registerSocketHandlers() {
 
           <div style="background: rgba(75, 93, 136, 0.08); border: 1px solid rgba(75, 93, 136, 0.3); border-radius: 4px; padding: 8px 10px; margin-top: 4px;">
             <div style="font-weight: bold; font-size: 0.8em; color: #4b5d88; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px;">
-              <i class="fas fa-sparkles"></i> Spell Effect / Summary
+              <i class="fas fa-sparkles"></i> Spell Description
             </div>
-            <div style="font-size: 0.9em; line-height: 1.4; color: #2b3a4a; white-space: pre-wrap;">${summaryText}</div>
+            <div style="font-size: 0.9em; line-height: 1.4; color: #2b3a4a;">${fullSpellDescription || summaryText}</div>
           </div>
         </div>
       `;
@@ -1191,6 +1201,8 @@ function registerSocketHandlers() {
           <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px;">
             ${tagsHtml}
           </div>
+
+          ${descriptionHtmlBlock}
 
           <div style="background: rgba(111, 66, 193, 0.08); border: 1px solid rgba(111, 66, 193, 0.3); border-radius: 4px; padding: 5px; text-align: center; margin-bottom: 6px;">
             <span style="font-weight: bold; font-size: 0.9em; color: #5a32a3;"><i class="fas fa-bullseye"></i> AUTOMATIC HIT (${dartsToRoll} PROJECTILES)</span>
@@ -1353,6 +1365,8 @@ function registerSocketHandlers() {
             ${tagsHtml}
           </div>
 
+          ${descriptionHtmlBlock}
+
           ${components?.costly && components?.description ? `
             <div style="font-size: 0.78em; color: #b35900; background: rgba(179, 89, 0, 0.08); padding: 3px 6px; border-radius: 3px; margin-bottom: 6px;">
               <i class="fas fa-coins"></i> <strong>Requires:</strong> ${components.description}
@@ -1416,11 +1430,9 @@ function registerSocketHandlers() {
 
     // --- Save Branch (Fireball, Sacred Flame, etc.) ---
     const saveLabel = saveAbility.toUpperCase();
-    const outcomeText = saveSuccess === "half" ? "Half damage on success" : "Negates / No damage on success";
     const attackHtmlBlock = `
       <div style="background: rgba(43, 116, 137, 0.1); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 4px; padding: 6px; text-align: center; margin-bottom: 6px;">
         <div style="font-size: 1.05em; font-weight: bold; color: #235d6e;">DC ${spellDC} ${saveLabel} Saving Throw</div>
-        <div style="font-size: 0.8em; color: #555; margin-top: 1px;">${outcomeText}</div>
       </div>
     `;
 
@@ -1530,6 +1542,8 @@ function registerSocketHandlers() {
         <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px;">
           ${tagsHtml}
         </div>
+
+        ${descriptionHtmlBlock}
 
         ${components?.costly && components?.description ? `
           <div style="font-size: 0.78em; color: #b35900; background: rgba(179, 89, 0, 0.08); padding: 3px 6px; border-radius: 3px; margin-bottom: 6px;">

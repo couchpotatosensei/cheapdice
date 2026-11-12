@@ -355,6 +355,7 @@ export function buildSpellConfigFromItem(item, actor) {
     targetType,
     areaShape,
     areaSize,
+    description: rawDesc,
     summary: cleanSummary,
     damageDiceCount,
     damageDieSize,
