@@ -1347,8 +1347,8 @@ export function initActionEditors() {
               html.find('input[name="weaponModifier"]').val(sys.attackBonus);
             }
 
-            // Proficiency check
-            const isProf = sys.proficient !== undefined ? Boolean(sys.proficient) : true;
+            // Proficiency check across dnd5e versions
+            const isProf = Boolean(item.isProficient ?? sys.proficient ?? sys.prof?.hasProficiency ?? false);
             html.find('input[name="isProficient"]').prop('checked', isProf);
 
             // Versatile check & auto-detection

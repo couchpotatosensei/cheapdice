@@ -4953,7 +4953,8 @@ Click a numbered modifier badge to execute a roll.</div>
               weaponModifier = sys.attackBonus;
             }
 
-            const isProf = sys.proficient !== undefined ? Boolean(sys.proficient) : true;
+            // Robust proficiency check across dnd5e versions (item.isProficient, sys.proficient, sys.prof?.hasProficiency)
+            const isProf = Boolean(item.isProficient ?? sys.proficient ?? sys.prof?.hasProficiency ?? false);
             const isVersatile = Boolean(sys.properties?.has ? sys.properties.has("ver") : sys.properties?.ver);
             let versatileDie = "10";
             if (sys.damage?.versatile) {
