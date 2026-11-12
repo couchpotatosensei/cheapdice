@@ -70,7 +70,7 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
         activities: new Map([
           ["actSave", {
             type: "save",
-            save: { ability: "dex", dc: { calculation: "spellcasting" } },
+            save: { ability: new Set(["dex"]), dc: { calculation: "spellcasting" } },
             damage: {
               parts: [{
                 number: 8,

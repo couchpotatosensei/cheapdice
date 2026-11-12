@@ -1849,7 +1849,11 @@ export function initActionEditors() {
 
               if (saveAct) {
                 resSelect.val("save");
-                html.find('select[name="saveAbility"]').val(saveAct.save?.ability || "dex");
+                let rawSaveAbil = saveAct.save?.ability;
+                if (rawSaveAbil instanceof Set) rawSaveAbil = Array.from(rawSaveAbil)[0];
+                else if (Array.isArray(rawSaveAbil)) rawSaveAbil = rawSaveAbil[0];
+                else if (typeof rawSaveAbil !== "string") rawSaveAbil = "dex";
+                html.find('select[name="saveAbility"]').val(rawSaveAbil || "dex");
                 html.find('select[name="saveSuccess"]').val(saveAct.save?.scaling === "half" ? "half" : "none");
               } else if (healAct) {
                 resSelect.val("heal");

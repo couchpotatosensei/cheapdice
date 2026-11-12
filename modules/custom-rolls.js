@@ -251,7 +251,15 @@ export function buildSpellConfigFromItem(item, actor) {
 
     if (saveAct) {
       resolutionMethod = "save";
-      saveAbility = saveAct.save?.ability || "dex";
+      let rawSaveAbil = saveAct.save?.ability;
+      if (rawSaveAbil instanceof Set) {
+        rawSaveAbil = Array.from(rawSaveAbil)[0];
+      } else if (Array.isArray(rawSaveAbil)) {
+        rawSaveAbil = rawSaveAbil[0];
+      } else if (typeof rawSaveAbil === "object" && rawSaveAbil?.first) {
+        rawSaveAbil = rawSaveAbil.first();
+      }
+      saveAbility = typeof rawSaveAbil === "string" && rawSaveAbil ? rawSaveAbil : "dex";
       saveSuccess = saveAct.save?.scaling === "half" ? "half" : "none";
     } else if (healAct) {
       resolutionMethod = "heal";
@@ -3330,7 +3338,11 @@ Click a numbered modifier badge to execute a roll.</div>
       if (cfg.resolutionMethod === "attack" && cfg.isMultiAttack) {
         actionVal = `${cfg.effectiveAttacks || cfg.attackCount || 1}x (${atkSign})`;
       } else if (cfg.resolutionMethod === "save") {
-        actionVal = `DC ${spellDC} ${(cfg.saveAbility || 'dex').toUpperCase()}`;
+        let saveAbilStr = cfg.saveAbility;
+        if (saveAbilStr instanceof Set) saveAbilStr = Array.from(saveAbilStr)[0];
+        else if (Array.isArray(saveAbilStr)) saveAbilStr = saveAbilStr[0];
+        else if (typeof saveAbilStr !== "string") saveAbilStr = "dex";
+        actionVal = `DC ${spellDC} ${(saveAbilStr || 'dex').toUpperCase()}`;
       } else if (cfg.resolutionMethod === "auto") {
         actionVal = `${cfg.effectiveProjectiles || cfg.projectileCount || 3} Darts`;
       } else if (isHealing) {
