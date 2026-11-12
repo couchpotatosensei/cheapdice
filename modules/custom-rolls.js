@@ -3409,8 +3409,8 @@ Click a numbered modifier badge to execute a roll.</div>
       const isFavActive = activeFilters.has("fav");
 
       const favBtn = `
-        <button type="button" class="btn-spell-filter" data-filter="fav" title="Filter Favorites (${favCount})" style="cursor: pointer; height: 24px; min-width: 28px; padding: 0 6px; border-radius: 4px; font-weight: 700; font-size: 0.82em; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border: 1px solid ${isFavActive ? '#d97706' : '#cbd5e1'}; background: ${isFavActive ? '#fef3c7' : '#f8fafc'}; color: ${isFavActive ? '#b45309' : '#64748b'}; box-shadow: ${isFavActive ? '0 0 4px rgba(217, 119, 6, 0.35)' : 'none'};">
-          <i class="fas fa-star" style="color: ${isFavActive ? '#d97706' : '#cbd5e1'}; font-size: 0.9em;"></i>
+        <button type="button" class="btn-spell-filter" data-filter="fav" title="Filter Favorites (${favCount})" style="cursor: pointer; height: 22px; flex: 1 1 auto; min-width: 0; padding: 0 4px; border-radius: 4px; font-weight: 700; font-size: 0.80em; display: inline-flex; align-items: center; justify-content: center; gap: 3px; border: 1px solid ${isFavActive ? '#d97706' : '#cbd5e1'}; background: ${isFavActive ? '#fef3c7' : '#f8fafc'}; color: ${isFavActive ? '#b45309' : '#64748b'}; box-shadow: ${isFavActive ? '0 0 4px rgba(217, 119, 6, 0.35)' : 'none'};">
+          <i class="fas fa-star" style="color: ${isFavActive ? '#d97706' : '#cbd5e1'}; font-size: 0.85em;"></i>
           ${favCount > 0 ? `<span style="font-size: 0.85em;">${favCount}</span>` : ''}
         </button>
       `;
@@ -3420,15 +3420,14 @@ Click a numbered modifier badge to execute a roll.</div>
         const label = String(lvl);
         const title = lvl === 0 ? "Cantrips (Level 0)" : `Level ${lvl}`;
         return `
-          <button type="button" class="btn-spell-filter" data-filter="${lvl}" title="${title}" style="cursor: pointer; height: 24px; min-width: 24px; padding: 0 6px; border-radius: 4px; font-weight: 700; font-size: 0.82em; display: inline-flex; align-items: center; justify-content: center; border: 1px solid ${isActive ? '#7289da' : '#cbd5e1'}; background: ${isActive ? '#e0e7ff' : '#f8fafc'}; color: ${isActive ? '#3730a3' : '#64748b'}; box-shadow: ${isActive ? '0 0 4px rgba(114, 137, 218, 0.35)' : 'none'};">
+          <button type="button" class="btn-spell-filter" data-filter="${lvl}" title="${title}" style="cursor: pointer; height: 22px; flex: 1 1 auto; min-width: 0; padding: 0 2px; border-radius: 4px; font-weight: 700; font-size: 0.80em; display: inline-flex; align-items: center; justify-content: center; border: 1px solid ${isActive ? '#7289da' : '#cbd5e1'}; background: ${isActive ? '#e0e7ff' : '#f8fafc'}; color: ${isActive ? '#3730a3' : '#64748b'}; box-shadow: ${isActive ? '0 0 4px rgba(114, 137, 218, 0.35)' : 'none'};">
             ${label}
           </button>
         `;
       }).join("");
 
       return `
-        <div id="spell-filter-bar" style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 3px 2px 6px 2px; border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; flex-shrink: 0;">
-          <span style="font-size: 0.68em; font-weight: 800; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 2px;">Filters:</span>
+        <div id="spell-filter-bar" style="display: flex; align-items: center; gap: 3px; width: 100%; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; padding: 2px 0 5px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 4px; flex-shrink: 0;">
           ${favBtn}
           ${levelBtns}
         </div>
