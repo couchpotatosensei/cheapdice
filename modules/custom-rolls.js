@@ -4101,6 +4101,94 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass span[style*="color:#2b3a4a"] {
               color: #ffffff !important;
             }
+
+            /* --- Right-Side Action Tabs Styles --- */
+            .app.dialog.minimized .dice-stuff-side-tabs {
+              display: none !important;
+            }
+            .app.dialog .dice-stuff-side-tab-btn {
+              width: 34px;
+              height: 34px;
+              padding: 0;
+              margin: 0;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              border: 1px solid #c0c6ce;
+              border-left: none;
+              border-radius: 0 6px 6px 0;
+              background: url("/ui/parchment.jpg") repeat, #fbf7ef;
+              color: #2b3a4a;
+              cursor: pointer;
+              box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+              font-size: 15px;
+              transition: transform 0.1s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+            }
+            .app.dialog .dice-stuff-side-tab-btn.tab-empty {
+              color: #8c97a7;
+              opacity: 0.85;
+            }
+            .app.dialog .dice-stuff-side-tab-btn:hover {
+              background: #f0f4ff;
+              color: #7289da;
+              border-color: #7289da;
+              transform: translateX(2px);
+              opacity: 1;
+            }
+
+            /* Tactical Glass Side Tabs */
+            .app.dialog.cheapdice-theme-glass .dice-stuff-side-tab-btn {
+              background: rgba(15, 23, 42, 0.72) !important;
+              backdrop-filter: blur(16px) !important;
+              -webkit-backdrop-filter: blur(16px) !important;
+              border: 1px solid rgba(255, 255, 255, 0.18) !important;
+              border-left: none !important;
+              color: #e0e7ff !important;
+              box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.5) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-side-tab-btn.tab-empty {
+              color: #64748b !important;
+              opacity: 0.75;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-side-tab-btn:hover {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+              transform: translateX(2px);
+              opacity: 1;
+            }
+
+            /* Slate & Obsidian Side Tabs */
+            .app.dialog.cheapdice-theme-slate .dice-stuff-side-tab-btn {
+              background: #1e293b !important;
+              border: 1px solid #334155 !important;
+              border-left: none !important;
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-side-tab-btn.tab-empty {
+              color: #64748b !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-side-tab-btn:hover {
+              background: #334155 !important;
+              color: #38bdf8 !important;
+              border-color: #38bdf8 !important;
+            }
+
+            /* Arcane Midnight Side Tabs */
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-side-tab-btn {
+              background: #18152e !important;
+              border: 1px solid #4a3e75 !important;
+              border-left: none !important;
+              color: #e0d8f7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-side-tab-btn.tab-empty {
+              color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-side-tab-btn:hover {
+              background: #2a2347 !important;
+              color: #a78bfa !important;
+              border-color: #a78bfa !important;
+            }
           `;
           document.head.appendChild(styleTag);
         }
@@ -4980,44 +5068,10 @@ Click a numbered modifier badge to execute a roll.</div>
             const info = getButtonInfo(actor, s.num, s.hotbar);
             const isAssigned = info.type !== "Empty";
             const tabBtn = $(`
-              <button type="button" class="dice-stuff-side-tab-btn" data-slot="${s.num}" data-hotbar="${s.hotbar}" title="${info.title}" style="
-                width: 34px;
-                height: 34px;
-                padding: 0;
-                margin: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border: 1px solid rgba(0, 0, 0, 0.45);
-                border-left: none;
-                border-radius: 0 6px 6px 0;
-                background: ${isAssigned ? '#2c2f33' : 'rgba(30, 33, 36, 0.75)'};
-                color: ${isAssigned ? '#e0e7ff' : '#888'};
-                cursor: pointer;
-                box-shadow: 2px 2px 5px rgba(0,0,0,0.35);
-                font-size: 15px;
-                transition: transform 0.1s ease, background 0.15s ease, color 0.15s ease;
-              ">
+              <button type="button" class="dice-stuff-side-tab-btn ${isAssigned ? 'tab-assigned' : 'tab-empty'}" data-slot="${s.num}" data-hotbar="${s.hotbar}" title="${info.title}">
                 <i class="${info.icon}"></i>
               </button>
             `);
-
-            tabBtn.hover(
-              function () {
-                $(this).css({
-                  background: "#4f545c",
-                  color: "#fff",
-                  transform: "translateX(2px)"
-                });
-              },
-              function () {
-                $(this).css({
-                  background: isAssigned ? '#2c2f33' : 'rgba(30, 33, 36, 0.75)',
-                  color: isAssigned ? '#e0e7ff' : '#888',
-                  transform: "translateX(0)"
-                });
-              }
-            );
 
             tabBtn.on("click", async (e) => {
               e.preventDefault();

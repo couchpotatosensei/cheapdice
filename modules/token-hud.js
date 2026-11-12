@@ -21,7 +21,7 @@ export function getButtonInfo(actor, btnNum, slotIdx) {
     }
   }
 
-  // Fallback (or DM Priority): Assigned action on the actor
+  // Assigned action on the actor (Priority for GM, Fallback for Non-GM)
   const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
     || actor?.getFlag?.("cheapdice", "hudAssignedSlots")
     || actor?.getFlag?.("world", "hudAssignedSlots")
@@ -32,16 +32,7 @@ export function getButtonInfo(actor, btnNum, slotIdx) {
     return { title: `HUD ${btnNum} (${typeLabel}): ${assignment.name}`, icon: `fas fa-square-${btnNum}`, name: assignment.name, type: typeLabel };
   }
 
-  // If DM has no action assigned on actor, check if DM has hotbar macro as last resort
-  if (game.user?.isGM) {
-    const macroId = game.user?.hotbar?.[slotIdx];
-    const macro = game.macros?.get(macroId);
-    if (macro) {
-      return { title: `Hotbar ${slotIdx}: ${macro.name}`, icon: `fas fa-square-${btnNum}`, name: macro.name, type: "Macro" };
-    }
-  }
-
-  return { title: `Slot ${btnNum} (Hotbar ${slotIdx})`, icon: `fas fa-square-${btnNum}`, name: `Slot ${btnNum}`, type: "Empty" };
+  return { title: `Slot ${btnNum}: No action assigned`, icon: `fas fa-square-${btnNum}`, name: `Slot ${btnNum}`, type: "Empty" };
 }
 
 export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = null) {
@@ -165,17 +156,8 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     return await globalThis.attackSocket.executeAsGM(handler, rollConfig, actor.id, game.user.id);
   }
 
-  // 3. Fallback for GM if hotbar macro exists
-  if (game.user?.isGM) {
-    const macroId = game.user?.hotbar?.[slotIndex];
-    const macro = game.macros?.get(macroId);
-    if (macro) {
-      return macro.execute({ actor: actor, token: token });
-    }
-  }
-
-  // 4. Neither hotbar macro nor assigned action configured
-  ui.notifications.info(`Button ${buttonNumber}: No action assigned to actor and Hotbar slot ${slotIndex} is empty.`);
+  // 3. Neither hotbar macro nor assigned action configured
+  ui.notifications.info(`Button ${buttonNumber}: No action is assigned.`);
 }
 
 export function initTokenHud() {
