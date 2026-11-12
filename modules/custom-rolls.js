@@ -3868,15 +3868,15 @@ Click a numbered modifier badge to execute a roll.</div>
             <span style="font-size: 0.88em; font-weight: 800; color: #2b3a4a; white-space: nowrap;">${abilFullDisplay}</span>
           </div>
           <div style="display: flex; flex-direction: column; align-items: center; flex: 1; border-right: 1px solid #e0e6ed; padding: 0 3px;">
-            <button type="button" class="btn-spell-atk-roll" data-atk-bonus="${spellAtkVal ?? 0}" title="Roll Generic Spell Attack (${spellAtkDisplay})" style="width: 100%; height: 26px; line-height: 1; padding: 2px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a;">
-              <span style="font-size: 0.62em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase; line-height: 1;"><i class="fas fa-dice-d20" style="margin-right: 2px;"></i>Atk</span>
-              <span style="font-size: 0.88em; font-weight: 800; color: #7289da; line-height: 1.1;">${spellAtkDisplay}</span>
+            <button type="button" class="btn-spell-atk-roll" data-atk-bonus="${spellAtkVal ?? 0}" title="Roll Generic Spell Attack (${spellAtkDisplay})" style="width: 100%; height: 26px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a; white-space: nowrap;">
+              <span style="font-size: 0.70em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase;">Atk</span>
+              <span style="font-size: 0.88em; font-weight: 800; color: #7289da;">${spellAtkDisplay}</span>
             </button>
           </div>
           <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 3px;">
-            <button type="button" class="btn-spell-dc-card" data-save-dc="${spellDCVal ?? 10}" title="Post Generic Save DC Card (DC ${spellDCDisplay})" style="width: 100%; height: 26px; line-height: 1; padding: 2px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a;">
-              <span style="font-size: 0.62em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase; line-height: 1;"><i class="fas fa-shield-alt" style="margin-right: 2px;"></i>Save DC</span>
-              <span style="font-size: 0.88em; font-weight: 800; color: #7289da; line-height: 1.1;">${spellDCDisplay}</span>
+            <button type="button" class="btn-spell-dc-card" data-save-dc="${spellDCVal ?? 10}" title="Post Generic Save DC Card (DC ${spellDCDisplay})" style="width: 100%; height: 26px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a; white-space: nowrap;">
+              <span style="font-size: 0.70em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase;">DC</span>
+              <span style="font-size: 0.88em; font-weight: 800; color: #7289da;">${spellDCDisplay}</span>
             </button>
           </div>
         </div>
@@ -5470,13 +5470,13 @@ Click a numbered modifier badge to execute a roll.</div>
 
           const saveButtonsHtml = abilities.map(a => {
             return `
-              <div style="display: inline-block; margin: 2px;">
+              <div style="flex: 1 1 calc(33.333% - 6px); max-width: calc(33.333% - 6px); box-sizing: border-box; text-align: center;">
                 [[/r 1d20 + @abilities.${a.key}.save]]{${a.label} Save}
               </div>
             `;
           }).join("");
 
-          const content = `
+          const rawCardHtml = `
             <div style="font-family: inherit; color: #2b3a4a;">
               <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #7289da; padding-bottom: 4px; margin-bottom: 6px;">
                 <span style="font-size: 1.05em; font-weight: 800; color: #2b3a4a;">
@@ -5487,13 +5487,13 @@ Click a numbered modifier badge to execute a roll.</div>
                 </span>
               </div>
               <div style="font-size: 0.85em; color: #555; margin-bottom: 6px;">
-                <strong>${actor.name}</strong> forces a saving throw:
+                <strong>${actor.name}</strong> imposes a saving throw:
               </div>
               <div style="background: rgba(114, 137, 218, 0.08); border: 1px solid rgba(114, 137, 218, 0.25); border-radius: 4px; padding: 6px 8px; text-align: center;">
-                <div style="font-size: 0.72em; font-weight: 700; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                <div style="font-size: 0.72em; font-weight: 700; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
                   Click to Roll Save
                 </div>
-                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 4px;">
+                <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px;">
                   ${saveButtonsHtml}
                 </div>
               </div>
@@ -5501,10 +5501,11 @@ Click a numbered modifier badge to execute a roll.</div>
           `;
 
           try {
+            const enrichedContent = await TextEditor.enrichHTML(rawCardHtml, { async: true });
             await ChatMessage.create({
               user: game.user.id,
               speaker: ChatMessage.getSpeaker({ actor }),
-              content
+              content: enrichedContent
             });
           } catch (err) {
             console.error("Failed to create spell save DC card:", err);
