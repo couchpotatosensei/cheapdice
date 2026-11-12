@@ -940,7 +940,7 @@ export function initCustomRolls() {
     const skillsToolsHtml = `
       <!-- Skills Section Card -->
       <div style="flex: 1; min-height: 140px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
+        <div style="font-weight: 700; font-size: 0.68em; color: #4054b2; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
           Skills
         </div>
         <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; flex: 1; min-height: 0; overflow-y: auto;">
@@ -951,7 +951,7 @@ export function initCustomRolls() {
 
       <!-- Tools Section Card (Expands up to 50% max, shrinks if fewer tools) -->
       <div style="max-height: 50%; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
+        <div style="font-weight: 700; font-size: 0.68em; color: #4054b2; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
           Tools
         </div>
         <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 120px; overflow-y: auto;">
@@ -2055,7 +2055,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
     function renderChips() {
       if (!trackers || trackers.length === 0) {
-        return `<span style="font-size: 0.72em; color: #888; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong>Manage</strong> to track abilities, charges, or pools.</span>`;
+        return `<span style="font-size: 0.72em; color: #4054b2; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong>Manage</strong> to track abilities, charges, and other resources.</span>`;
       }
 
       return trackers.map(t => {
@@ -2077,7 +2077,7 @@ Click a numbered modifier badge to execute a roll.</div>
     const htmlContent = `
       <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; height: 100%; box-sizing: border-box; min-height: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px;">
-          <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
+          <span style="font-weight: 700; font-size: 0.68em; color: #4054b2; letter-spacing: 0.5px; text-transform: uppercase;">
             Tracking Stuff
           </span>
         </div>
@@ -2943,7 +2943,7 @@ Click a numbered modifier badge to execute a roll.</div>
           } else if (name === "Improvised Weapon") {
             shortTitle = "Improvised";
           } else if (name === "Off-Hand Attack") {
-            shortTitle = "Off-Hand";
+            shortTitle = "Light/TWF";
           }
 
           return `
@@ -3723,7 +3723,20 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: rgba(255, 255, 255, 0.15) !important;
             }
             .app.dialog.cheapdice-theme-glass .standard-weapon-card span,
-            .app.dialog.cheapdice-theme-glass .standard-weapon-card div {
+            .app.dialog.cheapdice-theme-glass .standard-weapon-card div,
+            .app.dialog.cheapdice-theme-glass #section-weapon,
+            .app.dialog.cheapdice-theme-glass #section-weapon div,
+            .app.dialog.cheapdice-theme-glass #section-weapon span,
+            .app.dialog.cheapdice-theme-glass #section-weapon strong {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card {
+              background: rgba(255, 255, 255, 0.06) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card span,
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card div,
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card strong {
               color: #ffffff !important;
             }
             .app.dialog.cheapdice-theme-glass .standard-weapon-card.selected,
@@ -3738,7 +3751,21 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #dialog-panel-right div[style*="background:#f8fafc"] {
               background: rgba(255, 255, 255, 0.05) !important;
               border-color: rgba(255, 255, 255, 0.12) !important;
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right span,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right div,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right label {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right strong,
+            .app.dialog.cheapdice-theme-glass #preview-total-atk,
+            .app.dialog.cheapdice-theme-glass #preview-total-dmg {
               color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #preview-total-dmg {
+              background: rgba(0, 0, 0, 0.35) !important;
+              border-color: rgba(255, 255, 255, 0.18) !important;
             }
             .app.dialog.cheapdice-theme-glass #desc-title-v2 {
               color: #ffffff !important;
@@ -3768,7 +3795,7 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass strong,
             .app.dialog.cheapdice-theme-glass span[style*="color: #2b3a4a"],
             .app.dialog.cheapdice-theme-glass span[style*="color:#2b3a4a"] {
-              color: #38bdf8 !important;
+              color: #ffffff !important;
             }
           `;
           document.head.appendChild(styleTag);
