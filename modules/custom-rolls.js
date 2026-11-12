@@ -648,6 +648,54 @@ export function initCustomRolls() {
     }
   });
 
+  // Support interactive click buttons on Spell Save DC cards (works across v12/v13/v14)
+  const hookName = (foundry.utils.isNewerVersion?.(game.version, "13") || Number(game.release?.generation ?? 12) >= 13)
+    ? "renderChatMessageHTML"
+    : "renderChatMessage";
+
+  Hooks.on(hookName, (message, html) => {
+    const root = html instanceof HTMLElement ? html : html[0];
+    if (!root) return;
+
+    root.querySelectorAll(".cheapdice-dc-save-btn").forEach((btn) => {
+      if (btn.dataset.cheapdiceBound) return;
+      btn.dataset.cheapdiceBound = "true";
+
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const abil = btn.dataset.ability;
+        if (!abil) return;
+
+        // Determine rolling actor: controlled token -> targeted token -> user's assigned character
+        const controlledToken = canvas?.tokens?.controlled?.[0];
+        const assignedActor = controlledToken?.actor || game.user?.character || null;
+
+        if (!assignedActor) {
+          return ui.notifications.warn("Please select your token to roll a saving throw.");
+        }
+
+        if (typeof assignedActor.rollSavingThrow === "function") {
+          return assignedActor.rollSavingThrow({ ability: abil });
+        }
+        if (typeof assignedActor.rollAbilitySave === "function") {
+          return assignedActor.rollAbilitySave(abil);
+        }
+
+        // Fallback to socket handler if standard sheet roll is unavailable
+        if (globalThis.attackSocket) {
+          await globalThis.attackSocket.executeAsGM("runD20TestRoll", {
+            rollType: "save",
+            key: `save_${abil}`,
+            isReliableTalent: false,
+            isHalflingLuck: false,
+            otherModString: ""
+          }, assignedActor.id, game.user.id);
+        }
+      });
+    });
+  });
+
   // --- 3.1 D20 Test Client-Side Dialog Launcher ---
   window.CustomRolls.openD20Dialog = function () {
     if (!getSetting("featureCustomRolls")) return;
@@ -3869,14 +3917,14 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
           <div style="display: flex; flex-direction: column; align-items: center; flex: 1; border-right: 1px solid #e0e6ed; padding: 0 3px;">
             <button type="button" class="btn-spell-atk-roll" data-atk-bonus="${spellAtkVal ?? 0}" title="Roll Generic Spell Attack (${spellAtkDisplay})" style="width: 100%; height: 26px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a; white-space: nowrap;">
-              <span style="font-size: 0.70em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase;">Atk</span>
-              <span style="font-size: 0.88em; font-weight: 800; color: #7289da;">${spellAtkDisplay}</span>
+              <span style="font-size: 0.80em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase;">Spell Atk</span>
+              <span style="font-size: 0.95em; font-weight: 800; color: #7289da;">${spellAtkDisplay}</span>
             </button>
           </div>
           <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 3px;">
             <button type="button" class="btn-spell-dc-card" data-save-dc="${spellDCVal ?? 10}" title="Post Generic Save DC Card (DC ${spellDCDisplay})" style="width: 100%; height: 26px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a; white-space: nowrap;">
-              <span style="font-size: 0.70em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase;">DC</span>
-              <span style="font-size: 0.88em; font-weight: 800; color: #7289da;">${spellDCDisplay}</span>
+              <span style="font-size: 0.80em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase;">Spell DC</span>
+              <span style="font-size: 0.95em; font-weight: 800; color: #7289da;">${spellDCDisplay}</span>
             </button>
           </div>
         </div>
@@ -5470,9 +5518,9 @@ Click a numbered modifier badge to execute a roll.</div>
 
           const saveButtonsHtml = abilities.map(a => {
             return `
-              <div style="flex: 1 1 calc(33.333% - 6px); max-width: calc(33.333% - 6px); box-sizing: border-box; text-align: center;">
-                [[/r 1d20 + @abilities.${a.key}.save]]{${a.label} Save}
-              </div>
+              <button type="button" class="cheapdice-dc-save-btn" data-ability="${a.key}" style="flex: 1 1 calc(33.333% - 6px); max-width: calc(33.333% - 6px); height: 26px; line-height: 24px; padding: 0 4px; box-sizing: border-box; text-align: center; border-radius: 4px; border: 1px solid #7289da; background: #fff; color: #4b5d88; font-size: 0.78em; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 3px; white-space: nowrap;">
+                <i class="fas fa-dice-d20" style="color: #7289da; font-size: 0.9em;"></i> ${a.label} Save
+              </button>
             `;
           }).join("");
 
@@ -5501,11 +5549,10 @@ Click a numbered modifier badge to execute a roll.</div>
           `;
 
           try {
-            const enrichedContent = await TextEditor.enrichHTML(rawCardHtml, { async: true });
             await ChatMessage.create({
               user: game.user.id,
               speaker: ChatMessage.getSpeaker({ actor }),
-              content: enrichedContent
+              content: rawCardHtml
             });
           } catch (err) {
             console.error("Failed to create spell save DC card:", err);
