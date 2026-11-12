@@ -1164,17 +1164,17 @@ Click a numbered modifier badge to execute a roll.</div>
 
           if (toolsCollapsed) {
             toolsContent.hide();
-            toolsCard.css({ flex: '0 0 auto', maxHeight: 'none', minHeight: 'auto' });
+            toolsCard.css({ flex: '0 0 auto', maxHeight: 'none', minHeight: 'auto', marginTop: 'auto' });
             toolsBtn.removeClass('fa-chevron-down').addClass('fa-chevron-up');
           } else {
             toolsContent.show();
             toolsBtn.removeClass('fa-chevron-up').addClass('fa-chevron-down');
             if (skillsCollapsed) {
               // Tools expands to take all remaining space
-              toolsCard.css({ flex: '1 1 auto', maxHeight: 'none', minHeight: '32px' });
+              toolsCard.css({ flex: '1 1 auto', maxHeight: 'none', minHeight: '32px', marginTop: '0' });
             } else {
               // Both expanded: Tools capped at 50%
-              toolsCard.css({ flex: '0 0 auto', maxHeight: '50%', minHeight: '32px' });
+              toolsCard.css({ flex: '0 0 auto', maxHeight: '50%', minHeight: '32px', marginTop: '0' });
             }
           }
         };
