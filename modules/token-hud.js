@@ -23,7 +23,10 @@ export function getButtonInfo(actor, btnNum, slotIdx) {
 
   // Assigned action on the actor (Priority for GM, Fallback for Non-GM)
   const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
-    || actor?.getFlag?.("cheapdice", "hudAssignedSlots")
+    || (game.modules.get(MODULE_ID)?.active ? actor?.getFlag?.(MODULE_ID, "hudAssignedSlots") : null)
+    || actor?.flags?.[MODULE_ID]?.hudAssignedSlots
+    || actor?.flags?.cheapdice?.hudAssignedSlots
+    || actor?.flags?.world?.hudAssignedSlots
     || actor?.getFlag?.("world", "hudAssignedSlots")
     || {};
   const assignment = assignedSlots[btnNum] || assignedSlots[String(btnNum)];
@@ -53,16 +56,22 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
 
   // 2. Assigned action on the actor (Priority for GM, Fallback for Non-GM)
   const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
-    || actor.getFlag("cheapdice", "hudAssignedSlots")
-    || actor.getFlag("world", "hudAssignedSlots")
+    || (game.modules.get(MODULE_ID)?.active ? actor?.getFlag?.(MODULE_ID, "hudAssignedSlots") : null)
+    || actor?.flags?.[MODULE_ID]?.hudAssignedSlots
+    || actor?.flags?.cheapdice?.hudAssignedSlots
+    || actor?.flags?.world?.hudAssignedSlots
+    || actor?.getFlag?.("world", "hudAssignedSlots")
     || {};
   const assignment = assignedSlots[buttonNumber] || assignedSlots[String(buttonNumber)];
 
   if (assignment?.name) {
     const flagKey = assignment.category === "spells" ? "spellConfigs" : "attackConfigs";
     const configs = window.CustomRolls?.getProfileData?.(actor, flagKey)
-      || actor.getFlag("cheapdice", flagKey)
-      || actor.getFlag("world", flagKey)
+      || (game.modules.get(MODULE_ID)?.active ? actor?.getFlag?.(MODULE_ID, flagKey) : null)
+      || actor?.flags?.[MODULE_ID]?.[flagKey]
+      || actor?.flags?.cheapdice?.[flagKey]
+      || actor?.flags?.world?.[flagKey]
+      || actor?.getFlag?.("world", flagKey)
       || {};
     const config = configs[assignment.name];
 

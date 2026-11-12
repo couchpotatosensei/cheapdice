@@ -315,7 +315,60 @@ export function buildSpellConfigFromItem(item, actor) {
 }
 
 /**
+ * Evaluates whether a spell item is actively prepared, always available,
+ * or castable as an unprepared ritual (e.g. Wizards / Ritual Casters in 2024 rules).
+ * @param {object} item - The Foundry spell item document
+ * @param {object} actor - The owning actor
+ * @returns {boolean} True if the spell should be available in Dice Stuff
+ */
+export function isSpellPrepared(item, actor) {
+  if (!item || item.type !== "spell") return false;
+
+  const sys = item.system || {};
+  const lvl = Number(sys.level ?? 0);
+
+  // 1. Cantrips (Level 0) are always prepared
+  if (lvl === 0) return true;
+
+  const prep = sys.preparation || {};
+  const mode = prep.mode || "prepared";
+
+  // 2. Modes always castable without daily preparation: always, innate, atwill, pact
+  if (["always", "innate", "atwill", "pact"].includes(mode)) return true;
+
+  // 3. Actively prepared on the character sheet
+  if (Boolean(prep.prepared)) return true;
+
+  // 4. Wizard Ritual Exception (2024 Rules / Ritual Caster / Book of Ancient Secrets):
+  // Wizards can ritual cast any ritual spell from their spellbook even if unprepared.
+  const isRitual = Boolean(
+    sys.properties?.has?.("ritual") ||
+    sys.properties?.has?.("rit") ||
+    sys.properties?.rit ||
+    sys.components?.ritual
+  );
+
+  if (isRitual && actor) {
+    const isWizard = Boolean(
+      actor.classes?.wizard ||
+      actor.itemTypes?.class?.some(c => (c.name || "").toLowerCase().includes("wizard"))
+    );
+    const hasRitualFeat = Boolean(
+      actor.itemTypes?.feat?.some(f => {
+        const n = (f.name || "").toLowerCase();
+        return n.includes("ritual caster") || n.includes("book of ancient secrets");
+      })
+    );
+
+    if (isWizard || hasRitualFeat) return true;
+  }
+
+  return false;
+}
+
+/**
  * Synchronizes actor's configured spells with the spell items on their sheet.
+ * Only syncs prepared spells, always-available spells, cantrips, or wizard rituals.
  * Prompts user with a confirmation dialog when differences are detected.
  * @param {object} actor - The Foundry actor
  * @param {object} options
@@ -330,7 +383,11 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
     actor.getFlag?.("world", "spellConfigs") || {}
   );
 
-  const sheetSpells = (actor.itemTypes?.spell || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  // Filter to spells that are prepared or always available for this actor
+  const sheetSpells = (actor.itemTypes?.spell || [])
+    .filter(sp => isSpellPrepared(sp, actor))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const sheetSpellNames = new Set(sheetSpells.map(s => s.name));
   const sheetSpellIds = new Set(sheetSpells.map(s => s.id));
 
@@ -3342,13 +3399,42 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
     }
 
+    // In-memory collapsed state for spell level groups across dialog refreshes
+    window.CustomRolls._collapsedSpellLevels = window.CustomRolls._collapsedSpellLevels || {};
+
     function renderSpellCards() {
       const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
         || actor.getFlag("world", "hudAssignedSlots")
         || {};
 
-      return spellKeys.map(key => {
+      if (spellKeys.length === 0) {
+        return `
+          <div style="color: #888; font-size: 0.8em; font-style: italic; text-align: center; padding: 16px 8px;">
+            No spells configured.<br><small style="color: #aaa;">Click Refresh in the header to sync prepared spells from sheet.</small>
+          </div>
+        `;
+      }
+
+      // Group spells into Favorites and Levels (0-9)
+      const favorites = [];
+      const levels = {}; // 0 through 9
+
+      for (const key of spellKeys) {
         const sp = spellConfigs[key];
+        if (!sp) continue;
+        if (sp.isFavorite) {
+          favorites.push(key);
+        }
+        const lvl = Math.clamp(Number(sp.baseLevel) || 0, 0, 9);
+        if (!levels[lvl]) levels[lvl] = [];
+        levels[lvl].push(key);
+      }
+
+      const collapsedState = window.CustomRolls._collapsedSpellLevels;
+
+      const renderCard = (key, scope = "level") => {
+        const sp = spellConfigs[key];
+        if (!sp) return "";
         const isSel = key === selectedSpellKey;
         const d = getSpellDetails(sp, sp.baseLevel);
         const lvlLabel = Number(sp.baseLevel) === 0 ? "Cantrip" : `Lvl ${sp.baseLevel}`;
@@ -3359,31 +3445,87 @@ Click a numbered modifier badge to execute a roll.</div>
           ? `<span style="font-size: 0.70em; font-weight: 700; color: #1e5a6a; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 4px; display: inline-flex; align-items: center; gap: 3px;" title="Assigned to HUD Button ${assignedSlot}">HUD <i class="fas fa-square-${assignedSlot}"></i></span>`
           : "";
 
+        const isFav = Boolean(sp.isFavorite);
+        const starIcon = isFav
+          ? `<i class="fas fa-star btn-toggle-spell-favorite" data-key="${key}" title="Remove from Favorites" style="cursor: pointer; color: #f1c40f; font-size: 0.85em; padding: 2px;"></i>`
+          : `<i class="far fa-star btn-toggle-spell-favorite" data-key="${key}" title="Add to Favorites" style="cursor: pointer; color: #aaa; font-size: 0.85em; padding: 2px;"></i>`;
+
         return `
-        <div class="action-card spell-card custom-spell-card" data-key="${key}" draggable="true" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: grab; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
+        <div class="action-card spell-card custom-spell-card" data-key="${key}" data-level="${sp.baseLevel ?? 0}" data-scope="${scope}" draggable="true" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: grab; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
             <div style="display: flex; align-items: center; gap: 5px; overflow: hidden; min-width: 0;">
               <i class="fas fa-grip-vertical" style="color: #aaa; font-size: 0.75em; cursor: grab;"></i>
-              <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${key}</span>
+              ${starIcon}
+              <span class="spell-card-title" style="font-weight: bold; font-size: 0.9em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${key}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
               ${hudBadge}
-              <span style="font-size: 0.75em; font-weight: bold; color: #7289da;">${lvlLabel}</span>
+              <span class="spell-card-level-label" style="font-size: 0.75em; font-weight: bold; color: #555;">${lvlLabel}</span>
             </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span style="display: inline-flex; align-items: center; gap: 4px;">
-              ${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: 
-              <button type="button" class="quick-roll-spell-btn" data-key="${key}" title="Click to Quick Cast / Roll" style="cursor: pointer; font-size: 0.85em; font-weight: 800; color: #4b5d88; background: #eef2fa; border: 1px solid #c2cdf0; border-radius: 3px; padding: 1px 6px; line-height: 1.2;">
+            <span class="weapon-card-atk-line" style="display: inline-flex; align-items: center; gap: 4px;">
+              ${sp.resolutionMethod === 'save' ? 'Save:' : 'Atk:'} 
+              <button type="button" class="quick-roll-spell-btn" data-key="${key}" title="Click to Quick Cast / Roll" style="cursor: pointer; font-size: 0.9em; font-weight: 800; color: #235d6e; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 6px; line-height: 1.2;">
                 ${d.actionVal}
               </button>
             </span>
-            <span>Effect: <strong style="color: #2b3a4a;">${d.valFormula}</strong> <small style="color: #666;">${d.typeLabel}</small></span>
+            <span class="weapon-card-dmg-line">${isHealing ? 'Heal:' : 'Dmg:'} <strong class="weapon-card-dmg-val" style="color: #2b3a4a;">${d.valFormula}</strong></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
         </div>
       `;
-      }).join("");
+      };
+
+      let outputHtml = "";
+
+      // Section: Favorites
+      if (favorites.length > 0) {
+        const isCollapsed = Boolean(collapsedState["fav"]);
+        const chevron = isCollapsed ? "fa-chevron-right" : "fa-chevron-down";
+        outputHtml += `
+          <div class="spell-group-section" style="margin-bottom: 6px;">
+            <div class="spell-group-header" data-group="fav" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: rgba(241, 196, 15, 0.12); border: 1px solid rgba(241, 196, 15, 0.35); border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; user-select: none;">
+              <span style="font-weight: 700; font-size: 0.75em; color: #b78103; display: flex; align-items: center; gap: 5px;">
+                <i class="fas ${chevron}"></i>
+                <i class="fas fa-star" style="color: #f1c40f;"></i> FAVORITES (${favorites.length})
+              </span>
+            </div>
+            <div class="spell-group-cards" data-group="fav" style="display: ${isCollapsed ? 'none' : 'flex'}; flex-direction: column; gap: 3px;">
+              ${favorites.map(k => renderCard(k, "fav")).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      // Sections: Spell Levels (0 through 9)
+      const sortedLevels = Object.keys(levels).map(Number).sort((a, b) => a - b);
+      for (const lvl of sortedLevels) {
+        const groupKeys = levels[lvl] || [];
+        if (groupKeys.length === 0) continue;
+
+        const isCollapsed = Boolean(collapsedState[`lvl_${lvl}`]);
+        const chevron = isCollapsed ? "fa-chevron-right" : "fa-chevron-down";
+        const groupTitle = lvl === 0 ? "CANTRIPS" : `LEVEL ${lvl}`;
+        const slotInfo = getSlotInfo(lvl);
+        const slotLabel = lvl === 0 ? "" : ` • Slots: ${slotInfo.label}`;
+
+        outputHtml += `
+          <div class="spell-group-section" style="margin-bottom: 6px;">
+            <div class="spell-group-header" data-group="lvl_${lvl}" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: rgba(114, 137, 218, 0.08); border: 1px solid rgba(114, 137, 218, 0.25); border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; user-select: none;">
+              <span style="font-weight: 700; font-size: 0.74em; color: #4b5d88; display: flex; align-items: center; gap: 5px;">
+                <i class="fas ${chevron}"></i>
+                ${groupTitle} (${groupKeys.length}${slotLabel})
+              </span>
+            </div>
+            <div class="spell-group-cards" data-group="lvl_${lvl}" style="display: ${isCollapsed ? 'none' : 'flex'}; flex-direction: column; gap: 3px;">
+              ${groupKeys.map(k => renderCard(k, "level")).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      return outputHtml;
     }
 
     function getSelectedWeaponInspectorHtml() {
@@ -3882,10 +4024,26 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate .standard-weapon-card div {
               color: #f1f5f9 !important;
             }
-            /* Weapon Pane Badges & Damage Types */
+            /* Weapon & Spell Pane Badges & Damage Types */
             .app.dialog.cheapdice-theme-slate .custom-weapon-card span[style*="font-weight: bold; color: #555"],
-            .app.dialog.cheapdice-theme-slate .standard-weapon-card div[title*="("] {
+            .app.dialog.cheapdice-theme-slate .standard-weapon-card div[title*="("],
+            .app.dialog.cheapdice-theme-slate .spell-card-type-label,
+            .app.dialog.cheapdice-theme-slate .spell-card-level-label {
               color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-slate .spell-card-title {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .spell-group-header span {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .spell-group-header[data-group="fav"] span {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .quick-roll-spell-btn {
+              color: #38bdf8 !important;
+              border-color: #38bdf8 !important;
+              background: #252f42 !important;
             }
             .app.dialog.cheapdice-theme-slate .weapon-card-atk-line,
             .app.dialog.cheapdice-theme-slate .weapon-card-atk-line *,
@@ -4083,7 +4241,20 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-arcane .standard-weapon-card div {
               color: #fef3c7 !important;
             }
-            /* Arcane Weapon Selector Atk, Dmg, and Badges */
+            /* Arcane Weapon & Spell Selector Atk, Dmg, and Badges */
+            .app.dialog.cheapdice-theme-arcane .spell-card-title {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .spell-card-type-label,
+            .app.dialog.cheapdice-theme-arcane .spell-card-level-label {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .spell-group-header span {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .spell-group-header[data-group="fav"] span {
+              color: #f59e0b !important;
+            }
             .app.dialog.cheapdice-theme-arcane .weapon-card-atk-line,
             .app.dialog.cheapdice-theme-arcane .weapon-card-atk-line *,
             .app.dialog.cheapdice-theme-arcane .weapon-card-atk-val,
@@ -4306,26 +4477,54 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #section-weapon,
             .app.dialog.cheapdice-theme-glass #section-weapon div,
             .app.dialog.cheapdice-theme-glass #section-weapon span,
-            .app.dialog.cheapdice-theme-glass #section-weapon strong {
+            .app.dialog.cheapdice-theme-glass #section-weapon strong,
+            .app.dialog.cheapdice-theme-glass #section-spell,
+            .app.dialog.cheapdice-theme-glass #section-spell div,
+            .app.dialog.cheapdice-theme-glass #section-spell span,
+            .app.dialog.cheapdice-theme-glass #section-spell strong {
               color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .spell-card-type-label,
+            .app.dialog.cheapdice-theme-glass .spell-card-level-label {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass .spell-group-header span {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .spell-group-header[data-group="fav"] span {
+              color: #fde047 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .quick-roll-spell-btn {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
             }
             .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-line,
             .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-line *,
-            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-val {
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-val,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-atk-line * {
               color: #38bdf8 !important;
             }
             .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-line,
             .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-line *,
-            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-val {
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-val,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-dmg-line *,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-dmg-val {
               color: #93c5fd !important;
             }
-            .app.dialog.cheapdice-theme-glass .custom-weapon-card {
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card {
               background: rgba(255, 255, 255, 0.06) !important;
               border-color: rgba(255, 255, 255, 0.15) !important;
             }
             .app.dialog.cheapdice-theme-glass .custom-weapon-card span,
             .app.dialog.cheapdice-theme-glass .custom-weapon-card div,
-            .app.dialog.cheapdice-theme-glass .custom-weapon-card strong {
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card strong,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card span,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card div,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card strong {
               color: #ffffff !important;
             }
             .app.dialog.cheapdice-theme-glass .standard-weapon-card.selected,
@@ -5653,10 +5852,32 @@ Click a numbered modifier badge to execute a roll.</div>
 
           list.find(".custom-spell-card").on("drop", async function (e) {
             e.preventDefault();
+            e.stopPropagation();
             $(this).css({ "border-top": "", "border-bottom": "" });
             const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
             const targetKey = $(this).data("key");
             if (!draggedKey || draggedKey === targetKey) return;
+
+            const draggedCfg = spellConfigs[draggedKey];
+            const targetCfg = spellConfigs[targetKey];
+            if (!draggedCfg || !targetCfg) return;
+
+            const draggedScope = $(this).closest(".spell-group-cards").data("group");
+            const draggedCardScope = list.find(`.custom-spell-card[data-key="${CSS.escape(draggedKey)}"]`).data("scope");
+
+            // Scoped drag-and-drop:
+            // 1. If dropping in Favorites, both must be favorites
+            // 2. If dropping in Level groups, both must share the exact same spell level
+            const isTargetInFav = draggedScope === "fav";
+            if (isTargetInFav) {
+              if (!draggedCfg.isFavorite || !targetCfg.isFavorite) return;
+            } else {
+              const draggedLvl = Number(draggedCfg.baseLevel) || 0;
+              const targetLvl = Number(targetCfg.baseLevel) || 0;
+              if (draggedLvl !== targetLvl) {
+                return ui.notifications.warn("Spells can only be reordered within the same spell level.");
+              }
+            }
 
             const rect = this.getBoundingClientRect();
             const relY = e.clientY - rect.top;
@@ -5681,6 +5902,7 @@ Click a numbered modifier badge to execute a roll.</div>
               await actor.setFlag("world", "spellConfigs", newSpells, { recursive: false });
             }
 
+            spellConfigs = newSpells;
             html.find("#section-spell").html(renderSpellCards());
             bindSpellDragAndDrop();
             updateCardStyles();
@@ -5688,6 +5910,58 @@ Click a numbered modifier badge to execute a roll.</div>
         }
 
         bindSpellDragAndDrop();
+
+        // Favorite Toggle Click Handler
+        html.on("click", ".btn-toggle-spell-favorite", async function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const key = $(this).data("key");
+          const sp = spellConfigs[key];
+          if (!sp) return;
+
+          const freshSpells = foundry.utils.deepClone(
+            window.CustomRolls?.getProfileData?.(actor, "spellConfigs") ||
+            actor.getFlag?.("world", "spellConfigs") ||
+            spellConfigs
+          );
+
+          if (!freshSpells[key]) return;
+          freshSpells[key].isFavorite = !freshSpells[key].isFavorite;
+
+          await window.CustomRolls.setProfileData(actor, "spellConfigs", freshSpells);
+          if (game.user.isGM) {
+            await actor.setFlag("world", "spellConfigs", freshSpells, { recursive: false });
+          }
+
+          spellConfigs = freshSpells;
+          html.find("#section-spell").html(renderSpellCards());
+          bindSpellDragAndDrop();
+          updateCardStyles();
+        });
+
+        // Collapsible Group Header Click Handler
+        html.on("click", ".spell-group-header", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const groupKey = $(this).data("group");
+          const cardsContainer = html.find(`.spell-group-cards[data-group="${groupKey}"]`);
+          const icon = $(this).find("i.fas.fa-chevron-down, i.fas.fa-chevron-right");
+
+          window.CustomRolls._collapsedSpellLevels = window.CustomRolls._collapsedSpellLevels || {};
+          const isCurrentlyCollapsed = cardsContainer.css("display") === "none";
+
+          if (isCurrentlyCollapsed) {
+            cardsContainer.css("display", "flex");
+            icon.removeClass("fa-chevron-right").addClass("fa-chevron-down");
+            window.CustomRolls._collapsedSpellLevels[groupKey] = false;
+          } else {
+            cardsContainer.css("display", "none");
+            icon.removeClass("fa-chevron-down").addClass("fa-chevron-right");
+            window.CustomRolls._collapsedSpellLevels[groupKey] = true;
+          }
+        });
 
         html.on("click", ".btn-assign-hud-slot", async function (e) {
           e.stopPropagation();
