@@ -783,9 +783,9 @@ export function initCustomRolls() {
 
     const renderSidebarAbilityCol = (keys) => {
       const header = `
-        <div style="display: flex; justify-content: flex-end; gap: 2px; padding-right: 1px; margin-bottom: 2px; font-size: 0.6em; font-weight: 700; color: #777;">
-          <span style="width: 24px; text-align: center;">Mod</span>
-          <span style="width: 24px; text-align: center;">Save</span>
+        <div style="display: flex; justify-content: flex-end; gap: 2px; padding-right: 1px; margin-bottom: 2px; font-size: 0.72em; font-weight: 700; color: #777;">
+          <span style="width: 26px; text-align: center;">Mod</span>
+          <span style="width: 26px; text-align: center;">Save</span>
         </div>
       `;
       const rows = keys.map(key => {
@@ -799,14 +799,14 @@ export function initCustomRolls() {
         const name = ABILITIES[key];
         return `
           <div class="ability-card" data-key="${key}" data-type="check" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 3px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 3px; margin-bottom: 2px; cursor: pointer;">
-            <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; white-space: nowrap;">
+            <span style="font-size: 0.85em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; white-space: nowrap;">
               ${profMarker}${key.toUpperCase()}&nbsp;<span style="color: #666; font-weight: 600;">${score}</span>
             </span>
             <div style="display: flex; gap: 2px; align-items: center;">
-              <button type="button" class="roll-btn-v2" data-type="check" data-key="${key}" title="Roll ${name} Check" style="width: 24px; height: 18px; font-weight: 700; font-size: 0.7em; padding: 0; border-radius: 2px; border: 1px solid #c0c6ce; background: #fff; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              <button type="button" class="roll-btn-v2" data-type="check" data-key="${key}" title="Roll ${name} Check" style="width: 26px; height: 19px; font-weight: 700; font-size: 0.78em; padding: 0; border-radius: 2px; border: 1px solid #c0c6ce; background: #fff; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${formatSign(mod)}
               </button>
-              <button type="button" class="roll-btn-v2" data-type="save" data-key="${key}" title="Roll ${name} Save" style="width: 24px; height: 18px; font-weight: 700; font-size: 0.7em; padding: 0; border-radius: 2px; border: 1px solid ${isProf ? '#2b7489' : '#c0c6ce'}; background: ${isProf ? '#f0f8fa' : '#fff'}; cursor: pointer; color: ${isProf ? '#2b7489' : '#2b3a4a'}; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              <button type="button" class="roll-btn-v2" data-type="save" data-key="${key}" title="Roll ${name} Save" style="width: 26px; height: 19px; font-weight: 700; font-size: 0.78em; padding: 0; border-radius: 2px; border: 1px solid ${isProf ? '#2b7489' : '#c0c6ce'}; background: ${isProf ? '#f0f8fa' : '#fff'}; cursor: pointer; color: ${isProf ? '#2b7489' : '#2b3a4a'}; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${formatSign(saveMod)}
               </button>
             </div>
@@ -852,10 +852,10 @@ export function initCustomRolls() {
 
       return `
       <div class="sheet-entry-row" data-key="${key}" data-type="skill" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
-        <span class="entry-label" style="font-size: 0.76em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-          ${profMarker}${s.label} <small style="color: #888; margin-left: 2px;">(${s.ability.toUpperCase()})</small>
+        <span class="entry-label" style="font-size: 1.05em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          ${profMarker}${s.label} <small style="color: #888; margin-left: 2px; font-size: 0.8em;">(${s.ability.toUpperCase()})</small>
         </span>
-        <button type="button" class="roll-btn-v2" data-type="skill" data-key="${key}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+        <button type="button" class="roll-btn-v2" data-type="skill" data-key="${key}" style="width: 34px; height: 20px; font-size: 0.82em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
           ${formatSign(mod)}
         </button>
       </div>
@@ -880,11 +880,11 @@ export function initCustomRolls() {
         if (cat === "tool") {
           const toolRowHtml = `
           <div class="sheet-entry-row" data-key="${k}" data-type="tool" data-custom="true" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer; background: #fdfaf3;">
-            <span class="entry-label" style="font-size: 0.76em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
+            <span class="entry-label" style="font-size: 1.05em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
               ${profMarker}
-              ${displayName} <small style="color: #888; margin-left: 2px;">(${abil.toUpperCase()})</small>
+              ${displayName} <small style="color: #888; margin-left: 2px; font-size: 0.8em;">(${abil.toUpperCase()})</small>
             </span>
-            <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" title="Roll ${displayName}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+            <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" title="Roll ${displayName}" style="width: 34px; height: 20px; font-size: 0.82em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
               ${formatSign(totalBonus)}
             </button>
           </div>
@@ -897,11 +897,11 @@ export function initCustomRolls() {
         } else {
           customSkillsList.push(`
           <div class="sheet-entry-row" data-key="${k}" data-type="${cat}" data-custom="true" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer; background: #fdfaf3;">
-            <span class="entry-label" style="font-size: 0.76em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
+            <span class="entry-label" style="font-size: 1.05em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
               ${profMarker}
-              ${displayName} <small style="color: #888; margin-left: 2px;">(${abil.toUpperCase()})</small>
+              ${displayName} <small style="color: #888; margin-left: 2px; font-size: 0.8em;">(${abil.toUpperCase()})</small>
             </span>
-            <button type="button" class="roll-btn-v2" data-type="${cat}" data-key="${k}" title="Roll ${displayName}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+            <button type="button" class="roll-btn-v2" data-type="${cat}" data-key="${k}" title="Roll ${displayName}" style="width: 34px; height: 20px; font-size: 0.82em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
               ${formatSign(totalBonus)}
             </button>
           </div>
@@ -924,10 +924,10 @@ export function initCustomRolls() {
         const profMarker = getProfMarker(isProf === 2 ? 2 : (isProf === 0.5 ? 0.5 : 1));
         proficientToolsHtml.push(`
         <div class="sheet-entry-row" data-key="${k}" data-type="tool" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
-          <span class="entry-label" style="font-size: 0.76em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            ${profMarker}${t.name} <small style="color: #888; margin-left: 2px;">(${t.ability.toUpperCase()})</small>
+          <span class="entry-label" style="font-size: 1.05em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            ${profMarker}${t.name} <small style="color: #888; margin-left: 2px; font-size: 0.8em;">(${t.ability.toUpperCase()})</small>
           </span>
-          <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+          <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" style="width: 34px; height: 20px; font-size: 0.82em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
             ${formatSign(bonus)}
           </button>
         </div>
@@ -940,7 +940,7 @@ export function initCustomRolls() {
     const skillsToolsHtml = `
       <!-- Skills Section Card -->
       <div style="flex: 1; min-height: 140px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="font-weight: 700; font-size: 0.68em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
+        <div style="font-weight: 700; font-size: 0.85em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
           Skills
         </div>
         <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; flex: 1; min-height: 0; overflow-y: auto;">
@@ -951,23 +951,23 @@ export function initCustomRolls() {
 
       <!-- Tools Section Card (Expands up to 50% max, shrinks if fewer tools) -->
       <div style="max-height: 50%; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-        <div style="font-weight: 700; font-size: 0.68em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
+        <div style="font-weight: 700; font-size: 0.85em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
           Tools
         </div>
         <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 120px; overflow-y: auto;">
           ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
       ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
-      : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
+      : '<span style="font-size: 0.85em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
         </div>
 
         <div id="other-tools-container-v2" style="flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.64em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
+          <div style="font-weight: 700; font-size: 0.72em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
           <div style="display: flex; flex-direction: column; gap: 3px;">
-            <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box; background: #fff;">
+            <select id="other-tools-select-v2" style="width: 100%; height: 28px; font-size: 1.05em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 4px; box-sizing: border-box; background: #fff;">
               <option value="">-- Choose Tool --</option>
               ${nonProficientToolsHtml.join('')}
             </select>
-            <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+            <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 22px; font-size: 0.85em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
               Roll Selected Tool
             </button>
           </div>
@@ -3227,14 +3227,14 @@ Click a numbered modifier badge to execute a roll.</div>
           <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
           <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
             <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
-              <span class="entry-label" style="font-size: 0.7em; font-weight: 700; color: #235d6e; white-space: nowrap;">Initiative</span>
-              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 46px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              <span class="entry-label" style="font-size: 1.05em; font-weight: 700; color: #235d6e; white-space: nowrap;">Initiative</span>
+              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 52px; height: 20px; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${d20Data.formattedInit}
               </button>
             </div>
             <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
-              <span class="entry-label" style="font-size: 0.7em; font-weight: 700; color: #a34848; white-space: nowrap;">Concentration</span>
-              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 30px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              <span class="entry-label" style="font-size: 1.05em; font-weight: 700; color: #a34848; white-space: nowrap;">Concentration</span>
+              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 34px; height: 20px; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${d20Data.formattedConc}
               </button>
             </div>
@@ -3243,7 +3243,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
         <!-- Ability Scores & Saves (2-Col Grid) -->
         <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase;">
+          <div style="font-weight: 700; font-size: 0.78em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase;">
             Ability Scores & Saves
           </div>
           ${d20Data.sidebarAbilitiesHtml}
@@ -3261,13 +3261,13 @@ Click a numbered modifier badge to execute a roll.</div>
         
         <!-- Tabs Header -->
         <div style="display: flex; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 6px; flex-shrink: 0;">
-          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
+          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 6px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.92em;">
             <i class="fas fa-dice-d20"></i> Skills & Tools
           </button>
-          <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
+          <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 6px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.92em;">
             <i class="fas fa-sword"></i> Weapons (${attackNames.length})
           </button>
-          <button type="button" id="tab-btn-spell" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
+          <button type="button" id="tab-btn-spell" style="flex: 1; padding: 6px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.92em;">
             <i class="fas fa-magic"></i> Spells (${spellKeys.length})
           </button>
         </div>
