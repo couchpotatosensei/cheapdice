@@ -940,7 +940,7 @@ export function initCustomRolls() {
     const skillsToolsHtml = `
       <!-- Skills Section Card -->
       <div id="skills-card-v2" style="flex: 1; min-height: 32px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: flex 0.2s ease;">
-        <div style="font-weight: 700; font-size: 0.85em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-weight: 700; font-size: 0.85em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
           <span>Skills</span>
           <button type="button" id="skills-collapse-toggle-v2" title="Toggle Skills" style="background: none; border: none; cursor: pointer; color: #64748b; padding: 0 4px; font-size: 0.85em; line-height: 1; display: inline-flex; align-items: center; justify-content: center;">
             <i class="fas fa-chevron-up"></i>
@@ -954,7 +954,7 @@ export function initCustomRolls() {
 
       <!-- Tools Section Card (Expands up to 50% max by default, full if skills collapsed, shrinks if fewer tools) -->
       <div id="tools-card-v2" style="max-height: 50%; min-height: 32px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; transition: max-height 0.2s ease, flex 0.2s ease;">
-        <div style="font-weight: 700; font-size: 0.85em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-weight: 700; font-size: 0.85em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
           <span>Tools</span>
           <button type="button" id="tools-collapse-toggle-v2" title="Toggle Tools" style="background: none; border: none; cursor: pointer; color: #64748b; padding: 0 4px; font-size: 0.85em; line-height: 1; display: inline-flex; align-items: center; justify-content: center;">
             <i class="fas fa-chevron-down"></i>
@@ -2117,7 +2117,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
     function renderChips() {
       if (!trackers || trackers.length === 0) {
-        return `<span style="font-size: 0.72em; color: #38bdf8; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong style="color: #38bdf8 !important;">Manage</strong> to track abilities, charges, and other resources.</span>`;
+        return `<span style="font-size: 0.72em; color: #4b5d88; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong style="color: #4b5d88 !important;">Manage</strong> to track abilities, charges, and other resources.</span>`;
       }
 
       return trackers.map(t => {
@@ -2139,7 +2139,7 @@ Click a numbered modifier badge to execute a roll.</div>
     const htmlContent = `
       <div id="tracking-stuff-wrapper" style="display: flex; flex-direction: column; gap: 4px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; height: 100%; box-sizing: border-box; min-height: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px;">
-          <span style="font-weight: 700; font-size: 0.68em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase;">
+          <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
             Tracking Stuff
           </span>
         </div>
