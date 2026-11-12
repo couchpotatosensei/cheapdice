@@ -4964,8 +4964,15 @@ Click a numbered modifier badge to execute a roll.</div>
             // Determine if GWM can be allowed (heavy weapons)
             const isHeavy = Boolean(sys.properties?.has ? sys.properties.has("hvy") : sys.properties?.hvy);
 
+            // Always query the latest persistent storage to ensure GM edits are captured
+            const freshAttacks = foundry.utils.deepClone(
+              window.CustomRolls?.getProfileData?.(actor, "attackConfigs") ||
+              actor.getFlag?.("world", "attackConfigs") ||
+              attacks
+            );
+
             // Check if attack with this name or item already exists
-            const existingConfig = attacks[item.name] || Object.values(attacks).find(a => a.itemId === item.id);
+            const existingConfig = freshAttacks[item.name] || Object.values(freshAttacks).find(a => a.itemId === item.id);
             if (existingConfig) {
               const isGmConfigured = existingConfig.addedBy === "gm" || existingConfig.gmModified === true;
               if (!game.user.isGM && isGmConfigured) {
@@ -5005,7 +5012,7 @@ Click a numbered modifier badge to execute a roll.</div>
               additionalDamageComponents: []
             };
 
-            const updatedAttacks = foundry.utils.deepClone(attacks);
+            const updatedAttacks = foundry.utils.deepClone(freshAttacks);
             updatedAttacks[item.name] = newAttackConfig;
 
             await window.CustomRolls.setProfileData(actor, "attackConfigs", updatedAttacks);
@@ -5175,14 +5182,30 @@ Click a numbered modifier badge to execute a roll.</div>
               return ui.notifications.warn(`"${draggedKey}" is a standard attack and cannot be removed.`);
             }
 
-            const targetConfig = attacks[draggedKey];
+            // Fetch latest attack configurations to accurately verify GM ownership
+            const currentAttacksStore = foundry.utils.deepClone(
+              window.CustomRolls?.getProfileData?.(actor, "attackConfigs") ||
+              actor.getFlag?.("world", "attackConfigs") ||
+              attacks
+            );
+
+            const targetConfig = currentAttacksStore[draggedKey] || attacks[draggedKey];
             const isPlayerAdded = targetConfig?.addedBy === "player" && !targetConfig?.gmModified;
 
             if (!game.user.isGM && !isPlayerAdded) {
               return ui.notifications.warn(`"${draggedKey}" was configured by the GM and cannot be removed.`);
             }
 
-            const newAttacks = foundry.utils.deepClone(attacks);
+            // If GM is removing a GM-configured action, prompt confirmation
+            if (game.user.isGM && !isPlayerAdded) {
+              const confirmRemove = await Dialog.confirm({
+                title: `Remove ${draggedKey}?`,
+                content: `<p>Are you sure you want to remove <strong>${draggedKey}</strong>? This will permanently delete this GM-configured action.</p>`
+              });
+              if (!confirmRemove) return;
+            }
+
+            const newAttacks = foundry.utils.deepClone(currentAttacksStore);
             delete newAttacks[draggedKey];
 
             await window.CustomRolls.setProfileData(actor, "attackConfigs", newAttacks);

@@ -2579,6 +2579,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               }
 
               const configData = {
+                itemId: item.itemId || null,
                 macroName: newMacroName, chatCardTitle, abilityScore, isProficient, damageDiceCount, damageDieSize, damageType,
                 weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
                 extraCriticalBonus, GWF_REROLL_THRESHOLD, HAS_HALFLING_LUCKY,

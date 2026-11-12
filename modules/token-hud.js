@@ -79,9 +79,21 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     const rollConfig = foundry.utils.deepClone(config);
     const extras = (rollConfig.additionalDamageComponents || []).filter(c => c && c.formula);
     const hasGWM = Boolean(rollConfig.hasGWM);
+    const isVersatile = Boolean(rollConfig.isVersatile);
 
-    // If extra damage components or GWM are present, prompt a quick toggle dialog
-    if (extras.length > 0 || hasGWM) {
+    // If extra damage components, GWM, or Versatile are present, prompt a quick toggle dialog
+    if (extras.length > 0 || hasGWM || isVersatile) {
+      let versatileHtml = "";
+      if (isVersatile) {
+        const vDie = rollConfig.versatileDie || "10";
+        versatileHtml = `
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #2b7489; padding: 4px 6px; background: rgba(43,116,137,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+            <span>Two-Handed / Versatile (d${vDie})</span>
+            <input type="checkbox" id="hud-prompt-versatile" style="margin: 0;">
+          </label>
+        `;
+      }
+
       let gwmHtml = "";
       if (hasGWM) {
         gwmHtml = `
@@ -111,6 +123,7 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
 
       const promptHtml = `
         <div style="font-family: inherit; padding: 4px 2px;">
+          ${versatileHtml}
           ${gwmHtml}
           ${extrasHtml}
         </div>
@@ -124,6 +137,12 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
             icon: '<i class="fas fa-dice-d20"></i>',
             label: "Roll",
             callback: async (html) => {
+              if (isVersatile && html.find("#hud-prompt-versatile").is(":checked")) {
+                const vDie = rollConfig.versatileDie || "10";
+                rollConfig.damageDieSize = `d${vDie}`;
+                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [2H]`;
+              }
+
               if (hasGWM && html.find("#hud-prompt-gwm").is(":checked")) {
                 rollConfig.attackCircumstanceModifier = (Number(rollConfig.attackCircumstanceModifier) || 0) - 5;
                 rollConfig.damageModifier = (Number(rollConfig.damageModifier) || 0) + 10;
