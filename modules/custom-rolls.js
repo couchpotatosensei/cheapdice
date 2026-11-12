@@ -5190,6 +5190,26 @@ Click a numbered modifier badge to execute a roll.</div>
               await actor.setFlag("world", "attackConfigs", newAttacks, { recursive: false });
             }
 
+            // Clean up any assigned HUD slots for this removed weapon
+            let assignedSlots = foundry.utils.deepClone(
+              window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots") ||
+              actor.getFlag("world", "hudAssignedSlots") || {}
+            );
+            let slotCleaned = false;
+            for (const [sNum, data] of Object.entries(assignedSlots)) {
+              if (data?.category === "weapons" && data?.name === draggedKey) {
+                delete assignedSlots[sNum];
+                slotCleaned = true;
+              }
+            }
+            if (slotCleaned) {
+              await window.CustomRolls.setProfileData(actor, "hudAssignedSlots", assignedSlots);
+              if (game.user.isGM) {
+                await actor.setFlag("world", "hudAssignedSlots", assignedSlots, { recursive: false });
+              }
+              canvas.tokens?.controlled?.forEach(t => t.hud?.render());
+            }
+
             attacks = newAttacks;
             attackNames = Object.keys(attacks);
             if (selectedWeaponKey === draggedKey) {
