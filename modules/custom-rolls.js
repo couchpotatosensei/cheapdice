@@ -236,7 +236,12 @@ export function buildSpellConfigFromItem(item, actor) {
   let damageDieSize = "d6";
   let damageType = "fire";
 
-  // Check modern dnd5e Activities (v3 / v4) first
+  // Check modern dnd5e Activities (v3 / v4) or item attack flags
+  const isAttackItem = Boolean(
+    item.hasAttack ||
+    ["msak", "rsak", "mwak", "rwak"].includes(sys.actionType)
+  );
+
   if (sys.activities && (sys.activities.size > 0 || (typeof sys.activities.values === "function" && Array.from(sys.activities.values()).length > 0))) {
     const activities = Array.from(sys.activities.values());
     const saveAct = activities.find(a => a.type === "save" || a.save);
@@ -250,7 +255,7 @@ export function buildSpellConfigFromItem(item, actor) {
       saveSuccess = saveAct.save?.scaling === "half" ? "half" : "none";
     } else if (healAct) {
       resolutionMethod = "heal";
-    } else if (attackAct) {
+    } else if (attackAct || isAttackItem) {
       resolutionMethod = "attack";
     } else if (damageAct) {
       resolutionMethod = "other";
@@ -293,7 +298,7 @@ export function buildSpellConfigFromItem(item, actor) {
     } else if (actionType === "heal") {
       resolutionMethod = "heal";
       damageType = "healing";
-    } else if (actionType === "rsak" || actionType === "msak") {
+    } else if (actionType === "rsak" || actionType === "msak" || item.hasAttack) {
       resolutionMethod = "attack";
     } else if (actionType === "util" || !actionType) {
       resolutionMethod = "other";
@@ -443,12 +448,16 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
   const sheetSpellNames = new Set(sheetSpells.map(s => s.name));
   const sheetSpellIds = new Set(sheetSpells.map(s => s.id));
 
-  // Determine spells to add (present on sheet, not in spellConfigs)
+  // Determine spells to add or update
   const toAdd = [];
+  const toUpdate = [];
+
   for (const spItem of sheetSpells) {
-    const exists = currentSpells[spItem.name] || Object.values(currentSpells).find(c => c.itemId === spItem.id);
-    if (!exists) {
+    const existingKey = Object.keys(currentSpells).find(k => k === spItem.name || currentSpells[k]?.itemId === spItem.id);
+    if (!existingKey) {
       toAdd.push(spItem);
+    } else {
+      toUpdate.push({ item: spItem, key: existingKey });
     }
   }
 
@@ -462,7 +471,25 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
   }
 
   if (toAdd.length === 0 && toRemove.length === 0) {
-    return false;
+    // Refresh definitions for all existing sheet spells without altering custom favorites/HUD slots
+    let updatedAny = false;
+    for (const { item: spItem, key } of toUpdate) {
+      const freshCfg = buildSpellConfigFromItem(spItem, actor);
+      if (freshCfg) {
+        // Preserve user state (favorites, custom assignments)
+        freshCfg.isFavorite = currentSpells[key]?.isFavorite ?? false;
+        currentSpells[key] = freshCfg;
+        updatedAny = true;
+      }
+    }
+
+    if (updatedAny) {
+      await setProfileData(actor, "spellConfigs", currentSpells);
+      if (game.user.isGM) {
+        await actor.setFlag("world", "spellConfigs", currentSpells, { recursive: false });
+      }
+    }
+    return updatedAny;
   }
 
   if (promptUser) {
@@ -533,6 +560,15 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
     const cfg = buildSpellConfigFromItem(spItem, actor);
     if (cfg) {
       currentSpells[spItem.name] = cfg;
+    }
+  }
+
+  // Also refresh definitions for existing spells while preserving favorite status
+  for (const { item: spItem, key } of toUpdate) {
+    const freshCfg = buildSpellConfigFromItem(spItem, actor);
+    if (freshCfg) {
+      freshCfg.isFavorite = currentSpells[key]?.isFavorite ?? false;
+      currentSpells[key] = freshCfg;
     }
   }
 
