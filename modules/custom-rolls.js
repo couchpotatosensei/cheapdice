@@ -3522,6 +3522,17 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate .standard-weapon-card div {
               color: #f1f5f9 !important;
             }
+            /* Weapon Pane Badges & Damage Types */
+            .app.dialog.cheapdice-theme-slate .custom-weapon-card span[style*="font-weight: bold; color: #555"],
+            .app.dialog.cheapdice-theme-slate .standard-weapon-card div[title*="("] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate span[style*="background: rgba(114, 137, 218"],
+            .app.dialog.cheapdice-theme-slate span[style*="HUD"] {
+              color: #7dd3fc !important;
+              background: rgba(56, 189, 248, 0.12) !important;
+              border-color: rgba(56, 189, 248, 0.3) !important;
+            }
             .app.dialog.cheapdice-theme-slate .standard-weapon-card.selected,
             .app.dialog.cheapdice-theme-slate .custom-weapon-card.selected,
             .app.dialog.cheapdice-theme-slate .custom-spell-card.selected {
@@ -3529,12 +3540,38 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #38bdf8 !important;
               box-shadow: 0 0 8px rgba(56, 189, 248, 0.25) !important;
             }
+            /* Weapon Overview Headers & Labels */
             .app.dialog.cheapdice-theme-slate #dialog-panel-right > div,
             .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="background: #f8fafc"],
             .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="background:#f8fafc"] {
               background: #1b212f !important;
               border-color: #2e3b52 !important;
               color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="Attack & Damage Overview"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="font-weight: 700; font-size: 0.68em"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="font-weight: 700; font-size: 0.78em"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right span[style*="HUD ACTION"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right label[for^="weapon-extra"] {
+              color: #7dd3fc !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right span[style*="color: #555"] {
+              color: #94a3b8 !important;
+            }
+            /* Optional Damage Components Card */
+            .app.dialog.cheapdice-theme-slate #weapon-extras-scroll label {
+              background: #0f131c !important;
+              border-color: #334155 !important;
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #weapon-extras-scroll label span,
+            .app.dialog.cheapdice-theme-slate #weapon-extras-scroll label strong {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #weapon-extras-scroll label small {
+              color: #94a3b8 !important;
             }
             .app.dialog.cheapdice-theme-slate #desc-title-v2 {
               color: #f8fafc !important;
