@@ -3086,11 +3086,11 @@ Click a numbered modifier badge to execute a roll.</div>
               <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 2px;">
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.95em; font-weight: 600;">Attack:</span>
-                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">1d20 ${d.atkSign}</strong>
+                  <span style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 500;">1d20 ${d.atkSign}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.95em; font-weight: 600;">Damage:</span>
-                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.dmgFormula} <small style="font-weight: 600; font-size: 0.8em; color: #666;">(${d.dmgType.toLowerCase()})</small></strong>
+                  <span style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 500;">${d.dmgFormula} <small style="font-weight: 500; font-size: 0.8em; color: #666;">(${d.dmgType.toLowerCase()})</small></span>
                 </div>
               </div>
               ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">${tagsHtml}</div>` : ""}
@@ -3103,11 +3103,11 @@ Click a numbered modifier badge to execute a roll.</div>
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.92em; font-weight: 700;">Total Atk:</span>
-                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">1d20 ${d.atkSign}</strong>
+                  <span id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 500;">1d20 ${d.atkSign}</span>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span style="color: #555; font-size: 0.92em; font-weight: 700;">Total Dmg:</span>
-                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700; line-height: 1.4; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 4px 8px;">
+                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 500; line-height: 1.4; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 4px 8px;">
                     ${d.dmgFormula} ${d.dmgType.toLowerCase()}
                   </div>
                 </div>
@@ -3219,8 +3219,8 @@ Click a numbered modifier badge to execute a roll.</div>
     const content = `
     <div style="display: flex; gap: 10px; font-family: inherit; height: 520px; box-sizing: border-box; padding: 2px;">
       
-      <!-- COLUMN 1: LEFT SIDEBAR: Persistent (~245px) -->
-      <div id="dialog-sidebar-left" style="width: 245px; min-width: 245px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
+      <!-- COLUMN 1: LEFT SIDEBAR: Persistent (~275px) -->
+      <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait (Left) & Stacked Init/Conc (Right) -->
         <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
@@ -3256,8 +3256,8 @@ Click a numbered modifier badge to execute a roll.</div>
 
       </div>
 
-      <!-- COLUMN 2: CENTER PANEL: Tabs & Active List (~315px) -->
-      <div id="dialog-panel-center" style="flex: 1; min-width: 270px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
+      <!-- COLUMN 2: CENTER PANEL: Tabs & Active List (~345px) -->
+      <div id="dialog-panel-center" style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Tabs Header -->
         <div style="display: flex; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 6px; flex-shrink: 0;">
@@ -3292,8 +3292,8 @@ Click a numbered modifier badge to execute a roll.</div>
 
       </div>
 
-      <!-- COLUMN 3: PERSISTENT RIGHT INSPECTOR (~310px) -->
-      <div id="dialog-panel-right" style="width: 310px; min-width: 310px; display: flex; flex-direction: column; gap: 6px; height: 100%;">
+      <!-- COLUMN 3: PERSISTENT RIGHT INSPECTOR (~340px) -->
+      <div id="dialog-panel-right" style="width: 340px; min-width: 340px; display: flex; flex-direction: column; gap: 6px; height: 100%;">
         <!-- Inspector for Skills & Tools -->
         <div id="inspector-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; gap: 6px; height: 100%;">
           ${d20Data.inspectorHtml}
@@ -4436,7 +4436,7 @@ Click a numbered modifier badge to execute a roll.</div>
         });
       }
     }, {
-      width: 890,
+      width: 980,
       height: "auto",
       resizable: true
     }).render(true);
