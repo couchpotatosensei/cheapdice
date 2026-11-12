@@ -4195,15 +4195,16 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Header Theme Button Injection (Works reliably with window dragging)
         const header = dialogApp.find(".window-header");
+        let themeBtnElem = null;
         if (header.find(".dice-stuff-theme-btn").length === 0) {
           const currentThemeObj = THEMES.find(t => t.key === savedTheme) || THEMES[0];
-          const themeBtn = $(`
+          themeBtnElem = $(`
             <a class="header-button dice-stuff-theme-btn" title="Current Theme: ${currentThemeObj.label} (Click to switch)" style="cursor: pointer; margin-right: 4px;">
               <i class="fas fa-palette"></i> <span class="theme-label-text">${currentThemeObj.label}</span>
             </a>
           `);
 
-          themeBtn.on("click", (e) => {
+          themeBtnElem.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
 
@@ -4235,108 +4236,102 @@ Click a numbered modifier badge to execute a roll.</div>
                   const selectedKey = $(this).data("theme");
                   applyTheme(selectedKey);
                   const matched = THEMES.find(t => t.key === selectedKey) || THEMES[0];
-                  themeBtn.find(".theme-label-text").text(matched.label);
-                  themeBtn.attr("title", `Current Theme: ${matched.label} (Click to switch)`);
+                  themeBtnElem.find(".theme-label-text").text(matched.label);
+                  themeBtnElem.attr("title", `Current Theme: ${matched.label} (Click to switch)`);
                   themeHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
                 });
               }
             }, { width: 260 }).render(true);
           });
+        }
 
-          // Insert before GM tools if present, else before close button
-          const gmBtn = header.find(".gm-tools-header-btn");
-          if (gmBtn.length > 0) {
-            gmBtn.before(themeBtn);
-          } else {
-            header.find(".close").before(themeBtn);
-          }
+        // Header Refresh Button Injection (Directly before Close button)
+        let refreshBtnElem = null;
+        if (header.find(".dice-stuff-refresh-btn").length === 0) {
+          refreshBtnElem = $(`
+            <a class="header-button dice-stuff-refresh-btn" title="Refresh Dice Stuff" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas fa-sync-alt"></i> <span class="refresh-label-text">Refresh</span>
+            </a>
+          `);
+
+          refreshBtnElem.on("click", async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dlg.close();
+            await window.CustomRolls.openActionDialog(currentMode);
+          });
         }
 
         // Header Compact Mode Toggle Button Injection
+        let collapseBtnElem = null;
         if (header.find(".dice-stuff-collapse-btn").length === 0) {
-          const collapseBtn = $(`
+          collapseBtnElem = $(`
             <a class="header-button dice-stuff-collapse-btn" title="${isInitiallyCompact ? 'Expand to Full View' : 'Collapse to Compact View'}" style="cursor: pointer; margin-right: 4px;">
               <i class="fas ${isInitiallyCompact ? 'fa-expand-alt' : 'fa-compress-alt'}"></i> <span class="collapse-label-text">${isInitiallyCompact ? 'Expand' : 'Compact'}</span>
             </a>
           `);
 
-          collapseBtn.on("click", (e) => {
+          collapseBtnElem.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
             toggleCompactMode();
           });
-
-          const themeBtnElem = header.find(".dice-stuff-theme-btn");
-          if (themeBtnElem.length > 0) {
-            themeBtnElem.before(collapseBtn);
-          } else {
-            header.find(".close").before(collapseBtn);
-          }
         }
-
-        const btnWeapon = html.find("#tab-btn-weapon");
-        const btnSpell = html.find("#tab-btn-spell");
-        const btnD20 = html.find("#tab-btn-d20");
-        const secWeapon = html.find("#section-weapon");
-        const secSpell = html.find("#section-spell");
-        const secD20 = html.find("#section-d20");
-        const inspectorD20 = html.find("#inspector-d20");
-        const inspectorWeapon = html.find("#inspector-weapon");
-        const inspectorSpell = html.find("#inspector-spell");
-
-        // Initialize D20 event handlers and Tracking Stuff
-        d20Data.setupEvents(html);
-        trackingHelper.setupEvents(html);
 
         // GM Tools Header Button in Dialog Title Bar
-        if (game.user.isGM) {
-          const header = html.closest(".app").find(".window-header");
-          if (header.find(".gm-tools-header-btn").length === 0) {
-            const btn = $(`
-              <a class="header-button gm-tools-header-btn" title="GM Tools" style="cursor: pointer; margin-right: 4px;">
-                <i class="fas fa-crown" style="color: #d97706;"></i> GM Tools
-              </a>
-            `);
-            btn.on("click", (ev) => {
-              ev.preventDefault();
-              new Dialog({
-                title: `Dice Stuff: GM Tools (${actor.name})`,
-                content: `
-                  <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
-                    <button type="button" id="gm-menu-presets" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                      <i class="fas fa-sliders" style="color: #4b5d88; width: 16px;"></i> Presets
-                    </button>
-                    <button type="button" id="gm-menu-actions" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                      <i class="fas fa-pen-to-square" style="color: #2b7489; width: 16px;"></i> Action Editor
-                    </button>
-                    <button type="button" id="gm-menu-generator" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                      <i class="fas fa-wand-magic-sparkles" style="color: #7289da; width: 16px;"></i> Generate Actions
-                    </button>
-                    <button type="button" id="gm-menu-storage" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                      <i class="fas fa-database" style="color: #d97706; width: 16px;"></i> Storage Inspector
-                    </button>
-                  </div>
-                `,
-                buttons: {
-                  close: { label: "Close" }
-                },
-                default: "close",
-                render: (subHtml) => {
-                  subHtml.find("#gm-menu-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.(actor));
-                  subHtml.find("#gm-menu-actions").on("click", () => window.CustomRolls?.openActionEditor?.("weapons", actor));
-                  subHtml.find("#gm-menu-generator").on("click", () => window.CustomRolls?.openActionGenerator?.(actor));
-                  subHtml.find("#gm-menu-storage").on("click", () => window.CustomRolls?.openStorageInspector?.());
-                }
-              }, { width: 260 }).render(true);
-            });
-            header.find(".close").before(btn);
-            // Ensure Theme Button stays to the left of GM Tools button
-            const existingThemeBtn = header.find(".dice-stuff-theme-btn");
-            if (existingThemeBtn.length > 0) {
-              btn.before(existingThemeBtn);
-            }
-          }
+        let gmBtnElem = null;
+        if (game.user.isGM && header.find(".gm-tools-header-btn").length === 0) {
+          gmBtnElem = $(`
+            <a class="header-button gm-tools-header-btn" title="GM Tools" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas fa-crown" style="color: #d97706;"></i> <span class="gm-label-text">GM Tools</span>
+            </a>
+          `);
+          gmBtnElem.on("click", (ev) => {
+            ev.preventDefault();
+            new Dialog({
+              title: `Dice Stuff: GM Tools (${actor.name})`,
+              content: `
+                <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
+                  <button type="button" id="gm-menu-presets" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-sliders" style="color: #4b5d88; width: 16px;"></i> Presets
+                  </button>
+                  <button type="button" id="gm-menu-actions" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-pen-to-square" style="color: #2b7489; width: 16px;"></i> Action Editor
+                  </button>
+                  <button type="button" id="gm-menu-generator" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-wand-magic-sparkles" style="color: #7289da; width: 16px;"></i> Generate Actions
+                  </button>
+                  <button type="button" id="gm-menu-storage" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-database" style="color: #d97706; width: 16px;"></i> Storage Inspector
+                  </button>
+                </div>
+              `,
+              buttons: {
+                close: { label: "Close" }
+              },
+              default: "close",
+              render: (subHtml) => {
+                subHtml.find("#gm-menu-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.(actor));
+                subHtml.find("#gm-menu-actions").on("click", () => window.CustomRolls?.openActionEditor?.("weapons", actor));
+                subHtml.find("#gm-menu-generator").on("click", () => window.CustomRolls?.openActionGenerator?.(actor));
+                subHtml.find("#gm-menu-storage").on("click", () => window.CustomRolls?.openStorageInspector?.());
+              }
+            }, { width: 260 }).render(true);
+          });
         }
+
+        // Ordered Header Button Injection:
+        // Left-to-right order: [GM Tools] [Compact/Expand] [Theme] [Refresh] [Close]
+        // Inserted backwards before .close:
+        // 1. refreshBtn before close
+        // 2. themeBtn before refreshBtn
+        // 3. collapseBtn before themeBtn
+        // 4. gmBtn before collapseBtn
+        const closeBtnElem = header.find(".close");
+        if (refreshBtnElem) closeBtnElem.before(refreshBtnElem);
+        if (themeBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : closeBtnElem).before(themeBtnElem);
+        if (collapseBtnElem) (header.find(".dice-stuff-theme-btn").length ? header.find(".dice-stuff-theme-btn") : closeBtnElem).before(collapseBtnElem);
+        if (gmBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem).before(gmBtnElem);
 
         // Persistent Weapon Roll Handler (Keeps dialog open)
         html.on("click", "#btn-roll-weapon-now", async () => {
@@ -4529,6 +4524,7 @@ Click a numbered modifier badge to execute a roll.</div>
           const collapseBtn = dialogApp.find(".dice-stuff-collapse-btn");
           const themeBtn = dialogApp.find(".dice-stuff-theme-btn");
           const gmBtn = dialogApp.find(".gm-tools-header-btn");
+          const refreshBtn = dialogApp.find(".dice-stuff-refresh-btn");
           const closeBtn = dialogApp.find(".header-button.close");
 
           if (isCompact) {
@@ -4538,6 +4534,8 @@ Click a numbered modifier badge to execute a roll.</div>
 
             // Hide text labels in header buttons in compact mode (icons only)
             themeBtn.find(".theme-label-text").hide();
+            refreshBtn.find(".refresh-label-text").hide();
+            gmBtn.find(".gm-label-text").hide();
             gmBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
             dialogApp.find(".gm-label-text").hide();
 
@@ -4590,6 +4588,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
             // Restore text labels in header buttons in expanded mode
             themeBtn.find(".theme-label-text").show();
+            refreshBtn.find(".refresh-label-text").show();
             dialogApp.find(".gm-label-text").show();
             dialogApp.find(".close-label-text").show();
 
