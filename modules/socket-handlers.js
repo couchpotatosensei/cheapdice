@@ -1032,9 +1032,13 @@ function registerSocketHandlers() {
 
     const fullSpellDescription = (config.description || config.summary || "").trim();
     const descriptionHtmlBlock = fullSpellDescription ? `
-      <details style="margin-bottom: 6px; font-size: 0.82em; color: #444; border: 1px solid #e0e0e0; border-radius: 3px; padding: 3px 6px; background: rgba(0,0,0,0.015);">
-        <summary style="font-weight: 600; color: #4b5d88; cursor: pointer; user-select: none;">Description</summary>
-        <div class="spell-description-content" style="margin-top: 4px; line-height: 1.4; color: #2b3a4a;">${fullSpellDescription}</div>
+      <details style="margin-bottom: 6px; border: 1px solid rgba(75, 93, 136, 0.3); border-radius: 4px; padding: 5px 8px; background: rgba(75, 93, 136, 0.05);">
+        <summary style="font-weight: 700; font-size: 0.9em; color: #4b5d88; cursor: pointer; user-select: none; text-transform: uppercase; letter-spacing: 0.5px;">
+          <i class="fas fa-sparkles" style="margin-right: 4px;"></i> Spell Description
+        </summary>
+        <div class="spell-description-content" style="margin-top: 6px; font-size: 0.9em; line-height: 1.45; color: #2b3a4a; border-top: 1px solid rgba(75, 93, 136, 0.15); padding-top: 4px;">
+          ${fullSpellDescription}
+        </div>
       </details>
     ` : "";
 
