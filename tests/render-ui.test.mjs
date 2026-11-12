@@ -136,5 +136,53 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
       assert.ok(html.includes(key), "HTML card includes spell name");
     }
   });
+
+  it('Spell filter bar logic correctly filters spell levels and favorites', () => {
+    const testSpellConfigs = {
+      "Fire Bolt": { baseLevel: 0, isFavorite: false },
+      "Mage Armor": { baseLevel: 1, isFavorite: true },
+      "Shield": { baseLevel: 1, isFavorite: false },
+      "Misty Step": { baseLevel: 2, isFavorite: true },
+      "Fireball": { baseLevel: 3, isFavorite: false }
+    };
+
+    const spellKeys = Object.keys(testSpellConfigs);
+    const filterSpells = (activeFilters) => {
+      const hasActiveFilters = activeFilters.size > 0;
+      const favorites = [];
+      const levels = {};
+      for (const key of spellKeys) {
+        const sp = testSpellConfigs[key];
+        if (sp.isFavorite) favorites.push(key);
+        const lvl = Math.clamp ? Math.clamp(Number(sp.baseLevel) || 0, 0, 9) : Math.max(0, Math.min(9, Number(sp.baseLevel) || 0));
+        if (!levels[lvl]) levels[lvl] = [];
+        levels[lvl].push(key);
+      }
+
+      const showFavSection = favorites.length > 0 && (!hasActiveFilters || activeFilters.has("fav"));
+      const visibleLevels = Object.keys(levels).map(Number).filter(lvl => !hasActiveFilters || activeFilters.has(String(lvl)));
+      return { showFavSection, favorites, visibleLevels, levels };
+    };
+
+    // Default: no filters active -> show favs and all levels 0, 1, 2, 3
+    const def = filterSpells(new Set());
+    assert.equal(def.showFavSection, true);
+    assert.deepEqual(def.visibleLevels, [0, 1, 2, 3]);
+
+    // Filter by Fav only
+    const favOnly = filterSpells(new Set(["fav"]));
+    assert.equal(favOnly.showFavSection, true);
+    assert.deepEqual(favOnly.visibleLevels, []);
+
+    // Filter by Level 1 and 2
+    const lvl1and2 = filterSpells(new Set(["1", "2"]));
+    assert.equal(lvl1and2.showFavSection, false);
+    assert.deepEqual(lvl1and2.visibleLevels, [1, 2]);
+
+    // Multi-select Fav and Level 3
+    const favAnd3 = filterSpells(new Set(["fav", "3"]));
+    assert.equal(favAnd3.showFavSection, true);
+    assert.deepEqual(favAnd3.visibleLevels, [3]);
+  });
 });
 

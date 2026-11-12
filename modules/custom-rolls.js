@@ -3401,6 +3401,39 @@ Click a numbered modifier badge to execute a roll.</div>
 
     // In-memory collapsed state for spell level groups across dialog refreshes
     window.CustomRolls._collapsedSpellLevels = window.CustomRolls._collapsedSpellLevels || {};
+    // In-memory active spell level/favorite filters (Set of strings: 'fav', '0', '1', etc.)
+    window.CustomRolls._activeSpellFilters = window.CustomRolls._activeSpellFilters || new Set();
+
+    function renderSpellFilterBar(availableLevels, favCount) {
+      const activeFilters = window.CustomRolls._activeSpellFilters;
+      const isFavActive = activeFilters.has("fav");
+
+      const favBtn = `
+        <button type="button" class="btn-spell-filter" data-filter="fav" title="Filter Favorites (${favCount})" style="cursor: pointer; height: 24px; min-width: 28px; padding: 0 6px; border-radius: 4px; font-weight: 700; font-size: 0.82em; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border: 1px solid ${isFavActive ? '#d97706' : '#cbd5e1'}; background: ${isFavActive ? '#fef3c7' : '#f8fafc'}; color: ${isFavActive ? '#b45309' : '#64748b'}; box-shadow: ${isFavActive ? '0 0 4px rgba(217, 119, 6, 0.35)' : 'none'};">
+          <i class="fas fa-star" style="color: ${isFavActive ? '#d97706' : '#cbd5e1'}; font-size: 0.9em;"></i>
+          ${favCount > 0 ? `<span style="font-size: 0.85em;">${favCount}</span>` : ''}
+        </button>
+      `;
+
+      const levelBtns = availableLevels.map(lvl => {
+        const isActive = activeFilters.has(String(lvl));
+        const label = String(lvl);
+        const title = lvl === 0 ? "Cantrips (Level 0)" : `Level ${lvl}`;
+        return `
+          <button type="button" class="btn-spell-filter" data-filter="${lvl}" title="${title}" style="cursor: pointer; height: 24px; min-width: 24px; padding: 0 6px; border-radius: 4px; font-weight: 700; font-size: 0.82em; display: inline-flex; align-items: center; justify-content: center; border: 1px solid ${isActive ? '#7289da' : '#cbd5e1'}; background: ${isActive ? '#e0e7ff' : '#f8fafc'}; color: ${isActive ? '#3730a3' : '#64748b'}; box-shadow: ${isActive ? '0 0 4px rgba(114, 137, 218, 0.35)' : 'none'};">
+            ${label}
+          </button>
+        `;
+      }).join("");
+
+      return `
+        <div id="spell-filter-bar" style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 3px 2px 6px 2px; border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; flex-shrink: 0;">
+          <span style="font-size: 0.68em; font-weight: 800; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 2px;">Filters:</span>
+          ${favBtn}
+          ${levelBtns}
+        </div>
+      `;
+    }
 
     function renderSpellCards() {
       const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
@@ -3431,6 +3464,14 @@ Click a numbered modifier badge to execute a roll.</div>
       }
 
       const collapsedState = window.CustomRolls._collapsedSpellLevels;
+      const activeFilters = window.CustomRolls._activeSpellFilters;
+      const hasActiveFilters = activeFilters && activeFilters.size > 0;
+
+      // Available levels present on the actor
+      const availableLevels = Object.keys(levels).map(Number).sort((a, b) => a - b);
+      if (availableLevels.length === 0) availableLevels.push(0);
+
+      const filterBarHtml = renderSpellFilterBar(availableLevels, favorites.length);
 
       const renderCard = (key, scope = "level") => {
         const sp = spellConfigs[key];
@@ -3478,10 +3519,11 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
       };
 
-      let outputHtml = "";
+      let outputHtml = filterBarHtml;
 
-      // Section: Favorites
-      if (favorites.length > 0) {
+      // Section: Favorites (shown if no filters active OR if 'fav' filter is explicitly active)
+      const showFavSection = favorites.length > 0 && (!hasActiveFilters || activeFilters.has("fav"));
+      if (showFavSection) {
         const isCollapsed = Boolean(collapsedState["fav"]);
         const chevron = isCollapsed ? "fa-chevron-right" : "fa-chevron-down";
         outputHtml += `
@@ -3501,10 +3543,15 @@ Click a numbered modifier badge to execute a roll.</div>
 
       // Sections: Spell Levels (0 through 9)
       const sortedLevels = Object.keys(levels).map(Number).sort((a, b) => a - b);
+      let renderedLevelGroups = 0;
       for (const lvl of sortedLevels) {
         const groupKeys = levels[lvl] || [];
         if (groupKeys.length === 0) continue;
 
+        // Skip if active filters exist and this level is not active
+        if (hasActiveFilters && !activeFilters.has(String(lvl))) continue;
+
+        renderedLevelGroups++;
         const isCollapsed = Boolean(collapsedState[`lvl_${lvl}`]);
         const chevron = isCollapsed ? "fa-chevron-right" : "fa-chevron-down";
         const groupTitle = lvl === 0 ? "CANTRIPS" : `LEVEL ${lvl}`;
@@ -3522,6 +3569,14 @@ Click a numbered modifier badge to execute a roll.</div>
             <div class="spell-group-cards" data-group="lvl_${lvl}" style="display: ${isCollapsed ? 'none' : 'flex'}; flex-direction: column; gap: 3px;">
               ${groupKeys.map(k => renderCard(k, "level")).join("")}
             </div>
+          </div>
+        `;
+      }
+
+      if (hasActiveFilters && !showFavSection && renderedLevelGroups === 0) {
+        outputHtml += `
+          <div style="color: #888; font-size: 0.8em; font-style: italic; text-align: center; padding: 16px 8px;">
+            No spells match the selected filters.
           </div>
         `;
       }
@@ -4699,6 +4754,76 @@ Click a numbered modifier badge to execute a roll.</div>
               color: #a78bfa !important;
               border-color: #a78bfa !important;
             }
+
+            /* Spell Filter Bar Themes */
+            .app.dialog.cheapdice-theme-arcane #spell-filter-bar {
+              border-bottom-color: #38312e !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter {
+              background: #1c1a21 !important;
+              border-color: #38312e !important;
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter[data-filter="fav"] i {
+              color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] {
+              background: #2d2417 !important;
+              border-color: #d97706 !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] i {
+              color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter[style*="box-shadow: 0 0 4px rgba(114"] {
+              background: #2a2347 !important;
+              border-color: #a78bfa !important;
+              color: #e0d8f7 !important;
+            }
+
+            .app.dialog.cheapdice-theme-glass #spell-filter-bar {
+              border-bottom-color: rgba(255, 255, 255, 0.12) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter {
+              background: rgba(255, 255, 255, 0.06) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter[data-filter="fav"] i {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] {
+              background: rgba(245, 158, 11, 0.25) !important;
+              border-color: #f59e0b !important;
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] i {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter[style*="box-shadow: 0 0 4px rgba(114"] {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+
+            .app.dialog.cheapdice-theme-slate .btn-spell-filter,
+            .app.dialog.cheapdice-theme-obsidian .btn-spell-filter {
+              background: #1e293b !important;
+              border-color: #334155 !important;
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"],
+            .app.dialog.cheapdice-theme-obsidian .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] {
+              background: #451a03 !important;
+              border-color: #d97706 !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-spell-filter[style*="box-shadow: 0 0 4px rgba(114"],
+            .app.dialog.cheapdice-theme-obsidian .btn-spell-filter[style*="box-shadow: 0 0 4px rgba(114"] {
+              background: #1e3a8a !important;
+              border-color: #60a5fa !important;
+              color: #93c5fd !important;
+            }
           `;
           document.head.appendChild(styleTag);
         }
@@ -5753,6 +5878,24 @@ Click a numbered modifier badge to execute a roll.</div>
         }
 
         bindSpellDragAndDrop();
+
+        // Spell Filter Click Handler (Multi-select toggles)
+        html.on("click", ".btn-spell-filter", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const filterVal = String($(this).data("filter"));
+          window.CustomRolls._activeSpellFilters = window.CustomRolls._activeSpellFilters || new Set();
+
+          if (window.CustomRolls._activeSpellFilters.has(filterVal)) {
+            window.CustomRolls._activeSpellFilters.delete(filterVal);
+          } else {
+            window.CustomRolls._activeSpellFilters.add(filterVal);
+          }
+
+          html.find("#section-spell").html(renderSpellCards());
+          updateCardStyles();
+        });
 
         // Favorite Toggle Click Handler
         html.on("click", ".btn-toggle-spell-favorite", async function (e) {
