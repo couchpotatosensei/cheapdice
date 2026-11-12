@@ -3294,19 +3294,19 @@ Click a numbered modifier badge to execute a roll.</div>
     let compactTab = localStorage.getItem(COMPACT_TAB_STORAGE_KEY) || "abilities";
 
     const content = `
-    <!-- Top Compact Navigation Bar (Visible only in Compact Mode) -->
+    <!-- Top Compact Navigation Bar (Visible only in Compact Mode - Icons Only) -->
     <div id="dice-stuff-compact-nav" style="display: ${isInitiallyCompact ? 'flex' : 'none'}; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 5px; margin-bottom: 6px; flex-shrink: 0;">
-      <button type="button" class="compact-nav-btn ${compactTab === 'abilities' ? 'active-compact-tab' : ''}" data-tab="abilities" style="flex: 1; padding: 4px 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.78em; background: ${compactTab === 'abilities' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'abilities' ? '#fff' : '#555'};">
-        <i class="fas fa-user-shield"></i> Abilities
+      <button type="button" class="compact-nav-btn ${compactTab === 'abilities' ? 'active-compact-tab' : ''}" data-tab="abilities" title="Abilities & Scores" style="flex: 1; height: 28px; padding: 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95em; background: ${compactTab === 'abilities' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'abilities' ? '#fff' : '#555'};">
+        <i class="fas fa-user-shield"></i>
       </button>
-      <button type="button" class="compact-nav-btn ${compactTab === 'weapon' ? 'active-compact-tab' : ''}" data-tab="weapon" style="flex: 1; padding: 4px 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.78em; background: ${compactTab === 'weapon' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'weapon' ? '#fff' : '#555'};">
-        <i class="fas fa-sword"></i> Atks
+      <button type="button" class="compact-nav-btn ${compactTab === 'd20' ? 'active-compact-tab' : ''}" data-tab="d20" title="Skills & Tools" style="flex: 1; height: 28px; padding: 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95em; background: ${compactTab === 'd20' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'd20' ? '#fff' : '#555'};">
+        <i class="fas fa-dice-d20"></i>
       </button>
-      <button type="button" class="compact-nav-btn ${compactTab === 'spell' ? 'active-compact-tab' : ''}" data-tab="spell" style="flex: 1; padding: 4px 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.78em; background: ${compactTab === 'spell' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'spell' ? '#fff' : '#555'};">
-        <i class="fas fa-magic"></i> Spells
+      <button type="button" class="compact-nav-btn ${compactTab === 'weapon' ? 'active-compact-tab' : ''}" data-tab="weapon" title="Weapons & Attacks" style="flex: 1; height: 28px; padding: 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95em; background: ${compactTab === 'weapon' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'weapon' ? '#fff' : '#555'};">
+        <i class="fas fa-sword"></i>
       </button>
-      <button type="button" class="compact-nav-btn ${compactTab === 'd20' ? 'active-compact-tab' : ''}" data-tab="d20" style="flex: 1; padding: 4px 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.78em; background: ${compactTab === 'd20' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'd20' ? '#fff' : '#555'};">
-        <i class="fas fa-dice-d20"></i> Skills
+      <button type="button" class="compact-nav-btn ${compactTab === 'spell' ? 'active-compact-tab' : ''}" data-tab="spell" title="Spells & Slots" style="flex: 1; height: 28px; padding: 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95em; background: ${compactTab === 'spell' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'spell' ? '#fff' : '#555'};">
+        <i class="fas fa-magic"></i>
       </button>
     </div>
 
@@ -3406,7 +3406,7 @@ Click a numbered modifier badge to execute a roll.</div>
     </div>
   `;
 
-    new Dialog({
+    const dlg = new Dialog({
       title: `Dice Stuff: ${actor.name}`,
       content: content,
       buttons: {},
@@ -3414,6 +3414,11 @@ Click a numbered modifier badge to execute a roll.</div>
         html.closest(".dialog").find(".dialog-buttons").remove();
 
         const dialogApp = html.closest(".app.dialog");
+
+        // Set initial window width based on saved compact state
+        if (isInitiallyCompact) {
+          dialogApp.css({ width: "310px", "min-width": "310px" });
+        }
 
         // --- Theme Engine Setup ---
         const THEME_STORAGE_KEY = "cheapdice_dice_stuff_theme";
@@ -3530,6 +3535,17 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #1b212f !important;
               border-color: #2e3b52 !important;
               color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper span[style*="Tracking Stuff"],
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper div[style*="Tracking Stuff"],
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper span[style*="color: #4b5d88"],
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper strong[style*="color: #4b5d88"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #skills-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-slate #tools-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-slate #section-d20 div[style*="letter-spacing: 0.5px"] {
+              color: #38bdf8 !important;
             }
             .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background: #fff"],
             .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background:#fff"],
@@ -3718,6 +3734,19 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #38312e !important;
               color: #fef3c7 !important;
             }
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper span[style*="Tracking Stuff"],
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper div[style*="Tracking Stuff"] {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper span[style*="color: #4b5d88"],
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper strong[style*="color: #4b5d88"] {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #skills-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-arcane #tools-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-arcane #section-d20 div[style*="letter-spacing: 0.5px"] {
+              color: #fbbf24 !important;
+            }
             .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background: #fff"],
             .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background:#fff"],
             .app.dialog.cheapdice-theme-arcane #tools-list-container-v2 {
@@ -3744,6 +3773,31 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-arcane .standard-weapon-card div {
               color: #fef3c7 !important;
             }
+            /* Arcane Weapon Selector Atk, Dmg, and Badges */
+            .app.dialog.cheapdice-theme-arcane .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-arcane .weapon-card-atk-line *,
+            .app.dialog.cheapdice-theme-arcane .weapon-card-atk-val,
+            .app.dialog.cheapdice-theme-arcane .quick-roll-weapon-btn {
+              color: #fbbf24 !important;
+              border-color: #d97706 !important;
+              background: #252026 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-arcane .weapon-card-dmg-line *,
+            .app.dialog.cheapdice-theme-arcane .weapon-card-dmg-val {
+              color: #f87171 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane span[style*="background: rgba(114, 137, 218"],
+            .app.dialog.cheapdice-theme-arcane span[style*="HUD"] {
+              color: #fef3c7 !important;
+              background: rgba(120, 53, 15, 0.4) !important;
+              border-color: rgba(217, 119, 6, 0.35) !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .quick-roll-spell-btn {
+              color: #fbbf24 !important;
+              border-color: #d97706 !important;
+              background: #252026 !important;
+            }
             .app.dialog.cheapdice-theme-arcane .standard-weapon-card.selected,
             .app.dialog.cheapdice-theme-arcane .custom-weapon-card.selected,
             .app.dialog.cheapdice-theme-arcane .custom-spell-card.selected {
@@ -3757,6 +3811,32 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #1c1a21 !important;
               border-color: #38312e !important;
               color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="Attack & Damage Overview"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="letter-spacing: 0.5px"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="font-weight: 700; font-size: 0.68em"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="font-weight: 700; font-size: 0.78em"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="font-weight: 700; font-size: 0.68em"] {
+              color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="color: #666"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right small[style*="color: #666"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="color: #555"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right label span {
+              color: #d4cfc5 !important;
+            }
+            /* Optional Damage Components in Arcane */
+            .app.dialog.cheapdice-theme-arcane #weapon-extras-scroll label {
+              background: #141318 !important;
+              border-color: #78350f !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #weapon-extras-scroll label span,
+            .app.dialog.cheapdice-theme-arcane #weapon-extras-scroll label strong {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #weapon-extras-scroll label small {
+              color: #d4cfc5 !important;
             }
             .app.dialog.cheapdice-theme-arcane #desc-title-v2 {
               color: #fbbf24 !important;
@@ -3873,6 +3953,12 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper div[style*="Tracking Stuff"] {
               color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper span[style*="color: #4b5d88"],
+            .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper strong[style*="color: #4b5d88"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #skills-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-glass #tools-card-v2 > div:first-child span,
             .app.dialog.cheapdice-theme-glass #section-d20 div[style*="letter-spacing: 0.5px"] {
               color: #38bdf8 !important;
             }
@@ -3978,14 +4064,23 @@ Click a numbered modifier badge to execute a roll.</div>
               background: rgba(56, 189, 248, 0.25) !important;
               border-color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-glass span[style*="background: rgba(114, 137, 218"],
+            .app.dialog.cheapdice-theme-glass span[style*="HUD"] {
+              color: #38bdf8 !important;
+              background: rgba(56, 189, 248, 0.15) !important;
+              border-color: rgba(56, 189, 248, 0.35) !important;
+            }
             .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label {
-              background: #ffffff !important;
-              color: #1e293b !important;
+              background: rgba(0, 0, 0, 0.35) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+              color: #ffffff !important;
             }
             .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label span,
-            .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label strong,
+            .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label strong {
+              color: #ffffff !important;
+            }
             .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label small {
-              color: #1e293b !important;
+              color: #94a3b8 !important;
             }
             .app.dialog.cheapdice-theme-glass strong,
             .app.dialog.cheapdice-theme-glass span[style*="color: #2b3a4a"],
@@ -4330,10 +4425,18 @@ Click a numbered modifier badge to execute a roll.</div>
 
         function updateCompactView() {
           const collapseBtn = dialogApp.find(".dice-stuff-collapse-btn");
+          const themeBtn = dialogApp.find(".dice-stuff-theme-btn");
+          const gmBtn = dialogApp.find(".gm-tools-header-btn");
+
           if (isCompact) {
             collapseBtn.find("i").removeClass("fa-compress-alt").addClass("fa-expand-alt");
-            collapseBtn.find(".collapse-label-text").text("Expand");
+            collapseBtn.find(".collapse-label-text").hide();
             collapseBtn.attr("title", "Expand to Full View");
+
+            // Hide text labels in header buttons in compact mode (icons only)
+            themeBtn.find(".theme-label-text").hide();
+            gmBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
+            dialogApp.find(".gm-label-text").hide();
 
             compactNav.css("display", "flex");
             panelRight.hide();
@@ -4375,8 +4478,12 @@ Click a numbered modifier badge to execute a roll.</div>
             dialogApp.css({ width: "310px", "min-width": "310px" });
           } else {
             collapseBtn.find("i").removeClass("fa-expand-alt").addClass("fa-compress-alt");
-            collapseBtn.find(".collapse-label-text").text("Compact");
+            collapseBtn.find(".collapse-label-text").show().text("Compact");
             collapseBtn.attr("title", "Collapse to Compact View");
+
+            // Restore text labels in header buttons in expanded mode
+            themeBtn.find(".theme-label-text").show();
+            dialogApp.find(".gm-label-text").show();
 
             compactNav.hide();
             panelLeft.show().css({ width: "275px", "min-width": "275px", "border-right": "1px solid #bcc5d3", "padding-right": "8px" });
@@ -4419,6 +4526,13 @@ Click a numbered modifier badge to execute a roll.</div>
 
           const config = foundry.utils.duplicate(rawConfig);
           config.targetIds = Array.from(game.user.targets).map(t => t.id);
+
+          // Quick Roll is strictly base damage; disable all optional extra damage components
+          if (config.additionalDamageComponents) {
+            config.additionalDamageComponents.forEach(c => c.isActive = false);
+          }
+          config.extraDamageModifier = "";
+          config.extraAttackModifier = "";
 
           if (e.shiftKey) config.rollMode = "advantage";
           else if (e.altKey || e.ctrlKey || e.metaKey) config.rollMode = "disadvantage";
@@ -4526,9 +4640,10 @@ Click a numbered modifier badge to execute a roll.</div>
         // Initial setup for compact mode
         if (isInitiallyCompact) {
           updateCompactView();
+        } else {
+          setTab(currentMode);
+          updateWeaponOverviewTotals();
         }
-
-        function updateWeaponOverviewTotals() {
           const config = attacks[selectedWeaponKey];
           if (!config) return;
           const d = getWeaponDetails(config);
@@ -4593,8 +4708,10 @@ Click a numbered modifier badge to execute a roll.</div>
         btnWeapon.on("click", () => setTab("weapon"));
         btnSpell.on("click", () => setTab("spell"));
         btnD20.on("click", () => setTab("d20"));
-        setTab(currentMode);
-        updateWeaponOverviewTotals();
+        if (!isInitiallyCompact) {
+          setTab(currentMode);
+          updateWeaponOverviewTotals();
+        }
 
         // Live formula updates on keystroke and checkbox changes
         html.on("input", "#weapon-extra-atk, #weapon-extra-dmg", updateWeaponOverviewTotals);
@@ -4807,7 +4924,7 @@ Click a numbered modifier badge to execute a roll.</div>
         });
       }
     }, {
-      width: 980,
+      width: isInitiallyCompact ? 310 : 980,
       height: "auto",
       resizable: true
     }).render(true);
