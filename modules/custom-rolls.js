@@ -4529,6 +4529,7 @@ Click a numbered modifier badge to execute a roll.</div>
           const collapseBtn = dialogApp.find(".dice-stuff-collapse-btn");
           const themeBtn = dialogApp.find(".dice-stuff-theme-btn");
           const gmBtn = dialogApp.find(".gm-tools-header-btn");
+          const closeBtn = dialogApp.find(".header-button.close");
 
           if (isCompact) {
             collapseBtn.find("i").removeClass("fa-compress-alt").addClass("fa-expand-alt");
@@ -4539,6 +4540,9 @@ Click a numbered modifier badge to execute a roll.</div>
             themeBtn.find(".theme-label-text").hide();
             gmBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
             dialogApp.find(".gm-label-text").hide();
+
+            closeBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="close-label-text" style="display: none;"></span>');
+            dialogApp.find(".close-label-text").hide();
 
             compactNav.css("display", "flex");
             panelRight.hide();
@@ -4587,6 +4591,7 @@ Click a numbered modifier badge to execute a roll.</div>
             // Restore text labels in header buttons in expanded mode
             themeBtn.find(".theme-label-text").show();
             dialogApp.find(".gm-label-text").show();
+            dialogApp.find(".close-label-text").show();
 
             compactNav.hide();
             panelLeft.show().css({ width: "275px", "min-width": "275px", "border-right": "1px solid #bcc5d3", "padding-right": "8px" });
