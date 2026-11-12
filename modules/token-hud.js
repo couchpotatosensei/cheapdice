@@ -12,12 +12,16 @@ function getSetting(key, fallback = true) {
 }
 
 export function getButtonInfo(actor, btnNum, slotIdx) {
-  const macroId = game.user?.hotbar?.[slotIdx];
-  const macro = game.macros?.get(macroId);
-  if (macro) {
-    return { title: `Hotbar ${slotIdx}: ${macro.name}`, icon: `fas fa-square-${btnNum}`, name: macro.name, type: "Macro" };
+  // If not GM, prioritize player's hotbar slot macro
+  if (!game.user?.isGM) {
+    const macroId = game.user?.hotbar?.[slotIdx];
+    const macro = game.macros?.get(macroId);
+    if (macro) {
+      return { title: `Hotbar ${slotIdx}: ${macro.name}`, icon: `fas fa-square-${btnNum}`, name: macro.name, type: "Macro" };
+    }
   }
 
+  // Fallback (or DM Priority): Assigned action on the actor
   const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
     || actor?.getFlag?.("cheapdice", "hudAssignedSlots")
     || actor?.getFlag?.("world", "hudAssignedSlots")
@@ -26,6 +30,15 @@ export function getButtonInfo(actor, btnNum, slotIdx) {
   if (assignment?.name) {
     const typeLabel = assignment.category === "spells" ? "Spell" : "Weapon";
     return { title: `HUD ${btnNum} (${typeLabel}): ${assignment.name}`, icon: `fas fa-square-${btnNum}`, name: assignment.name, type: typeLabel };
+  }
+
+  // If DM has no action assigned on actor, check if DM has hotbar macro as last resort
+  if (game.user?.isGM) {
+    const macroId = game.user?.hotbar?.[slotIdx];
+    const macro = game.macros?.get(macroId);
+    if (macro) {
+      return { title: `Hotbar ${slotIdx}: ${macro.name}`, icon: `fas fa-square-${btnNum}`, name: macro.name, type: "Macro" };
+    }
   }
 
   return { title: `Slot ${btnNum} (Hotbar ${slotIdx})`, icon: `fas fa-square-${btnNum}`, name: `Slot ${btnNum}`, type: "Empty" };
@@ -38,14 +51,16 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     token = actor.token?.object || canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id) || null;
   }
 
-  // 1. Priority: User's hotbar slot macro
-  const macroId = game.user?.hotbar?.[slotIndex];
-  const macro = game.macros?.get(macroId);
-  if (macro) {
-    return macro.execute({ actor: actor, token: token });
+  // 1. Priority for Non-GM: User's hotbar slot macro
+  if (!game.user?.isGM) {
+    const macroId = game.user?.hotbar?.[slotIndex];
+    const macro = game.macros?.get(macroId);
+    if (macro) {
+      return macro.execute({ actor: actor, token: token });
+    }
   }
 
-  // 2. Fallback: DM assigned action on the actor
+  // 2. Assigned action on the actor (Priority for GM, Fallback for Non-GM)
   const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
     || actor.getFlag("cheapdice", "hudAssignedSlots")
     || actor.getFlag("world", "hudAssignedSlots")
@@ -150,8 +165,17 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     return await globalThis.attackSocket.executeAsGM(handler, rollConfig, actor.id, game.user.id);
   }
 
-  // 3. Neither hotbar macro nor assigned action configured
-  ui.notifications.info(`Button ${buttonNumber}: Hotbar slot ${slotIndex} is empty and no action is assigned.`);
+  // 3. Fallback for GM if hotbar macro exists
+  if (game.user?.isGM) {
+    const macroId = game.user?.hotbar?.[slotIndex];
+    const macro = game.macros?.get(macroId);
+    if (macro) {
+      return macro.execute({ actor: actor, token: token });
+    }
+  }
+
+  // 4. Neither hotbar macro nor assigned action configured
+  ui.notifications.info(`Button ${buttonNumber}: No action assigned to actor and Hotbar slot ${slotIndex} is empty.`);
 }
 
 export function initTokenHud() {
