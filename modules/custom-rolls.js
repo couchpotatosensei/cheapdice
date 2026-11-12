@@ -3096,7 +3096,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
     let attacks = window.CustomRolls.getProfileData(actor, "attackConfigs") || actor.getFlag("world", "attackConfigs") || {};
     attacks = await ensureStandardAttacks(actor, attacks);
-    const spellConfigs = window.CustomRolls.getProfileData(actor, "spellConfigs") || actor.getFlag("world", "spellConfigs") || {};
+    let spellConfigs = window.CustomRolls.getProfileData(actor, "spellConfigs") || actor.getFlag("world", "spellConfigs") || {};
 
     let attackNames = Object.keys(attacks);
     let spellKeys = Object.keys(spellConfigs);
@@ -3453,10 +3453,9 @@ Click a numbered modifier badge to execute a roll.</div>
         const isHealing = ["heal", "temp_hp", "max_hp"].includes(sp.resolutionMethod);
 
         return `
-        <div class="action-card spell-card custom-spell-card" data-key="${key}" data-level="${sp.baseLevel ?? 0}" data-scope="${scope}" draggable="true" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: grab; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
+        <div class="action-card spell-card custom-spell-card" data-key="${key}" data-level="${sp.baseLevel ?? 0}" data-scope="${scope}" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
             <div style="display: flex; align-items: center; gap: 5px; overflow: hidden; min-width: 0;">
-              <i class="fas fa-grip-vertical" style="color: #aaa; font-size: 0.75em; cursor: grab;"></i>
               ${starIcon}
               <span class="spell-card-title" style="font-weight: bold; font-size: 0.9em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${key}</span>
             </div>
@@ -5751,164 +5750,6 @@ Click a numbered modifier badge to execute a roll.</div>
           const list = html.find("#section-spell");
           list.find(".custom-spell-card").off("dragstart dragend dragover dragleave drop");
           list.off("dragover dragleave drop");
-
-          // Helper to import a spell item dropped from an actor's sheet
-          async function importSpellFromDrop(item) {
-            if (!item || item.type !== "spell") {
-              ui.notifications.warn("Only spells can be added to the spell column.");
-              return;
-            }
-
-            const freshSpells = foundry.utils.deepClone(
-              window.CustomRolls?.getProfileData?.(actor, "spellConfigs") ||
-              actor.getFlag?.("world", "spellConfigs") ||
-              spellConfigs
-            );
-
-            const existingConfig = freshSpells[item.name] || Object.values(freshSpells).find(s => s.itemId === item.id);
-            if (existingConfig) {
-              return ui.notifications.info(`"${item.name}" is already in your spell list.`);
-            }
-
-            const newCfg = buildSpellConfigFromItem(item, actor);
-            if (!newCfg) return;
-
-            freshSpells[item.name] = newCfg;
-
-            await window.CustomRolls.setProfileData(actor, "spellConfigs", freshSpells);
-            if (game.user.isGM) {
-              await actor.setFlag("world", "spellConfigs", freshSpells, { recursive: false });
-            }
-
-            spellConfigs = freshSpells;
-            spellKeys = Object.keys(spellConfigs);
-            selectedSpellKey = item.name;
-
-            html.find("#section-spell").html(renderSpellCards());
-            html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
-            bindSpellDragAndDrop();
-            updateCardStyles();
-            renderSideTabs();
-            ui.notifications.info(`Added "${item.name}" to spell list.`);
-          }
-
-          list.on("dragover", function (e) {
-            e.preventDefault();
-            e.originalEvent.dataTransfer.dropEffect = "copy";
-          });
-
-          list.on("drop", async function (e) {
-            let data = null;
-            try {
-              data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
-            } catch (err) {
-              return;
-            }
-
-            if (!data || data.type !== "Item") return;
-
-            e.preventDefault();
-            e.stopPropagation();
-
-            let droppedItem = null;
-            if (data.uuid) {
-              droppedItem = fromUuidSync(data.uuid);
-            } else if (data.data) {
-              droppedItem = data.data;
-            }
-
-            const actorItem = actor.items.get(droppedItem?.id) || (droppedItem?.parent?.id === actor.id ? droppedItem : null);
-            if (!actorItem || actorItem.type !== "spell") {
-              return ui.notifications.warn("Please add the spell to your character sheet first, then drag it here.");
-            }
-
-            await importSpellFromDrop(actorItem);
-          });
-
-          list.find(".custom-spell-card").on("dragstart", function (e) {
-            e.originalEvent.dataTransfer.setData("text/plain", $(this).data("key"));
-            e.originalEvent.dataTransfer.effectAllowed = "move";
-            $(this).css("opacity", "0.4");
-          });
-
-          list.find(".custom-spell-card").on("dragend", function () {
-            $(this).css("opacity", "1");
-            list.find(".custom-spell-card").css({ "border-top": "", "border-bottom": "" });
-          });
-
-          list.find(".custom-spell-card").on("dragover", function (e) {
-            e.preventDefault();
-            e.originalEvent.dataTransfer.dropEffect = "move";
-            const rect = this.getBoundingClientRect();
-            const relY = e.clientY - rect.top;
-            if (relY < rect.height / 2) {
-              $(this).css({ "border-top": "3px solid #7289da", "border-bottom": "" });
-            } else {
-              $(this).css({ "border-bottom": "3px solid #7289da", "border-top": "" });
-            }
-          });
-
-          list.find(".custom-spell-card").on("dragleave", function () {
-            $(this).css({ "border-top": "", "border-bottom": "" });
-          });
-
-          list.find(".custom-spell-card").on("drop", async function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            $(this).css({ "border-top": "", "border-bottom": "" });
-            const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
-            const targetKey = $(this).data("key");
-            if (!draggedKey || draggedKey === targetKey) return;
-
-            const draggedCfg = spellConfigs[draggedKey];
-            const targetCfg = spellConfigs[targetKey];
-            if (!draggedCfg || !targetCfg) return;
-
-            const draggedScope = $(this).closest(".spell-group-cards").data("group");
-            const draggedCardScope = list.find(`.custom-spell-card[data-key="${CSS.escape(draggedKey)}"]`).data("scope");
-
-            // Scoped drag-and-drop:
-            // 1. If dropping in Favorites, both must be favorites
-            // 2. If dropping in Level groups, both must share the exact same spell level
-            const isTargetInFav = draggedScope === "fav";
-            if (isTargetInFav) {
-              if (!draggedCfg.isFavorite || !targetCfg.isFavorite) return;
-            } else {
-              const draggedLvl = Number(draggedCfg.baseLevel) || 0;
-              const targetLvl = Number(targetCfg.baseLevel) || 0;
-              if (draggedLvl !== targetLvl) {
-                return ui.notifications.warn("Spells can only be reordered within the same spell level.");
-              }
-            }
-
-            const rect = this.getBoundingClientRect();
-            const relY = e.clientY - rect.top;
-            const insertBefore = relY < rect.height / 2;
-
-            const fromIdx = spellKeys.indexOf(draggedKey);
-            const toIdx = spellKeys.indexOf(targetKey);
-            if (fromIdx === -1 || toIdx === -1) return;
-
-            spellKeys.splice(fromIdx, 1);
-            const newTargetIdx = spellKeys.indexOf(targetKey);
-            const finalIdx = insertBefore ? newTargetIdx : newTargetIdx + 1;
-            spellKeys.splice(finalIdx, 0, draggedKey);
-
-            const newSpells = {};
-            for (const k of spellKeys) {
-              if (spellConfigs[k]) newSpells[k] = spellConfigs[k];
-            }
-
-            await window.CustomRolls.setProfileData(actor, "spellConfigs", newSpells);
-            if (game.user.isGM) {
-              await actor.setFlag("world", "spellConfigs", newSpells, { recursive: false });
-            }
-
-            spellConfigs = newSpells;
-            html.find("#section-spell").html(renderSpellCards());
-            bindSpellDragAndDrop();
-            updateCardStyles();
-          });
         }
 
         bindSpellDragAndDrop();
@@ -5938,7 +5779,6 @@ Click a numbered modifier badge to execute a roll.</div>
 
           spellConfigs = freshSpells;
           html.find("#section-spell").html(renderSpellCards());
-          bindSpellDragAndDrop();
           updateCardStyles();
         });
 
