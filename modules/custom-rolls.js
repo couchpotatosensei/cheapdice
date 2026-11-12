@@ -4964,6 +4964,22 @@ Click a numbered modifier badge to execute a roll.</div>
             // Determine if GWM can be allowed (heavy weapons)
             const isHeavy = Boolean(sys.properties?.has ? sys.properties.has("hvy") : sys.properties?.hvy);
 
+            // Check if attack with this name or item already exists
+            const existingConfig = attacks[item.name] || Object.values(attacks).find(a => a.itemId === item.id);
+            if (existingConfig) {
+              const isGmConfigured = existingConfig.addedBy === "gm" || existingConfig.gmModified === true;
+              if (!game.user.isGM && isGmConfigured) {
+                return ui.notifications.warn(`"${item.name}" is already configured by the GM and cannot be overwritten.`);
+              }
+              if (game.user.isGM) {
+                const confirmed = await Dialog.confirm({
+                  title: `Overwrite ${item.name}?`,
+                  content: `<p><strong>${item.name}</strong> already exists in attacks. Do you want to overwrite it with default stats from the character sheet?</p>`
+                });
+                if (!confirmed) return;
+              }
+            }
+
             const newAttackConfig = {
               itemId: item.id,
               macroName: item.name,
@@ -4985,7 +5001,7 @@ Click a numbered modifier badge to execute a roll.</div>
               hasGWM: isHeavy || isRanged,
               isVersatile: isVersatile,
               versatileDie: versatileDie,
-              addedBy: "player",
+              addedBy: game.user.isGM ? "gm" : "player",
               additionalDamageComponents: []
             };
 
