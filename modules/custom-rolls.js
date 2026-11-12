@@ -2951,10 +2951,10 @@ Click a numbered modifier badge to execute a roll.</div>
               <div style="display: flex; align-items: center; justify-content: center; max-width: 100%;">
                 <span style="font-weight: 700; font-size: 0.78em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${name}">${shortTitle}</span>
               </div>
-              <div style="font-size: 0.82em; font-weight: 800; color: #235d6e; margin: 1px 0;">
+              <div class="weapon-card-atk-val" style="font-size: 0.82em; font-weight: 800; color: #235d6e; margin: 1px 0;">
                 ${d.atkSign}
               </div>
-              <div style="font-size: 0.72em; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: monospace;" title="${d.dmgFormula} (${d.dmgType})">
+              <div class="weapon-card-dmg-val" style="font-size: 0.72em; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: monospace;" title="${d.dmgFormula} (${d.dmgType})">
                 ${d.dmgFormula}
               </div>
             </div>
@@ -3525,7 +3525,15 @@ Click a numbered modifier badge to execute a roll.</div>
             /* Weapon Pane Badges & Damage Types */
             .app.dialog.cheapdice-theme-slate .custom-weapon-card span[style*="font-weight: bold; color: #555"],
             .app.dialog.cheapdice-theme-slate .standard-weapon-card div[title*="("] {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-slate .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-slate .weapon-card-atk-val {
               color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-slate .weapon-card-dmg-val {
+              color: #93c5fd !important;
             }
             .app.dialog.cheapdice-theme-slate span[style*="background: rgba(114, 137, 218"],
             .app.dialog.cheapdice-theme-slate span[style*="HUD"] {
@@ -3773,6 +3781,14 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #section-weapon span,
             .app.dialog.cheapdice-theme-glass #section-weapon strong {
               color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-glass .weapon-card-atk-val {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-glass .weapon-card-dmg-val {
+              color: #93c5fd !important;
             }
             .app.dialog.cheapdice-theme-glass .custom-weapon-card {
               background: rgba(255, 255, 255, 0.06) !important;
