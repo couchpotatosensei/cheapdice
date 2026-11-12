@@ -2734,13 +2734,16 @@ Click a numbered modifier badge to execute a roll.</div>
   window.CustomRolls.openActionDialog = async function (initialMode = "d20", explicitActor = null) {
     if (!getSetting("featureCustomRolls")) return;
 
+    let token = null;
     let actor = explicitActor;
     if (!actor) {
-      const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
+      token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
       if (!token) {
         return ui.notifications.warn("Please select your token first.");
       }
       actor = token.actor;
+    } else {
+      token = actor.token?.object || canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id) || null;
     }
 
     if (!actor || !actor.isOwner) {
@@ -2771,7 +2774,7 @@ Click a numbered modifier badge to execute a roll.</div>
     const trackingHelper = getTrackingStuffHelper(actor);
 
     // Portrait for Persistent Sidebar
-    const portraitSrc = token.document?.texture?.src || actor.img || "icons/svg/mystery-man.svg";
+    const portraitSrc = token?.document?.texture?.src || actor.img || "icons/svg/mystery-man.svg";
 
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
