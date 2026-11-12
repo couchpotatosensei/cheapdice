@@ -1154,21 +1154,21 @@ Click a numbered modifier badge to execute a roll.</div>
           const toolsBtn = html.find('#tools-collapse-toggle-v2 i');
 
           if (skillsCollapsed) {
-            skillsContent.hide();
+            skillsContent.css("display", "none");
             skillsCard.css({ flex: '0 0 auto', minHeight: 'auto' });
             skillsBtn.removeClass('fa-chevron-up').addClass('fa-chevron-down');
           } else {
-            skillsContent.show();
+            skillsContent.css("display", "block");
             skillsCard.css({ flex: '1 1 auto', minHeight: '32px' });
             skillsBtn.removeClass('fa-chevron-down').addClass('fa-chevron-up');
           }
 
           if (toolsCollapsed) {
-            toolsContent.hide();
+            toolsContent.css("display", "none");
             toolsCard.css({ flex: '0 0 auto', maxHeight: 'none', minHeight: 'auto', marginTop: 'auto' });
             toolsBtn.removeClass('fa-chevron-down').addClass('fa-chevron-up');
           } else {
-            toolsContent.show();
+            toolsContent.css("display", "flex");
             toolsBtn.removeClass('fa-chevron-up').addClass('fa-chevron-down');
             if (skillsCollapsed) {
               // Tools expands to take all remaining space
@@ -3553,9 +3553,10 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate #section-d20 div[style*="letter-spacing: 0.5px"] {
               color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-slate #skills-content-v2,
+            .app.dialog.cheapdice-theme-slate #tools-list-container-v2,
             .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background: #fff"],
-            .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background:#fff"],
-            .app.dialog.cheapdice-theme-slate #tools-list-container-v2 {
+            .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background:#fff"] {
               background: #141924 !important;
               border-color: #273142 !important;
             }
@@ -3753,9 +3754,10 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-arcane #section-d20 div[style*="letter-spacing: 0.5px"] {
               color: #fbbf24 !important;
             }
+            .app.dialog.cheapdice-theme-arcane #skills-content-v2,
+            .app.dialog.cheapdice-theme-arcane #tools-list-container-v2,
             .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background: #fff"],
-            .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background:#fff"],
-            .app.dialog.cheapdice-theme-arcane #tools-list-container-v2 {
+            .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background:#fff"] {
               background: #141318 !important;
               border-color: #38312e !important;
             }
@@ -3968,9 +3970,10 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #section-d20 div[style*="letter-spacing: 0.5px"] {
               color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-glass #skills-content-v2,
+            .app.dialog.cheapdice-theme-glass #tools-list-container-v2,
             .app.dialog.cheapdice-theme-glass #section-d20 > div > div[style*="background: #fff"],
-            .app.dialog.cheapdice-theme-glass #section-d20 > div > div[style*="background:#fff"],
-            .app.dialog.cheapdice-theme-glass #tools-list-container-v2 {
+            .app.dialog.cheapdice-theme-glass #section-d20 > div > div[style*="background:#fff"] {
               background: rgba(0, 0, 0, 0.25) !important;
               border-color: rgba(255, 255, 255, 0.1) !important;
             }
