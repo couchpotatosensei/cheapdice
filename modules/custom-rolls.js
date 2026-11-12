@@ -2731,16 +2731,18 @@ Click a numbered modifier badge to execute a roll.</div>
   }
 
   // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
-  window.CustomRolls.openActionDialog = async function (initialMode = "d20") {
+  window.CustomRolls.openActionDialog = async function (initialMode = "d20", explicitActor = null) {
     if (!getSetting("featureCustomRolls")) return;
 
-    const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
-
-    if (!token) {
-      return ui.notifications.warn("Please select your token first.");
+    let actor = explicitActor;
+    if (!actor) {
+      const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
+      if (!token) {
+        return ui.notifications.warn("Please select your token first.");
+      }
+      actor = token.actor;
     }
 
-    const actor = token.actor;
     if (!actor || !actor.isOwner) {
       return ui.notifications.warn("You don't have permissions to use this token.");
     }
@@ -4258,7 +4260,7 @@ Click a numbered modifier badge to execute a roll.</div>
             e.preventDefault();
             e.stopPropagation();
             dlg.close();
-            await window.CustomRolls.openActionDialog(currentMode);
+            await window.CustomRolls.openActionDialog(currentMode, actor);
           });
         }
 
@@ -4332,6 +4334,20 @@ Click a numbered modifier badge to execute a roll.</div>
         if (themeBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : closeBtnElem).before(themeBtnElem);
         if (collapseBtnElem) (header.find(".dice-stuff-theme-btn").length ? header.find(".dice-stuff-theme-btn") : closeBtnElem).before(collapseBtnElem);
         if (gmBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem).before(gmBtnElem);
+
+        const btnWeapon = html.find("#tab-btn-weapon");
+        const btnSpell = html.find("#tab-btn-spell");
+        const btnD20 = html.find("#tab-btn-d20");
+        const secWeapon = html.find("#section-weapon");
+        const secSpell = html.find("#section-spell");
+        const secD20 = html.find("#section-d20");
+        const inspectorD20 = html.find("#inspector-d20");
+        const inspectorWeapon = html.find("#inspector-weapon");
+        const inspectorSpell = html.find("#inspector-spell");
+
+        // Initialize D20 event handlers and Tracking Stuff
+        d20Data.setupEvents(html);
+        trackingHelper.setupEvents(html);
 
         // Persistent Weapon Roll Handler (Keeps dialog open)
         html.on("click", "#btn-roll-weapon-now", async () => {
@@ -4580,7 +4596,11 @@ Click a numbered modifier badge to execute a roll.</div>
             }
 
             dialogApp.css({ width: "310px", "min-width": "310px" });
-            if (dlg?.position) dlg.position.width = 310;
+            if (dlg?.setPosition) {
+              dlg.setPosition({ width: 310, height: "auto" });
+            } else if (dlg?.position) {
+              dlg.position.width = 310;
+            }
           } else {
             collapseBtn.find("i").removeClass("fa-expand-alt").addClass("fa-compress-alt");
             collapseBtn.find(".collapse-label-text").show().text("Compact");
@@ -4600,7 +4620,11 @@ Click a numbered modifier badge to execute a roll.</div>
 
             setTab(currentMode);
             dialogApp.css({ width: "980px", "min-width": "980px" });
-            if (dlg?.position) dlg.position.width = 980;
+            if (dlg?.setPosition) {
+              dlg.setPosition({ width: 980, height: "auto" });
+            } else if (dlg?.position) {
+              dlg.position.width = 980;
+            }
           }
         }
 
