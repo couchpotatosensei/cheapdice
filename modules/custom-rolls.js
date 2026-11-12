@@ -3878,6 +3878,8 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
     }
 
+    let inspectorSpellSubTab = "details"; // "details" | "slots"
+
     function getSelectedSpellInspectorHtml() {
       const summaryHtml = getSpellcastingSummaryHtml();
       const sp = spellConfigs[selectedSpellKey];
@@ -3902,14 +3904,14 @@ Click a numbered modifier badge to execute a roll.</div>
       const descHtmlBlock = fullSpellDesc ? `
         <div style="margin-top: 6px; border: 1px solid rgba(75, 93, 136, 0.25); border-radius: 4px; padding: 5px 7px; background: rgba(75, 93, 136, 0.04);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; border-bottom: 1px solid rgba(75, 93, 136, 0.15); padding-bottom: 2px;">
-            <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px;">
+            <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">
               <i class="fas fa-sparkles" style="margin-right: 3px;"></i> Spell Description
             </span>
-            <button type="button" class="btn-send-spell-desc-chat" title="Send description to chat" style="height: 18px; line-height: 16px; font-size: 0.70em; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid #7289da; background: #fff; color: #4b5d88; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;">
-              Chat <i class="fas fa-arrow-right"></i>
+            <button type="button" class="btn-send-spell-desc-chat" title="Send description to chat" style="width: auto !important; max-width: 58px; height: 18px; line-height: 16px; font-size: 0.70em; font-weight: 700; padding: 0 5px; margin: 0 0 0 auto; border-radius: 3px; border: 1px solid #7289da; background: #fff; color: #4b5d88; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 3px; white-space: nowrap; flex: 0 0 auto;">
+              Chat <i class="fas fa-arrow-right" style="font-size: 0.85em;"></i>
             </button>
           </div>
-          <div class="spell-description-content" style="max-height: 130px; overflow-y: auto; font-size: 0.82em; line-height: 1.45; color: #2b3a4a;">
+          <div class="spell-description-content" style="max-height: 140px; overflow-y: auto; font-size: 0.82em; line-height: 1.45; color: #2b3a4a;">
             ${fullSpellDesc}
           </div>
         </div>
@@ -3928,36 +3930,81 @@ Click a numbered modifier badge to execute a roll.</div>
         </div>
       ` : "";
 
+      const resMethod = sp.resolutionMethod || "attack";
+      const isSave = resMethod === "save";
+      const isHeal = ["heal", "temp_hp", "max_hp"].includes(resMethod);
+      const isAtk = resMethod === "attack";
+
+      const leftModLabel = isAtk ? "EXTRA ATK MOD" : (isSave ? "EXTRA DC MOD" : "EXTRA ACC/DC MOD");
+      const leftModPlaceholder = isAtk ? "e.g. 1d4, +2" : (isSave ? "e.g. +1, +2" : "e.g. +1");
+      const rightModLabel = isHeal ? "EXTRA HEAL MOD" : "EXTRA DMG MOD";
+      const rightModPlaceholder = isHeal ? "e.g. 1d4, +3" : "e.g. 1d6, +2";
+
       return `
         ${summaryHtml}
 
-        <!-- Spell Overview Card -->
-        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 5px;">
-            <span style="font-weight: 800; font-size: 1.15em; color: #2b3a4a;">${selectedSpellKey}</span>
-            <span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${lvlLabel}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px;">
-            <span>${sp.resolutionMethod === 'save' ? 'Save' : (['heal', 'temp_hp', 'max_hp'].includes(sp.resolutionMethod) ? 'Heal' : (sp.resolutionMethod === 'other' ? 'Action' : 'Roll'))}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.actionVal}</strong></span>
-            <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
-          </div>
-          ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
-          ${descHtmlBlock}
-          ${hudSlotControls}
+        <!-- Sub-Tabs Navigation (Details vs Slots) -->
+        <div style="display: flex; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 4px; flex-shrink: 0;">
+          <button type="button" class="btn-spell-subtab ${inspectorSpellSubTab === 'details' ? 'active-subtab' : ''}" data-subtab="details" style="flex: 1; height: 26px; font-size: 0.82em; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; background: ${inspectorSpellSubTab === 'details' ? '#7289da' : '#f0f2f5'}; color: ${inspectorSpellSubTab === 'details' ? '#fff' : '#555'};">
+            <i class="fas fa-book-open"></i> Spell Details
+          </button>
+          <button type="button" class="btn-spell-subtab ${inspectorSpellSubTab === 'slots' ? 'active-subtab' : ''}" data-subtab="slots" style="flex: 1; height: 26px; font-size: 0.82em; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; background: ${inspectorSpellSubTab === 'slots' ? '#7289da' : '#f0f2f5'}; color: ${inspectorSpellSubTab === 'slots' ? '#fff' : '#555'};">
+            <i class="fas fa-bolt"></i> Spell Slots
+          </button>
         </div>
 
-        <!-- Upcast & Slot Options Card -->
-        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
-            Cast Options
+        <!-- Scrollable Tab Content Container -->
+        <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+
+          <!-- TAB 1: Spell Details -->
+          <div id="spell-subtab-details" style="display: ${inspectorSpellSubTab === 'details' ? 'flex' : 'none'}; flex-direction: column; gap: 6px;">
+            <!-- Spell Overview Card -->
+            <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 5px;">
+                <span style="font-weight: 800; font-size: 1.15em; color: #2b3a4a;">${selectedSpellKey}</span>
+                <span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${lvlLabel}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px;">
+                <span>${sp.resolutionMethod === 'save' ? 'Save' : (['heal', 'temp_hp', 'max_hp'].includes(sp.resolutionMethod) ? 'Heal' : (sp.resolutionMethod === 'other' ? 'Action' : 'Roll'))}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.actionVal}</strong></span>
+                <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
+              </div>
+              ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+              ${descHtmlBlock}
+              ${hudSlotControls}
+            </div>
           </div>
-          <div id="spell-options-container">
-            ${getUpcastOptionsHtml(sp)}
+
+          <!-- TAB 2: Spell Slots & Cast Options -->
+          <div id="spell-subtab-slots" style="display: ${inspectorSpellSubTab === 'slots' ? 'flex' : 'none'}; flex-direction: column; gap: 6px;">
+            <!-- Upcast & Slot Options Card -->
+            <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+              <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+                Cast Options & Spell Slots
+              </div>
+              <div id="spell-options-container">
+                ${getUpcastOptionsHtml(sp)}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Extra Modifiers Card (Dynamic ATK/DC & DMG/HEAL, pinned above Cast button) -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <div style="display: flex; gap: 6px;">
+            <div style="flex: 1;">
+              <label for="spell-extra-atk" style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">${leftModLabel}</label>
+              <input type="text" id="spell-extra-atk" placeholder="${leftModPlaceholder}" style="width: 100%; height: 24px; font-size: 0.78em; border-radius: 3px; border: 1px solid #ccc; padding: 1px 4px; background: #fff;" />
+            </div>
+            <div style="flex: 1;">
+              <label for="spell-extra-dmg" style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">${rightModLabel}</label>
+              <input type="text" id="spell-extra-dmg" placeholder="${rightModPlaceholder}" style="width: 100%; height: 24px; font-size: 0.78em; border-radius: 3px; border: 1px solid #ccc; padding: 1px 4px; background: #fff;" />
+            </div>
           </div>
         </div>
 
         <!-- Pinned Cast Spell Button -->
-        <div style="margin-top: auto; padding-top: 6px;">
+        <div style="margin-top: auto; padding-top: 4px; flex-shrink: 0;">
           <button type="button" id="btn-cast-spell-now" style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <i class="fas fa-magic"></i> Cast Spell
           </button>
@@ -4309,8 +4356,19 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="font-weight: 700; font-size: 0.68em"],
             .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="font-weight: 700; font-size: 0.78em"],
             .app.dialog.cheapdice-theme-slate #dialog-panel-right span[style*="HUD ACTION"],
-            .app.dialog.cheapdice-theme-slate #dialog-panel-right label[for^="weapon-extra"] {
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right label[for^="weapon-extra"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right label[for^="spell-extra"] {
               color: #7dd3fc !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-spell-subtab {
+              background: #1b212f !important;
+              color: #94a3b8 !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-spell-subtab.active-subtab {
+              background: #252f42 !important;
+              color: #38bdf8 !important;
+              border-color: #38bdf8 !important;
             }
             .app.dialog.cheapdice-theme-slate #dialog-panel-right span[style*="color: #555"] {
               color: #94a3b8 !important;
@@ -4534,8 +4592,19 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="letter-spacing: 0.5px"],
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="font-weight: 700; font-size: 0.68em"],
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="font-weight: 700; font-size: 0.78em"],
-            .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="font-weight: 700; font-size: 0.68em"] {
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="font-weight: 700; font-size: 0.68em"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right label[for^="spell-extra"] {
               color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-subtab {
+              background: #141318 !important;
+              color: #a8a29e !important;
+              border-color: #78350f !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-subtab.active-subtab {
+              background: #252026 !important;
+              color: #fbbf24 !important;
+              border-color: #d97706 !important;
             }
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="color: #666"],
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right small[style*="color: #666"],
@@ -5320,8 +5389,20 @@ Click a numbered modifier badge to execute a roll.</div>
             return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
           }
 
+          // Pass extra attack / DC & damage / heal modifiers from spell inspector inputs
+          config.extraAttackModifier = html.find("#spell-extra-atk").val() || "";
+          config.extraDamageModifier = html.find("#spell-extra-dmg").val() || "";
+
           config.targetIds = Array.from(game.user.targets).map(t => t.id);
           await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+        });
+
+        // Spell Inspector Sub-Tab Switcher
+        html.on("click", ".btn-spell-subtab", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          inspectorSpellSubTab = $(this).data("subtab") || "details";
+          html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
         });
 
         // Send Spell Description to Chat Handler

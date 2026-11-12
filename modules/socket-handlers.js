@@ -882,7 +882,8 @@ function registerSocketHandlers() {
       targetType, areaShape, areaSize,
       duration = "Instantaneous", concentration = false,
       addAbilityModToValue = false,
-      castLevel = 0, skipSlotDeduction = false
+      castLevel = 0, skipSlotDeduction = false,
+      extraAttackModifier, extraDamageModifier
     } = config;
 
     let slotTag = "";
@@ -921,7 +922,14 @@ function registerSocketHandlers() {
 
     const abilityMod = actor.system.abilities?.[spellAbility]?.mod ?? 0;
     const prof = actor.system.attributes?.prof ?? 0;
-    const spellDC = 8 + prof + abilityMod;
+    const baseDC = actor.system.attributes?.spell?.dc ?? actor.system.attributes?.spelldc ?? (8 + prof + abilityMod);
+    const cleanExtraMod = (extraAttackModifier || "").trim();
+    let dcBonus = 0;
+    if (resolutionMethod === "save" && cleanExtraMod) {
+      const parsedDcBonus = Number(cleanExtraMod.replace(/^\+/, ""));
+      if (!isNaN(parsedDcBonus)) dcBonus = parsedDcBonus;
+    }
+    const spellDC = baseDC + dcBonus;
     const totalAttackMod = abilityMod + prof + (Number(attackModifier) || 0);
 
     const actorName = actor.name;
@@ -1048,13 +1056,15 @@ function registerSocketHandlers() {
       if (addAbilityModToValue) effectiveFlat += abilityMod;
 
       let healFormula = "";
+      const cleanUserExtra = (extraDamageModifier || "").trim().replace(/^\+/, "").trim();
+      const combinedExtraDice = [extraDiceFormula, cleanUserExtra].filter(Boolean).map(s => String(s).trim().replace(/^\+/, "").trim()).filter(Boolean).join(" + ");
       if (diceCount > 0) {
         healFormula = `${diceCount}${cleanDieSize}`;
-        const cleanExtra = (extraDiceFormula || "").trim().replace(/^\+/, "").trim();
-        if (cleanExtra) healFormula += ` + ${cleanExtra}`;
+        if (combinedExtraDice) healFormula += ` + ${combinedExtraDice}`;
         if (effectiveFlat !== 0) healFormula += ` + ${effectiveFlat}`;
       } else {
         healFormula = `${effectiveFlat || 0}`;
+        if (combinedExtraDice) healFormula += ` + ${combinedExtraDice}`;
       }
 
       const rollObj = await new Roll(healFormula).evaluate();
@@ -1260,11 +1270,18 @@ function registerSocketHandlers() {
         ? (Number(effectiveAttacks) || Number(attackCount) || 1)
         : 1;
 
-      const attackFormula = `1d20 + ${totalAttackMod}`;
-      const advFormula = `2d20kh1 + ${totalAttackMod}`;
+      const cloneTerm = (t) => {
+        if (typeof t.clone === "function") return t.clone();
+        if (typeof t.constructor?.fromData === "function") return t.constructor.fromData(t.toJSON());
+        return RollTerm.fromJSON(JSON.stringify(t));
+      };
+
+      const cleanExtraAtk = (extraAttackModifier || "").trim();
+      const atkSuffix = `${totalAttackMod >= 0 ? `+ ${totalAttackMod}` : `- ${Math.abs(totalAttackMod)}`}${cleanExtraAtk ? (cleanExtraAtk.startsWith("+") || cleanExtraAtk.startsWith("-") ? ` ${cleanExtraAtk}` : ` + ${cleanExtraAtk}`) : ""}`;
+      const attackFormula = `1d20 ${atkSuffix}`;
 
       let baseDamageFormula = `${diceCount}${cleanDieSize}${explodeModifier}`;
-      const cleanExtraDice = (extraDiceFormula || "").trim().replace(/^\+/, "").trim();
+      const cleanExtraDice = [extraDiceFormula, extraDamageModifier].filter(Boolean).map(s => String(s).trim().replace(/^\+/, "").trim()).filter(Boolean).join(" + ");
       if (cleanExtraDice) baseDamageFormula += ` + ${cleanExtraDice}`;
       if (Number(flatDamageBonus)) baseDamageFormula += ` + ${flatDamageBonus}`;
 
@@ -1282,13 +1299,40 @@ function registerSocketHandlers() {
 
       for (let i = 1; i <= numAttacks; i++) {
         const atkRoll = await new Roll(attackFormula, actor.system).evaluate();
-        const advRoll = await new Roll(superAdv ? advFormula : attackFormula, actor.system).evaluate();
+
+        // Roll second d20 candidate reusing evaluated modifier terms from atkRoll (so 1d4+2 is only rolled once)
+        let slot2D20Val = 0;
+        let slot2D20Term = null;
+        if (superAdv) {
+          const d20A = await new Roll("1d20").evaluate();
+          const d20B = await new Roll("1d20").evaluate();
+          const valA = Number(d20A.terms[0]?.results?.[0]?.result ?? d20A.total);
+          const valB = Number(d20B.terms[0]?.results?.[0]?.result ?? d20B.total);
+          if (valA >= valB) {
+            slot2D20Val = valA;
+            slot2D20Term = d20A.terms[0];
+          } else {
+            slot2D20Val = valB;
+            slot2D20Term = d20B.terms[0];
+          }
+        } else {
+          const d20Roll = await new Roll("1d20").evaluate();
+          slot2D20Val = Number(d20Roll.terms[0]?.results?.[0]?.result ?? d20Roll.total);
+          slot2D20Term = d20Roll.terms[0];
+        }
+
+        const terms2 = [cloneTerm(slot2D20Term), ...atkRoll.terms.slice(1).map(cloneTerm)];
+        let advRoll = Roll.fromTerms(terms2);
+        if (!advRoll._evaluated) {
+          await advRoll.evaluate();
+        }
+
         const dmgRoll = await new Roll(baseDamageFormula).evaluate();
 
         rolledObjects.push(atkRoll, advRoll, dmgRoll);
 
         const d20_1 = atkRoll.dice[0]?.total ?? 0;
-        const d20_2 = advRoll.dice[0]?.total ?? 0;
+        const d20_2 = slot2D20Val;
         const isCrit = d20_1 >= critThreshold || d20_2 >= critThreshold;
         if (isCrit) {
           hasAnyCrit = true;
@@ -1441,7 +1485,7 @@ function registerSocketHandlers() {
     `;
 
     let fullDamageFormula = `${diceCount}${cleanDieSize}${explodeModifier}`;
-    const cleanExtraDice = (extraDiceFormula || "").trim().replace(/^\+/, "").trim();
+    const cleanExtraDice = [extraDiceFormula, extraDamageModifier].filter(Boolean).map(s => String(s).trim().replace(/^\+/, "").trim()).filter(Boolean).join(" + ");
     if (cleanExtraDice) fullDamageFormula += ` + ${cleanExtraDice}`;
     if (Number(flatDamageBonus)) fullDamageFormula += ` + ${flatDamageBonus}`;
 
