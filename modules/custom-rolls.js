@@ -4644,6 +4644,7 @@ Click a numbered modifier badge to execute a roll.</div>
           setTab(currentMode);
           updateWeaponOverviewTotals();
         }
+        function updateWeaponOverviewTotals() {
           const config = attacks[selectedWeaponKey];
           if (!config) return;
           const d = getWeaponDetails(config);
