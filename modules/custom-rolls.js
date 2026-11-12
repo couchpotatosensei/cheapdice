@@ -2980,7 +2980,12 @@ Click a numbered modifier badge to execute a roll.</div>
             </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span class="weapon-card-atk-line">Atk: <strong class="weapon-card-atk-val" style="color: #2b3a4a;">${d.atkSign}</strong></span>
+            <span class="weapon-card-atk-line" style="display: inline-flex; align-items: center; gap: 4px;">
+              Atk: 
+              <button type="button" class="quick-roll-weapon-btn" data-key="${name}" title="Click to Quick Roll Attack" style="cursor: pointer; font-size: 0.9em; font-weight: 800; color: #235d6e; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 6px; line-height: 1.2;">
+                ${d.atkSign}
+              </button>
+            </span>
             <span class="weapon-card-dmg-line">Dmg: <strong class="weapon-card-dmg-val" style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
@@ -3013,9 +3018,9 @@ Click a numbered modifier badge to execute a roll.</div>
               <div style="display: flex; align-items: center; justify-content: center; max-width: 100%;">
                 <span style="font-weight: 700; font-size: 0.78em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${name}">${shortTitle}</span>
               </div>
-              <div class="weapon-card-atk-val" style="font-size: 0.82em; font-weight: 800; color: #235d6e; margin: 1px 0;">
+              <button type="button" class="quick-roll-weapon-btn weapon-card-atk-val" data-key="${name}" title="Click to Quick Roll Attack" style="cursor: pointer; font-size: 0.82em; font-weight: 800; color: #235d6e; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 0 4px; margin: 1px 0; line-height: 1.2;">
                 ${d.atkSign}
-              </div>
+              </button>
               <div class="weapon-card-dmg-val" style="font-size: 0.72em; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: monospace;" title="${d.dmgFormula} (${d.dmgType})">
                 ${d.dmgFormula}
               </div>
@@ -3071,7 +3076,12 @@ Click a numbered modifier badge to execute a roll.</div>
             </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a;">${d.actionVal}</strong></span>
+            <span style="display: inline-flex; align-items: center; gap: 4px;">
+              ${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: 
+              <button type="button" class="quick-roll-spell-btn" data-key="${key}" title="Click to Quick Cast / Roll" style="cursor: pointer; font-size: 0.85em; font-weight: 800; color: #4b5d88; background: #eef2fa; border: 1px solid #c2cdf0; border-radius: 3px; padding: 1px 6px; line-height: 1.2;">
+                ${d.actionVal}
+              </button>
+            </span>
             <span>Effect: <strong style="color: #2b3a4a;">${d.valFormula}</strong> <small style="color: #666;">${d.typeLabel}</small></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
@@ -3278,8 +3288,29 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
     }
 
+    const COMPACT_STORAGE_KEY = "cheapdice_dice_stuff_compact";
+    const COMPACT_TAB_STORAGE_KEY = "cheapdice_dice_stuff_compact_tab";
+    const isInitiallyCompact = localStorage.getItem(COMPACT_STORAGE_KEY) === "true";
+    let compactTab = localStorage.getItem(COMPACT_TAB_STORAGE_KEY) || "abilities";
+
     const content = `
-    <div style="display: flex; gap: 10px; font-family: inherit; height: 520px; box-sizing: border-box; padding: 2px;">
+    <!-- Top Compact Navigation Bar (Visible only in Compact Mode) -->
+    <div id="dice-stuff-compact-nav" style="display: ${isInitiallyCompact ? 'flex' : 'none'}; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 5px; margin-bottom: 6px; flex-shrink: 0;">
+      <button type="button" class="compact-nav-btn ${compactTab === 'abilities' ? 'active-compact-tab' : ''}" data-tab="abilities" style="flex: 1; padding: 4px 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.78em; background: ${compactTab === 'abilities' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'abilities' ? '#fff' : '#555'};">
+        <i class="fas fa-user-shield"></i> Abilities
+      </button>
+      <button type="button" class="compact-nav-btn ${compactTab === 'weapon' ? 'active-compact-tab' : ''}" data-tab="weapon" style="flex: 1; padding: 4px 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.78em; background: ${compactTab === 'weapon' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'weapon' ? '#fff' : '#555'};">
+        <i class="fas fa-sword"></i> Atks
+      </button>
+      <button type="button" class="compact-nav-btn ${compactTab === 'spell' ? 'active-compact-tab' : ''}" data-tab="spell" style="flex: 1; padding: 4px 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.78em; background: ${compactTab === 'spell' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'spell' ? '#fff' : '#555'};">
+        <i class="fas fa-magic"></i> Spells
+      </button>
+      <button type="button" class="compact-nav-btn ${compactTab === 'd20' ? 'active-compact-tab' : ''}" data-tab="d20" style="flex: 1; padding: 4px 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.78em; background: ${compactTab === 'd20' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'd20' ? '#fff' : '#555'};">
+        <i class="fas fa-dice-d20"></i> Skills
+      </button>
+    </div>
+
+    <div id="dice-stuff-main-container" style="display: flex; gap: 10px; font-family: inherit; height: 520px; box-sizing: border-box; padding: 2px;">
       
       <!-- COLUMN 1: LEFT SIDEBAR: Persistent (~275px) -->
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
@@ -3995,6 +4026,28 @@ Click a numbered modifier badge to execute a roll.</div>
           }
         }
 
+        // Header Compact Mode Toggle Button Injection
+        if (header.find(".dice-stuff-collapse-btn").length === 0) {
+          const collapseBtn = $(`
+            <a class="header-button dice-stuff-collapse-btn" title="${isInitiallyCompact ? 'Expand to Full View' : 'Collapse to Compact View'}" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas ${isInitiallyCompact ? 'fa-expand-alt' : 'fa-compress-alt'}"></i> <span class="collapse-label-text">${isInitiallyCompact ? 'Expand' : 'Compact'}</span>
+            </a>
+          `);
+
+          collapseBtn.on("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleCompactMode();
+          });
+
+          const themeBtnElem = header.find(".dice-stuff-theme-btn");
+          if (themeBtnElem.length > 0) {
+            themeBtnElem.before(collapseBtn);
+          } else {
+            header.find(".close").before(collapseBtn);
+          }
+        }
+
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
         const btnD20 = html.find("#tab-btn-d20");
@@ -4237,6 +4290,213 @@ Click a numbered modifier badge to execute a roll.</div>
 
           if (mode === "weapon") bindWeaponDragAndDrop();
           if (mode === "spell") bindSpellDragAndDrop();
+        }
+
+        // --- Compact Mode Toggle & View Switching ---
+        let isCompact = isInitiallyCompact;
+        const compactNav = html.find("#dice-stuff-compact-nav");
+        const panelLeft = html.find("#dialog-sidebar-left");
+        const panelCenter = html.find("#dialog-panel-center");
+        const panelRight = html.find("#dialog-panel-right");
+
+        function updateCompactView() {
+          const collapseBtn = dialogApp.find(".dice-stuff-collapse-btn");
+          if (isCompact) {
+            collapseBtn.find("i").removeClass("fa-compress-alt").addClass("fa-expand-alt");
+            collapseBtn.find(".collapse-label-text").text("Expand");
+            collapseBtn.attr("title", "Expand to Full View");
+
+            compactNav.css("display", "flex");
+            panelRight.hide();
+
+            // Highlight active compact tab button
+            compactNav.find(".compact-nav-btn").each(function () {
+              const t = $(this).data("tab");
+              const isAct = t === compactTab;
+              $(this).css({
+                background: isAct ? "#7289da" : "#f0f2f5",
+                color: isAct ? "#fff" : "#555"
+              });
+            });
+
+            if (compactTab === "abilities") {
+              panelLeft.show().css({ width: "100%", "min-width": "0", "border-right": "none", "padding-right": "0" });
+              panelCenter.hide();
+            } else {
+              panelLeft.hide();
+              panelCenter.show().css({ width: "100%", "min-width": "0", "border-right": "none", "padding-right": "0" });
+              panelCenter.find("> div:first-child").hide(); // Hide center 3-tab bar in compact mode
+              if (compactTab === "weapon") {
+                secWeapon.css("display", "flex");
+                secSpell.hide();
+                secD20.hide();
+                bindWeaponDragAndDrop();
+              } else if (compactTab === "spell") {
+                secSpell.css("display", "flex");
+                secWeapon.hide();
+                secD20.hide();
+                bindSpellDragAndDrop();
+              } else if (compactTab === "d20") {
+                secD20.css("display", "flex");
+                secWeapon.hide();
+                secSpell.hide();
+              }
+            }
+
+            dialogApp.css({ width: "310px", "min-width": "310px" });
+          } else {
+            collapseBtn.find("i").removeClass("fa-expand-alt").addClass("fa-compress-alt");
+            collapseBtn.find(".collapse-label-text").text("Compact");
+            collapseBtn.attr("title", "Collapse to Compact View");
+
+            compactNav.hide();
+            panelLeft.show().css({ width: "275px", "min-width": "275px", "border-right": "1px solid #bcc5d3", "padding-right": "8px" });
+            panelCenter.show().css({ width: "auto", "min-width": "300px", "border-right": "1px solid #bcc5d3", "padding-right": "8px" });
+            panelCenter.find("> div:first-child").show(); // Restore center 3-tab bar
+            panelRight.show();
+
+            setTab(currentMode);
+            dialogApp.css({ width: "980px", "min-width": "980px" });
+          }
+        }
+
+        function toggleCompactMode() {
+          isCompact = !isCompact;
+          try {
+            localStorage.setItem(COMPACT_STORAGE_KEY, String(isCompact));
+          } catch (e) {}
+          updateCompactView();
+        }
+
+        // Compact Navigation Buttons Click
+        compactNav.find(".compact-nav-btn").on("click", function (e) {
+          e.preventDefault();
+          compactTab = $(this).data("tab");
+          try {
+            localStorage.setItem(COMPACT_TAB_STORAGE_KEY, compactTab);
+          } catch (e) {}
+          if (compactTab !== "abilities") {
+            currentMode = compactTab;
+          }
+          updateCompactView();
+        });
+
+        // Quick Roll Attack Click (Base Attack Roll)
+        html.on("click", ".quick-roll-weapon-btn", async function (e) {
+          e.stopPropagation();
+          const key = $(this).data("key") || selectedWeaponKey;
+          const rawConfig = attacks[key];
+          if (!rawConfig) return;
+
+          const config = foundry.utils.duplicate(rawConfig);
+          config.targetIds = Array.from(game.user.targets).map(t => t.id);
+
+          if (e.shiftKey) config.rollMode = "advantage";
+          else if (e.altKey || e.ctrlKey || e.metaKey) config.rollMode = "disadvantage";
+
+          if (key === "Unarmed Strike") {
+            const hasTavern = actor.items?.some(i => (i.name || "").toLowerCase().includes("tavern brawler")) ?? false;
+            const monk = actor.items?.find(i => i.type === "class" && (i.name || "").toLowerCase().includes("monk")) || actor.classes?.monk;
+            const monkLvl = monk?.system?.levels || 0;
+            const strMod = actor.system?.abilities?.str?.mod ?? 0;
+            const dexMod = actor.system?.abilities?.dex?.mod ?? 0;
+            const saveDC = 8 + (actor.system?.attributes?.prof ?? 2) + (monkLvl > 0 ? Math.max(strMod, dexMod) : strMod);
+
+            let choiceConfirmed = false;
+            await new Promise(resolve => {
+              new Dialog({
+                title: `${actor.name}: Unarmed Strike`,
+                content: `
+                  <div style="padding: 6px; font-family: inherit;">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                      <button type="button" id="unarmed-choice-damage" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i class="fas fa-hand-fist"></i> Damage
+                      </button>
+                      <button type="button" id="unarmed-choice-grapple" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #2b7489; color: #fff; border: 1px solid #1f5564; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i class="fas fa-hand-holding-hand"></i> Grapple (DC ${saveDC} Save)
+                      </button>
+                      <button type="button" id="unarmed-choice-shove" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #a34848; color: #fff; border: 1px solid #7c3535; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i class="fas fa-person-falling"></i> Shove (DC ${saveDC} Save)
+                      </button>
+                    </div>
+                  </div>
+                `,
+                buttons: { cancel: { label: "Cancel" } },
+                default: "cancel",
+                render: (dlgHtml) => {
+                  dlgHtml.find("#unarmed-choice-damage").on("click", async () => {
+                    dlgHtml.closest(".dialog").find(".close").trigger("click");
+                    await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
+                  });
+                  dlgHtml.find("#unarmed-choice-grapple").on("click", async () => {
+                    dlgHtml.closest(".dialog").find(".close").trigger("click");
+                    await globalThis.attackSocket.executeAsGM("runUnarmedManeuver", "grapple", config, actor.id, game.user.id);
+                  });
+                  dlgHtml.find("#unarmed-choice-shove").on("click", async () => {
+                    dlgHtml.closest(".dialog").find(".close").trigger("click");
+                    await globalThis.attackSocket.executeAsGM("runUnarmedManeuver", "shove", config, actor.id, game.user.id);
+                  });
+                }
+              }, { width: 300 }).render(true);
+            });
+          } else {
+            await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
+          }
+        });
+
+        // Quick Cast Spell Click (Base Level Spell Cast)
+        html.on("click", ".quick-roll-spell-btn", async function (e) {
+          e.stopPropagation();
+          const key = $(this).data("key") || selectedSpellKey;
+          const rawConfig = spellConfigs[key];
+          if (!rawConfig) return;
+
+          const castLvl = Number(rawConfig.baseLevel) || 0;
+          const { cfg: config } = getEffectiveSpellConfig(rawConfig, castLvl);
+
+          if (castLvl === 0) {
+            config.skipSlotDeduction = true;
+          } else {
+            const slotKey = `spell${castLvl}`;
+            const currentSlotVal = Number(actor.system.spells?.[slotKey]?.value) || 0;
+            if (currentSlotVal <= 0) {
+              const proceed = await Dialog.confirm({
+                title: "No Spell Slots Remaining",
+                content: `<p><strong>${actor.name}</strong> has <strong>0</strong> Level ${castLvl} spell slots remaining. Cast anyway?</p>`
+              });
+              if (!proceed) return;
+              config.skipSlotDeduction = true;
+            }
+          }
+
+          if (e.shiftKey) config.rollMode = "advantage";
+          else if (e.altKey || e.ctrlKey || e.metaKey) config.rollMode = "disadvantage";
+
+          if (config.hasDamageTypeChoice && config.damageTypes?.length > 0) {
+            let choiceConfirmed = false;
+            const choiceOptions = config.damageTypes.map(t => `<option value="${t}">${t.toUpperCase()}</option>`).join("");
+            await new Promise(resolve => {
+              new Dialog({
+                title: `${config.spellName}: Damage Type`,
+                content: `<div style="padding: 6px;"><select id="chosenType" style="width:100%; height:30px;">${choiceOptions}</select></div>`,
+                buttons: {
+                  ok: { label: "Confirm", callback: (chHtml) => { choiceConfirmed = true; config.damageType = chHtml.find("#chosenType").val(); } },
+                  cancel: { label: "Cancel" }
+                },
+                default: "ok",
+                close: () => resolve()
+              }, { width: 260 }).render(true);
+            });
+            if (!choiceConfirmed) return;
+          }
+
+          config.targetIds = Array.from(game.user.targets).map(t => t.id);
+          await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+        });
+
+        // Initial setup for compact mode
+        if (isInitiallyCompact) {
+          updateCompactView();
         }
 
         function updateWeaponOverviewTotals() {
