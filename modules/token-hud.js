@@ -458,13 +458,26 @@ export function initTokenHud() {
     colLeft.appendChild(d20Btn);
 
     const isRaised = Boolean(token.handRaised);
-    const handBtn = makeButton(isRaised ? "Lower Hand" : "Raise Hand", "fas fa-hand-paper", () => {
+    const handBtn = makeButton(isRaised ? "Lower Hand" : "Raise Hand", "fas fa-hand-paper", async () => {
       token.handRaised = !token.handRaised;
+      const actorName = token.actor?.name || token.name || "Someone";
+      const actionText = token.handRaised ? "raised their hand" : "lowered their hand";
+
       if (token.handRaised) {
         game.macros.getName("Raise Hand")?.execute({ actor: token.actor, token: token });
       } else {
         game.macros.getName("Lower Hand")?.execute({ actor: token.actor, token: token });
       }
+
+      const gmUsers = game.users?.filter(u => u.isGM) || [];
+      const whisperRecipients = new Set([...gmUsers.map(u => u.id), game.user?.id].filter(Boolean));
+
+      await ChatMessage.create({
+        content: `<strong>✋ ${actorName}</strong> ${actionText}.`,
+        whisper: Array.from(whisperRecipients),
+        speaker: ChatMessage.getSpeaker ? ChatMessage.getSpeaker({ token: token.document || token, actor: token.actor }) : undefined
+      });
+
       app.render();
     });
     if (isRaised) handBtn.classList.add("active");
