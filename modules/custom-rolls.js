@@ -939,37 +939,45 @@ export function initCustomRolls() {
 
     const skillsToolsHtml = `
       <!-- Skills Section Card -->
-      <div style="flex: 1; min-height: 140px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="font-weight: 700; font-size: 0.85em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
-          Skills
+      <div id="skills-card-v2" style="flex: 1; min-height: 32px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: flex 0.2s ease;">
+        <div style="font-weight: 700; font-size: 0.85em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
+          <span>Skills</span>
+          <button type="button" id="skills-collapse-toggle-v2" title="Toggle Skills" style="background: none; border: none; cursor: pointer; color: #64748b; padding: 0 4px; font-size: 0.85em; line-height: 1; display: inline-flex; align-items: center; justify-content: center;">
+            <i class="fas fa-chevron-up"></i>
+          </button>
         </div>
-        <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; flex: 1; min-height: 0; overflow-y: auto;">
+        <div id="skills-content-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; flex: 1; min-height: 0; overflow-y: auto;">
           ${standardSkillsHtml}
           ${customSkillsList.join('')}
         </div>
       </div>
 
-      <!-- Tools Section Card (Expands up to 50% max, shrinks if fewer tools) -->
-      <div style="max-height: 50%; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-        <div style="font-weight: 700; font-size: 0.85em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
-          Tools
+      <!-- Tools Section Card (Expands up to 50% max by default, full if skills collapsed, shrinks if fewer tools) -->
+      <div id="tools-card-v2" style="max-height: 50%; min-height: 32px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; transition: max-height 0.2s ease, flex 0.2s ease;">
+        <div style="font-weight: 700; font-size: 0.85em; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
+          <span>Tools</span>
+          <button type="button" id="tools-collapse-toggle-v2" title="Toggle Tools" style="background: none; border: none; cursor: pointer; color: #64748b; padding: 0 4px; font-size: 0.85em; line-height: 1; display: inline-flex; align-items: center; justify-content: center;">
+            <i class="fas fa-chevron-down"></i>
+          </button>
         </div>
-        <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 120px; overflow-y: auto;">
-          ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
-      ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
-      : '<span style="font-size: 0.85em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
-        </div>
+        <div id="tools-content-v2" style="display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden;">
+          <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; flex: 1; min-height: 0; max-height: 100%; overflow-y: auto;">
+            ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
+        ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
+        : '<span style="font-size: 0.85em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
+          </div>
 
-        <div id="other-tools-container-v2" style="flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.72em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
-          <div style="display: flex; flex-direction: column; gap: 3px;">
-            <select id="other-tools-select-v2" style="width: 100%; height: 28px; font-size: 1.05em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 4px; box-sizing: border-box; background: #fff;">
-              <option value="">-- Choose Tool --</option>
-              ${nonProficientToolsHtml.join('')}
-            </select>
-            <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 22px; font-size: 0.85em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-              Roll Selected Tool
-            </button>
+          <div id="other-tools-container-v2" style="flex-shrink: 0;">
+            <div style="font-weight: 700; font-size: 0.72em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+              <select id="other-tools-select-v2" style="width: 100%; height: 28px; font-size: 1.05em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 4px; box-sizing: border-box; background: #fff;">
+                <option value="">-- Choose Tool --</option>
+                ${nonProficientToolsHtml.join('')}
+              </select>
+              <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 22px; font-size: 0.85em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                Roll Selected Tool
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1129,6 +1137,60 @@ Click a numbered modifier badge to execute a roll.</div>
             presetSection.hide();
             presetList.empty();
           }
+        });
+
+        // Toggle collapse/expand for Skills and Tools lists
+        let skillsCollapsed = false;
+        let toolsCollapsed = false;
+
+        const updateColumnLayout = () => {
+          const skillsCard = html.find('#skills-card-v2');
+          const skillsContent = html.find('#skills-content-v2');
+          const skillsBtn = html.find('#skills-collapse-toggle-v2 i');
+
+          const toolsCard = html.find('#tools-card-v2');
+          const toolsContent = html.find('#tools-content-v2');
+          const toolsBtn = html.find('#tools-collapse-toggle-v2 i');
+
+          if (skillsCollapsed) {
+            skillsContent.hide();
+            skillsCard.css({ flex: '0 0 auto', minHeight: 'auto' });
+            skillsBtn.removeClass('fa-chevron-up').addClass('fa-chevron-down');
+          } else {
+            skillsContent.show();
+            skillsCard.css({ flex: '1 1 auto', minHeight: '32px' });
+            skillsBtn.removeClass('fa-chevron-down').addClass('fa-chevron-up');
+          }
+
+          if (toolsCollapsed) {
+            toolsContent.hide();
+            toolsCard.css({ flex: '0 0 auto', maxHeight: 'none', minHeight: 'auto' });
+            toolsBtn.removeClass('fa-chevron-down').addClass('fa-chevron-up');
+          } else {
+            toolsContent.show();
+            toolsBtn.removeClass('fa-chevron-up').addClass('fa-chevron-down');
+            if (skillsCollapsed) {
+              // Tools expands to take all remaining space
+              toolsCard.css({ flex: '1 1 auto', maxHeight: 'none', minHeight: '32px' });
+            } else {
+              // Both expanded: Tools capped at 50%
+              toolsCard.css({ flex: '0 0 auto', maxHeight: '50%', minHeight: '32px' });
+            }
+          }
+        };
+
+        html.find('#skills-collapse-toggle-v2').on('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          skillsCollapsed = !skillsCollapsed;
+          updateColumnLayout();
+        });
+
+        html.find('#tools-collapse-toggle-v2').on('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          toolsCollapsed = !toolsCollapsed;
+          updateColumnLayout();
         });
 
         const executeRoll = async (rollType, key) => {
