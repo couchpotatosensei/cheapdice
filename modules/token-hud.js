@@ -473,7 +473,7 @@ export function initTokenHud() {
       const whisperRecipients = new Set([...gmUsers.map(u => u.id), game.user?.id].filter(Boolean));
 
       await ChatMessage.create({
-        content: `<strong>✋ ${actorName}</strong> ${actionText}.`,
+        content: `<strong>${actorName}</strong> ${actionText}.`,
         whisper: Array.from(whisperRecipients),
         speaker: ChatMessage.getSpeaker ? ChatMessage.getSpeaker({ token: token.document || token, actor: token.actor }) : undefined
       });
