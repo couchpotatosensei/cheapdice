@@ -3902,8 +3902,8 @@ Click a numbered modifier badge to execute a roll.</div>
 
       const fullSpellDesc = (sp.description || sp.summary || "").trim();
       const descHtmlBlock = fullSpellDesc ? `
-        <div style="margin-top: 6px; border: 1px solid rgba(75, 93, 136, 0.25); border-radius: 4px; padding: 5px 7px; background: rgba(75, 93, 136, 0.04);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; border-bottom: 1px solid rgba(75, 93, 136, 0.15); padding-bottom: 2px;">
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 6px; border: 1px solid rgba(75, 93, 136, 0.25); border-radius: 4px; padding: 5px 7px; background: rgba(75, 93, 136, 0.04);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; border-bottom: 1px solid rgba(75, 93, 136, 0.15); padding-bottom: 2px; flex-shrink: 0;">
             <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">
               <i class="fas fa-sparkles" style="margin-right: 3px;"></i> Spell Description
             </span>
@@ -3911,14 +3911,14 @@ Click a numbered modifier badge to execute a roll.</div>
               Chat <i class="fas fa-arrow-right" style="font-size: 0.85em;"></i>
             </button>
           </div>
-          <div class="spell-description-content" style="max-height: 140px; overflow-y: auto; font-size: 0.82em; line-height: 1.45; color: #2b3a4a;">
+          <div class="spell-description-content" style="flex: 1; min-height: 0; overflow-y: auto; font-size: 0.82em; line-height: 1.45; color: #2b3a4a;">
             ${fullSpellDesc}
           </div>
         </div>
       ` : "";
 
       const hudSlotControls = sp ? `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8dee6;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8dee6; flex-shrink: 0;">
           <span style="font-size: 0.82em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px;">HUD ACTION:</span>
           <div style="display: inline-flex; gap: 4px;">
             <button type="button" class="btn-assign-hud-slot ${!curSlot ? 'active' : ''}" data-category="spells" data-slot="" title="Unassign from HUD" style="height: 26px; line-height: 24px; font-size: 0.80em; font-weight: 700; padding: 0 8px; border-radius: 4px; border: 1px solid ${!curSlot ? '#2b7489' : '#ccc'}; background: ${!curSlot ? '#2b7489' : '#fff'}; color: ${!curSlot ? '#fff' : '#555'}; cursor: pointer;">None</button>
@@ -3954,21 +3954,21 @@ Click a numbered modifier badge to execute a roll.</div>
         </div>
 
         <!-- Scrollable Tab Content Container -->
-        <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+        <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column;">
 
           <!-- TAB 1: Spell Details -->
-          <div id="spell-subtab-details" style="display: ${inspectorSpellSubTab === 'details' ? 'flex' : 'none'}; flex-direction: column; gap: 6px;">
-            <!-- Spell Overview Card -->
-            <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 5px;">
+          <div id="spell-subtab-details" style="display: ${inspectorSpellSubTab === 'details' ? 'flex' : 'none'}; flex: 1; min-height: 0; flex-direction: column;">
+            <!-- Spell Overview Card (Fills height down to modifiers) -->
+            <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex: 1; min-height: 0; display: flex; flex-direction: column;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 5px; flex-shrink: 0;">
                 <span style="font-weight: 800; font-size: 1.15em; color: #2b3a4a;">${selectedSpellKey}</span>
                 <span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${lvlLabel}</span>
               </div>
-              <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px;">
+              <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px; flex-shrink: 0;">
                 <span>${sp.resolutionMethod === 'save' ? 'Save' : (['heal', 'temp_hp', 'max_hp'].includes(sp.resolutionMethod) ? 'Heal' : (sp.resolutionMethod === 'other' ? 'Action' : 'Roll'))}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.actionVal}</strong></span>
                 <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
               </div>
-              ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+              ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; flex-shrink: 0;">${tagsHtml}</div>` : ""}
               ${descHtmlBlock}
               ${hudSlotControls}
             </div>
@@ -5432,11 +5432,16 @@ Click a numbered modifier badge to execute a roll.</div>
             <div style="font-family: inherit; color: #333;">
               <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #343a40; padding-bottom: 3px; margin-bottom: 6px;">
                 <span style="font-size: 1.05em; font-weight: bold; color: #2b3a4a;">${selectedSpellKey}</span>
-                <span style="font-size: 0.8em; color: #777;">${actor.name} (${lvlLabel})</span>
+                <span style="font-size: 0.8em; color: #777;">${actor.name}</span>
               </div>
+
               ${tagsHtml ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px;">${tagsHtml}</div>` : ""}
-              <div style="font-size: 0.9em; line-height: 1.45; color: #2b3a4a; border-top: 1px solid rgba(75, 93, 136, 0.15); padding-top: 5px;">
-                ${desc}
+
+              <div style="background: rgba(75, 93, 136, 0.08); border: 1px solid rgba(75, 93, 136, 0.3); border-radius: 4px; padding: 8px 10px; margin-top: 4px;">
+                <div style="font-weight: bold; font-size: 0.8em; color: #4b5d88; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px;">
+                  <i class="fas fa-sparkles"></i> Spell Description
+                </div>
+                <div style="font-size: 0.9em; line-height: 1.4; color: #2b3a4a;">${desc}</div>
               </div>
             </div>
           `;
