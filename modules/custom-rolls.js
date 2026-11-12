@@ -2918,8 +2918,8 @@ Click a numbered modifier badge to execute a roll.</div>
             </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span>Atk: <strong style="color: #2b3a4a;">${d.atkSign}</strong></span>
-            <span>Dmg: <strong style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
+            <span class="weapon-card-atk-line">Atk: <strong class="weapon-card-atk-val" style="color: #2b3a4a;">${d.atkSign}</strong></span>
+            <span class="weapon-card-dmg-line">Dmg: <strong class="weapon-card-dmg-val" style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
         </div>
@@ -3528,10 +3528,12 @@ Click a numbered modifier badge to execute a roll.</div>
               color: #93c5fd !important;
             }
             .app.dialog.cheapdice-theme-slate .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-slate .weapon-card-atk-line *,
             .app.dialog.cheapdice-theme-slate .weapon-card-atk-val {
               color: #38bdf8 !important;
             }
             .app.dialog.cheapdice-theme-slate .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-slate .weapon-card-dmg-line *,
             .app.dialog.cheapdice-theme-slate .weapon-card-dmg-val {
               color: #93c5fd !important;
             }
@@ -3782,12 +3784,14 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #section-weapon strong {
               color: #ffffff !important;
             }
-            .app.dialog.cheapdice-theme-glass .weapon-card-atk-line,
-            .app.dialog.cheapdice-theme-glass .weapon-card-atk-val {
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-line *,
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-val {
               color: #38bdf8 !important;
             }
-            .app.dialog.cheapdice-theme-glass .weapon-card-dmg-line,
-            .app.dialog.cheapdice-theme-glass .weapon-card-dmg-val {
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-line *,
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-val {
               color: #93c5fd !important;
             }
             .app.dialog.cheapdice-theme-glass .custom-weapon-card {
