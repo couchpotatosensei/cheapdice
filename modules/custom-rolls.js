@@ -396,14 +396,15 @@ export function isSpellPrepared(item, actor) {
   // 1. Cantrips (Level 0) are always prepared
   if (lvl === 0) return true;
 
-  const prep = sys.preparation || {};
-  const mode = prep.mode || "prepared";
+  // Modern dnd5e 5.1+ uses sys.method / sys.prepared, older uses sys.preparation
+  const mode = sys.method || sys.preparation?.mode || "prepared";
+  const isPrep = sys.prepared !== undefined ? Boolean(sys.prepared) : Boolean(sys.preparation?.prepared);
 
   // 2. Modes always castable without daily preparation: always, innate, atwill, pact
   if (["always", "innate", "atwill", "pact"].includes(mode)) return true;
 
   // 3. Actively prepared on the character sheet
-  if (Boolean(prep.prepared)) return true;
+  if (isPrep) return true;
 
   // 4. Wizard Ritual Exception (2024 Rules / Ritual Caster / Book of Ancient Secrets):
   // Wizards can ritual cast any ritual spell from their spellbook even if unprepared.
@@ -3412,34 +3413,70 @@ Click a numbered modifier badge to execute a roll.</div>
 
     function getSpellItemSourceInfo(spell) {
       if (!spell || !actor) return null;
-      const it = (spell.itemId ? actor.items?.get(spell.itemId) : null)
+      let it = (spell.itemId ? actor.items?.get(spell.itemId) : null)
         || actor.items?.getName(spell.spellName);
       if (!it) return null;
 
-      const isNonSpellType = it.type !== "spell";
-      const prepMode = it.system?.preparation?.mode;
-      const hasItemUses = Boolean(it.system?.uses && Number(it.system.uses.max) > 0);
+      // Check if this spell originates from a parent item (e.g. Staff of the Magi, Wand)
+      let sourceItem = null;
+      const flags = it.flags || {};
+      const dndFlags = flags.dnd5e || {};
+      const parentId = dndFlags.sourceItem || dndFlags.cachedFor || flags.magicitems?.sourceItem || it.system?.sourceItem;
+      if (parentId && actor.items?.get(parentId)) {
+        sourceItem = actor.items.get(parentId);
+      } else if (it.system?.activities) {
+        // Modern dnd5e activities checking consumption targets pointing to an item
+        const acts = it.system.activities instanceof Map ? Array.from(it.system.activities.values()) : Object.values(it.system.activities || {});
+        for (const act of acts) {
+          const targets = act.consumption?.targets || [];
+          for (const target of targets) {
+            if (target.type === "itemUses" && target.target && actor.items?.get(target.target)) {
+              sourceItem = actor.items.get(target.target);
+              break;
+            }
+          }
+          if (sourceItem) break;
+        }
+      }
+
+      // If no explicit parent ID, check if an equipment/weapon/feat with the same or related name exists with charges
+      if (!sourceItem && it.type === "spell") {
+        const customSrc = it.system?.source?.custom || it.system?.source?.rules || "";
+        if (customSrc) {
+          const match = actor.items?.find(i => i.type !== "spell" && (i.name.toLowerCase() === customSrc.toLowerCase() || customSrc.toLowerCase().includes(i.name.toLowerCase())));
+          if (match && Number(match.system?.uses?.max) > 0) {
+            sourceItem = match;
+          }
+        }
+      }
+
+      // Target item holding the uses (either the parent staff/wand or the spell/feat itself)
+      const targetItem = sourceItem || it;
+      const isNonSpellType = targetItem.type !== "spell";
+      // Modern dnd5e 5.1+ uses sys.method, older uses sys.preparation.mode
+      const prepMode = it.system?.method || it.system?.preparation?.mode;
+      const hasItemUses = Boolean(targetItem.system?.uses && Number(targetItem.system.uses.max) > 0);
       const isInnateOrAtWill = ["innate", "atwill"].includes(prepMode);
 
-      if (!isNonSpellType && !hasItemUses && !isInnateOrAtWill) {
+      if (!isNonSpellType && !hasItemUses && !isInnateOrAtWill && !sourceItem) {
         return null;
       }
 
-      const curUses = Number(it.system?.uses?.value ?? 0);
-      const maxUses = Number(it.system?.uses?.max ?? 0);
-      const isPureItem = isNonSpellType || (hasItemUses && !["prepared", "always"].includes(prepMode));
+      const curUses = Number(targetItem.system?.uses?.value ?? 0);
+      const maxUses = Number(targetItem.system?.uses?.max ?? 0);
+      const isPureItem = Boolean(sourceItem) || isNonSpellType || (hasItemUses && !["prepared", "always"].includes(prepMode));
 
       return {
-        item: it,
-        itemId: it.id,
-        name: it.name,
-        type: it.type,
+        item: targetItem,
+        itemId: targetItem.id,
+        name: targetItem.name,
+        type: targetItem.type,
         prepMode,
         hasItemUses,
         curUses,
         maxUses,
         isPureItem,
-        label: hasItemUses ? `${curUses}/${maxUses} charges` : (isInnateOrAtWill ? (prepMode === "atwill" ? "At-Will" : "Innate") : it.name)
+        label: hasItemUses ? `${curUses}/${maxUses} charges` : (isInnateOrAtWill ? (prepMode === "atwill" ? "At-Will" : "Innate") : targetItem.name)
       };
     }
 
@@ -3473,9 +3510,9 @@ Click a numbered modifier badge to execute a roll.</div>
               <span style="font-weight: 700; color: #4b5d88; font-family: monospace;">${srcInfo.label}</span>
             </div>
           `;
-        } else {
+        } else if (srcInfo.hasItemUses && srcInfo.maxUses > 0) {
           // Dual-cast spell (e.g. Magic Initiate, Fey Touched: 1 free feat use OR standard spell slots)
-          const featHasCharges = srcInfo.hasItemUses && srcInfo.curUses > 0;
+          const featHasCharges = srcInfo.curUses > 0;
           chargeDeductChecked = featHasCharges;
           slotDeductChecked = !featHasCharges;
 
@@ -4600,6 +4637,15 @@ Click a numbered modifier badge to execute a roll.</div>
               color: #38bdf8 !important;
               border-color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-slate .btn-toggle-slot-mode {
+              background: #1b212f !important;
+              color: #94a3b8 !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-toggle-slot-mode.active-slot-mode {
+              background: #252f42 !important;
+              color: #38bdf8 !important;
+            }
             .app.dialog.cheapdice-theme-slate #dialog-panel-right span[style*="color: #555"] {
               color: #94a3b8 !important;
             }
@@ -4835,6 +4881,15 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #252026 !important;
               color: #fbbf24 !important;
               border-color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-toggle-slot-mode {
+              background: #141318 !important;
+              color: #a8a29e !important;
+              border-color: #78350f !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-toggle-slot-mode.active-slot-mode {
+              background: #252026 !important;
+              color: #fbbf24 !important;
             }
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="color: #666"],
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right small[style*="color: #666"],
@@ -5140,6 +5195,16 @@ Click a numbered modifier badge to execute a roll.</div>
             }
             .app.dialog.cheapdice-theme-glass .btn-spell-subtab.active-subtab i {
               color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-toggle-slot-mode {
+              background: rgba(255, 255, 255, 0.06) !important;
+              color: #94a3b8 !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-toggle-slot-mode.active-slot-mode {
+              background: rgba(56, 189, 248, 0.25) !important;
+              color: #38bdf8 !important;
+              box-shadow: 0 0 8px rgba(56, 189, 248, 0.35) !important;
             }
             .app.dialog.cheapdice-theme-glass span[style*="background: rgba(114, 137, 218"] {
               color: #38bdf8 !important;
