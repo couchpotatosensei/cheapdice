@@ -326,5 +326,83 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     // Pact: 0/2 spent -> 0 filled, 2 empty
     assert.deepEqual(spentRows[2], { label: "Pact", filledCount: 0, emptyCount: 2, countText: "0/2" });
   });
+
+  it('correctly identifies item/feat spell source and charge deduction behavior', () => {
+    const wandItem = {
+      id: "wand123",
+      name: "Wand of Magic Missiles",
+      type: "equipment",
+      system: {
+        uses: { value: 5, max: 7 },
+        preparation: { mode: "atwill" }
+      }
+    };
+    const feyTouchedSpell = {
+      id: "spMisty",
+      name: "Misty Step",
+      type: "spell",
+      system: {
+        level: 2,
+        uses: { value: 1, max: 1 },
+        preparation: { mode: "always" }
+      }
+    };
+    const standardSpell = {
+      id: "spFire",
+      name: "Fireball",
+      type: "spell",
+      system: {
+        level: 3,
+        uses: { value: null, max: null },
+        preparation: { mode: "prepared" }
+      }
+    };
+
+    const mockActorItems = {
+      items: {
+        get: (id) => [wandItem, feyTouchedSpell, standardSpell].find(i => i.id === id),
+        getName: (name) => [wandItem, feyTouchedSpell, standardSpell].find(i => i.name === name)
+      }
+    };
+
+    function checkSourceInfo(spell, actor) {
+      const it = (spell.itemId ? actor.items?.get(spell.itemId) : null)
+        || actor.items?.getName(spell.spellName);
+      if (!it) return null;
+      const isNonSpellType = it.type !== "spell";
+      const prepMode = it.system?.preparation?.mode;
+      const hasItemUses = Boolean(it.system?.uses && Number(it.system.uses.max) > 0);
+      const isInnateOrAtWill = ["innate", "atwill"].includes(prepMode);
+
+      if (!isNonSpellType && !hasItemUses && !isInnateOrAtWill) return null;
+      const isPureItem = isNonSpellType || (hasItemUses && !["prepared", "always"].includes(prepMode));
+      return {
+        isPureItem,
+        hasItemUses,
+        curUses: Number(it.system?.uses?.value ?? 0),
+        maxUses: Number(it.system?.uses?.max ?? 0)
+      };
+    }
+
+    // Pure magic item: Wand of Magic Missiles
+    const wandCheck = checkSourceInfo({ itemId: "wand123", spellName: "Magic Missile", baseLevel: 1 }, mockActorItems);
+    assert.ok(wandCheck);
+    assert.equal(wandCheck.isPureItem, true);
+    assert.equal(wandCheck.hasItemUses, true);
+    assert.equal(wandCheck.curUses, 5);
+    assert.equal(wandCheck.maxUses, 7);
+
+    // Dual-cast feat spell: Misty Step (Fey Touched: 1 free use + spell slots)
+    const feyCheck = checkSourceInfo({ itemId: "spMisty", spellName: "Misty Step", baseLevel: 2 }, mockActorItems);
+    assert.ok(feyCheck);
+    assert.equal(feyCheck.isPureItem, false, "Feat spell with 'always' prep mode should allow dual-cast selection");
+    assert.equal(feyCheck.hasItemUses, true);
+    assert.equal(feyCheck.curUses, 1);
+    assert.equal(feyCheck.maxUses, 1);
+
+    // Standard prepared spell
+    const stdCheck = checkSourceInfo({ itemId: "spFire", spellName: "Fireball", baseLevel: 3 }, mockActorItems);
+    assert.equal(stdCheck, null, "Standard class spell should not have item source info");
+  });
 });
 

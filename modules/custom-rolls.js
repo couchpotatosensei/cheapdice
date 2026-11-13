@@ -3410,8 +3410,43 @@ Click a numbered modifier badge to execute a roll.</div>
       return { actionVal, valFormula, typeLabel, tags };
     }
 
+    function getSpellItemSourceInfo(spell) {
+      if (!spell || !actor) return null;
+      const it = (spell.itemId ? actor.items?.get(spell.itemId) : null)
+        || actor.items?.getName(spell.spellName);
+      if (!it) return null;
+
+      const isNonSpellType = it.type !== "spell";
+      const prepMode = it.system?.preparation?.mode;
+      const hasItemUses = Boolean(it.system?.uses && Number(it.system.uses.max) > 0);
+      const isInnateOrAtWill = ["innate", "atwill"].includes(prepMode);
+
+      if (!isNonSpellType && !hasItemUses && !isInnateOrAtWill) {
+        return null;
+      }
+
+      const curUses = Number(it.system?.uses?.value ?? 0);
+      const maxUses = Number(it.system?.uses?.max ?? 0);
+      const isPureItem = isNonSpellType || (hasItemUses && !["prepared", "always"].includes(prepMode));
+
+      return {
+        item: it,
+        itemId: it.id,
+        name: it.name,
+        type: it.type,
+        prepMode,
+        hasItemUses,
+        curUses,
+        maxUses,
+        isPureItem,
+        label: hasItemUses ? `${curUses}/${maxUses} charges` : (isInnateOrAtWill ? (prepMode === "atwill" ? "At-Will" : "Innate") : it.name)
+      };
+    }
+
     function getUpcastOptionsHtml(spell) {
       const baseLevel = Number(spell?.baseLevel) || 0;
+      const srcInfo = getSpellItemSourceInfo(spell);
+
       if (baseLevel === 0) {
         return `
         <div style="font-size: 0.82em; color: #555; padding: 4px 6px; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px solid #e0e0e0;">
@@ -3421,8 +3456,47 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
       }
 
+      let resourceSelectorHtml = "";
+      let slotDeductDisabled = false;
+      let slotDeductChecked = true;
+      let chargeDeductChecked = false;
+
+      if (srcInfo) {
+        if (srcInfo.isPureItem) {
+          // Pure item/feat without normal slot casting (e.g. Wand, Staff)
+          slotDeductDisabled = true;
+          slotDeductChecked = false;
+          chargeDeductChecked = srcInfo.hasItemUses;
+          resourceSelectorHtml = `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: #eef4ff; border-radius: 3px; border: 1px solid #c8d8f4; margin-bottom: 5px; font-size: 0.8em;">
+              <span style="font-weight: 700; color: #3b5998;"><i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i> Source: ${srcInfo.name}</span>
+              <span style="font-weight: 700; color: #4b5d88; font-family: monospace;">${srcInfo.label}</span>
+            </div>
+          `;
+        } else {
+          // Dual-cast spell (e.g. Magic Initiate, Fey Touched: 1 free feat use OR standard spell slots)
+          const featHasCharges = srcInfo.hasItemUses && srcInfo.curUses > 0;
+          chargeDeductChecked = featHasCharges;
+          slotDeductChecked = !featHasCharges;
+
+          resourceSelectorHtml = `
+            <div style="display: flex; gap: 4px; margin-bottom: 5px; border-bottom: 1px dashed #d2d7df; padding-bottom: 5px;">
+              <label style="flex: 1; display: flex; align-items: center; gap: 4px; font-size: 0.78em; font-weight: 700; color: #3b5998; cursor: pointer; background: #fff; padding: 2px 4px; border-radius: 3px; border: 1px solid #c8d8f4;">
+                <input type="radio" name="spellCastResourceMode" value="charge" ${featHasCharges ? 'checked' : ''} style="margin: 0;" />
+                Free/Feat (${srcInfo.curUses}/${srcInfo.maxUses})
+              </label>
+              <label style="flex: 1; display: flex; align-items: center; gap: 4px; font-size: 0.78em; font-weight: 700; color: #4b5d88; cursor: pointer; background: #fff; padding: 2px 4px; border-radius: 3px; border: 1px solid #d2d7df;">
+                <input type="radio" name="spellCastResourceMode" value="slot" ${!featHasCharges ? 'checked' : ''} style="margin: 0;" />
+                Spell Slot
+              </label>
+            </div>
+          `;
+        }
+      }
+
       let html = `
       <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 6px;">
+        ${resourceSelectorHtml}
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
           <span style="font-size: 0.8em; font-weight: bold; color: #4b5d88;">CAST AT LEVEL:</span>
           <select id="castLevelSelect" style="height: 26px; font-size: 0.85em; border-radius: 4px; border: 1px solid #7289da; padding: 0 4px;">
@@ -3434,10 +3508,18 @@ Click a numbered modifier badge to execute a roll.</div>
       html += `
           </select>
         </div>
-        <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.8em; cursor: pointer; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e0e0; margin-top: 4px;">
-          <span style="font-weight: 600; color: #4b5d88;">Deduct slot from sheet</span>
-          <input type="checkbox" id="deductSlotToggle" style="margin: 0;" />
-        </label>
+        <div style="display: flex; flex-direction: column; gap: 3px; margin-top: 4px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.8em; cursor: ${slotDeductDisabled ? 'not-allowed' : 'pointer'}; opacity: ${slotDeductDisabled ? '0.6' : '1'}; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed;" title="${slotDeductDisabled ? 'Spell is cast using item charges or feat uses rather than spell slots' : 'Deduct spell slot from sheet'}">
+            <span style="font-weight: 600; color: #4b5d88;">Deduct slot from sheet</span>
+            <input type="checkbox" id="deductSlotToggle" ${slotDeductChecked ? 'checked' : ''} ${slotDeductDisabled ? 'disabled' : ''} style="margin: 0;" />
+          </label>
+          ${srcInfo && srcInfo.hasItemUses ? `
+          <label id="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.8em; cursor: pointer; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed;" title="Deduct charge/use from item on character sheet">
+            <span style="font-weight: 600; color: #3b5998;">Deduct charge from ${srcInfo.name}</span>
+            <input type="checkbox" id="deductChargeToggle" data-item-id="${srcInfo.itemId}" ${chargeDeductChecked ? 'checked' : ''} style="margin: 0;" />
+          </label>
+          ` : ''}
+        </div>
       </div>
     `;
       return html;
@@ -5526,6 +5608,25 @@ Click a numbered modifier badge to execute a roll.</div>
             }
           }
 
+          // Handle Item / Feat charge deduction
+          const chargeToggle = html.find("#deductChargeToggle");
+          if (chargeToggle.length > 0 && chargeToggle.is(":checked")) {
+            const chargeItemId = chargeToggle.data("item-id") || rawConfig.itemId;
+            const chargeItem = chargeItemId ? actor.items.get(chargeItemId) : null;
+            if (chargeItem && Number(chargeItem.system?.uses?.max) > 0) {
+              const currentUses = Number(chargeItem.system.uses.value) || 0;
+              if (currentUses <= 0) {
+                const proceed = await Dialog.confirm({
+                  title: "No Charges Remaining",
+                  content: `<p><strong>${chargeItem.name}</strong> has <strong>0</strong> charges remaining on the character sheet. Cast anyway?</p>`
+                });
+                if (!proceed) return;
+              } else {
+                config.deductChargeItemId = chargeItemId;
+              }
+            }
+          }
+
           if (config.damageMode === "choice" && !["heal", "temp_hp", "max_hp"].includes(config.resolutionMethod)) {
             const choiceOptions = [
               "acid", "cold", "fire", "force", "lightning",
@@ -5673,6 +5774,22 @@ Click a numbered modifier badge to execute a roll.</div>
             localStorage.setItem(SPELL_SLOT_MODE_STORAGE_KEY, mode);
           } catch (_err) {}
           html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+        });
+
+        // Dual-cast Spell Resource Mode Radio Switcher (Charge vs Slot)
+        html.on("change", "input[name='spellCastResourceMode']", function () {
+          const mode = $(this).val();
+          const slotToggle = html.find("#deductSlotToggle");
+          const chargeToggle = html.find("#deductChargeToggle");
+          if (mode === "charge") {
+            slotToggle.prop("checked", false).prop("disabled", true);
+            slotToggle.closest("label").css({ opacity: "0.6", cursor: "not-allowed" });
+            chargeToggle.prop("checked", true);
+          } else {
+            slotToggle.prop("disabled", false).prop("checked", true);
+            slotToggle.closest("label").css({ opacity: "1", cursor: "pointer" });
+            chargeToggle.prop("checked", false);
+          }
         });
 
         // Send Spell Description to Chat Handler
@@ -5966,8 +6083,22 @@ Click a numbered modifier badge to execute a roll.</div>
           const castLvl = Number(rawConfig.baseLevel) || 0;
           const { cfg: config } = getEffectiveSpellConfig(rawConfig, castLvl);
 
+          const srcInfo = getSpellItemSourceInfo(rawConfig);
           if (castLvl === 0) {
             config.skipSlotDeduction = true;
+          } else if (srcInfo && srcInfo.isPureItem) {
+            config.skipSlotDeduction = true;
+            if (srcInfo.hasItemUses) {
+              if (srcInfo.curUses <= 0) {
+                const proceed = await Dialog.confirm({
+                  title: "No Charges Remaining",
+                  content: `<p><strong>${srcInfo.name}</strong> has <strong>0</strong> charges remaining. Cast anyway?</p>`
+                });
+                if (!proceed) return;
+              } else {
+                config.deductChargeItemId = srcInfo.itemId;
+              }
+            }
           } else {
             const slotKey = `spell${castLvl}`;
             const currentSlotVal = Number(actor.system.spells?.[slotKey]?.value) || 0;

@@ -883,12 +883,24 @@ function registerSocketHandlers() {
       duration = "Instantaneous", concentration = false,
       addAbilityModToValue = false,
       castLevel = 0, skipSlotDeduction = false,
+      deductChargeItemId,
       extraAttackModifier, extraDamageModifier
     } = config;
 
     let slotTag = "";
     const slotLvl = Number(castLevel) || 0;
-    if (slotLvl > 0) {
+
+    // Handle charge/use deduction for items/feats
+    if (deductChargeItemId) {
+      const chargeItem = actor.items?.get(deductChargeItemId);
+      if (chargeItem && Number(chargeItem.system?.uses?.max) > 0) {
+        const curUses = Number(chargeItem.system.uses.value) || 0;
+        const maxUses = Number(chargeItem.system.uses.max) || 0;
+        const newUses = Math.max(0, curUses - 1);
+        await chargeItem.update({ "system.uses.value": newUses });
+        slotTag = `${chargeItem.name}: (${newUses}/${maxUses} charges left)`;
+      }
+    } else if (slotLvl > 0) {
       const slotKey = `system.spells.spell${slotLvl}.value`;
       const currentSlots = Number(actor.system.spells?.[`spell${slotLvl}`]?.value) || 0;
       const maxSlots = Number(actor.system.spells?.[`spell${slotLvl}`]?.max) || 0;
