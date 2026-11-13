@@ -1,4 +1,5 @@
 import { MODULE_ID, SETTINGS } from "../src/constants.js";
+import { getButtonInfo, runHudButtonSlot } from "./token-hud.js";
 
 // Helper: Resolve Module Socket
 export function getSocket() {
@@ -182,6 +183,443 @@ export async function ensureStandardAttacks(actor, attacks = null) {
   return currentAttacks;
 }
 
+/**
+ * Builds a default spell config object by parsing a Foundry dnd5e spell item.
+ * @param {object} item - The Foundry spell item document
+ * @param {object} actor - The owning actor
+ * @returns {object} The configured spell object
+ */
+export function buildSpellConfigFromItem(item, actor) {
+  if (!item || item.type !== "spell") return null;
+
+  const sys = item.system || {};
+  const sheetSpellAbil = sys.ability || actor.system?.attributes?.spellcasting || "int";
+
+  const act = sys.activation;
+  const castStr = act?.cost ? `${act.cost} ${act.type || 'Action'}` : "1 Action";
+
+  const rng = sys.range;
+  const rangeStr = rng?.value ? `${rng.value} ${rng.units || 'ft'}` : (rng?.units || "Touch");
+
+  const dur = sys.duration;
+  const durStr = dur?.value ? `${dur.value} ${dur.units || ''}` : (dur?.units || "Instantaneous");
+
+  const isConc = Boolean(sys.properties?.has?.("concentration") || sys.components?.concentration);
+
+  const comps = sys.properties || sys.components || {};
+  const hasV = Boolean(comps.has ? comps.has("vocal") : comps.vocal);
+  const hasS = Boolean(comps.has ? comps.has("somatic") : comps.somatic);
+  const hasM = Boolean(comps.has ? comps.has("material") : comps.material);
+  const isCostly = Boolean(sys.materials?.cost || sys.materials?.consumed);
+  const matDesc = sys.materials?.value || "";
+
+  let targetType = "creature";
+  let areaShape = "cone";
+  let areaSize = "";
+  const targetUnits = sys.target?.units;
+  const tType = sys.target?.type;
+  if (["cone", "cube", "line", "sphere", "cylinder", "radius"].includes(tType) || ["cone", "cube", "line", "sphere"].includes(targetUnits)) {
+    targetType = "area";
+    areaShape = (tType === "cylinder" || tType === "radius") ? "sphere" : (tType || "cone");
+    areaSize = sys.target?.value ? `${sys.target.value} ft` : "";
+  } else if (tType === "self" || rangeStr.toLowerCase() === "self") {
+    targetType = "self";
+  }
+
+  const rawDesc = sys.description?.value || "";
+  const cleanSummary = rawDesc.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+
+  let resolutionMethod = "attack";
+  let saveAbility = "dex";
+  let saveSuccess = "half";
+  let damageDiceCount = 0;
+  let damageDieSize = "d6";
+  let damageType = "fire";
+
+  // Check modern dnd5e Activities (v3 / v4) or item attack flags
+  const isAttackItem = Boolean(
+    item.hasAttack ||
+    ["msak", "rsak", "mwak", "rwak"].includes(sys.actionType)
+  );
+
+  if (sys.activities && (sys.activities.size > 0 || (typeof sys.activities.values === "function" && Array.from(sys.activities.values()).length > 0))) {
+    const activities = Array.from(sys.activities.values());
+    const saveAct = activities.find(a => a.type === "save" || a.save);
+    const healAct = activities.find(a => a.type === "heal" || a.healing);
+    const attackAct = activities.find(a => a.type === "attack" || a.attack);
+    const damageAct = activities.find(a => a.type === "damage" || (a.damage?.parts && a.damage.parts.length > 0));
+
+    if (saveAct) {
+      resolutionMethod = "save";
+      let rawSaveAbil = saveAct.save?.ability;
+      if (rawSaveAbil instanceof Set) {
+        rawSaveAbil = Array.from(rawSaveAbil)[0];
+      } else if (Array.isArray(rawSaveAbil)) {
+        rawSaveAbil = rawSaveAbil[0];
+      } else if (typeof rawSaveAbil === "object" && rawSaveAbil?.first) {
+        rawSaveAbil = rawSaveAbil.first();
+      }
+      saveAbility = typeof rawSaveAbil === "string" && rawSaveAbil ? rawSaveAbil : "dex";
+      saveSuccess = saveAct.save?.scaling === "half" ? "half" : "none";
+    } else if (healAct) {
+      resolutionMethod = "heal";
+    } else if (attackAct || isAttackItem) {
+      resolutionMethod = "attack";
+    } else if (damageAct) {
+      resolutionMethod = "other";
+    } else {
+      resolutionMethod = "other";
+    }
+
+    // Parse damage / healing from activities
+    const primaryDmgAct = damageAct || saveAct || attackAct || healAct;
+    const parts = primaryDmgAct?.damage?.parts || primaryDmgAct?.healing?.parts || [];
+    if (parts.length > 0) {
+      const firstPart = parts[0];
+      if (typeof firstPart === "object" && (firstPart.number || firstPart.denomination || firstPart.formula)) {
+        damageDiceCount = Number(firstPart.number) || 1;
+        damageDieSize = firstPart.denomination ? `d${firstPart.denomination}` : "d6";
+        if (firstPart.types && firstPart.types.size > 0) {
+          damageType = Array.from(firstPart.types)[0].toLowerCase();
+        } else if (firstPart.types?.[0]) {
+          damageType = String(firstPart.types[0]).toLowerCase();
+        } else if (primaryDmgAct === healAct) {
+          damageType = "healing";
+        }
+      } else if (Array.isArray(firstPart)) {
+        const formula = firstPart[0] || "";
+        damageType = (firstPart[1] || (primaryDmgAct === healAct ? "healing" : "fire")).toLowerCase();
+        const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
+        if (diceMatch) {
+          damageDiceCount = parseInt(diceMatch[1]) || 1;
+          damageDieSize = `d${diceMatch[2]}`;
+        }
+      }
+    }
+  } else {
+    // Legacy actionType / damage.parts fallback
+    const actionType = sys.actionType;
+    if (actionType === "save") {
+      resolutionMethod = "save";
+      saveAbility = sys.save?.ability || "dex";
+      saveSuccess = sys.save?.scaling === "half" ? "half" : "none";
+    } else if (actionType === "heal") {
+      resolutionMethod = "heal";
+      damageType = "healing";
+    } else if (actionType === "rsak" || actionType === "msak" || item.hasAttack) {
+      resolutionMethod = "attack";
+    } else if (actionType === "util" || !actionType) {
+      resolutionMethod = "other";
+    }
+
+    const parts = sys.damage?.parts || [];
+    if (parts.length > 0) {
+      const firstPart = parts[0];
+      const formula = firstPart[0] || "";
+      damageType = (firstPart[1] || (actionType === "heal" ? "healing" : "fire")).toLowerCase();
+      const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
+      if (diceMatch) {
+        damageDiceCount = parseInt(diceMatch[1]) || 1;
+        damageDieSize = `d${diceMatch[2]}`;
+      }
+    }
+  }
+
+  const isCantrip = Number(sys.level ?? 0) === 0;
+  const isCantripScale = isCantrip && sys.scaling?.mode === "cantrip";
+
+  let upcastDiceFormula = "";
+  if (!isCantrip && sys.scaling?.formula) {
+    upcastDiceFormula = sys.scaling.formula;
+  }
+
+  return {
+    itemId: item.id,
+    spellName: item.name,
+    spellAbility: sheetSpellAbil,
+    baseLevel: Number(sys.level ?? 0),
+    resolutionMethod,
+    saveAbility,
+    saveSuccess,
+    isMultiAttack: false,
+    attackCount: 1,
+    upcastAttacks: 0,
+    cantripAttackScaling: false,
+    projectileCount: 3,
+    upcastProjectiles: 1,
+    addAbilityModToValue: false,
+    castingTime: castStr,
+    range: rangeStr,
+    duration: durStr,
+    concentration: isConc,
+    targetType,
+    areaShape,
+    areaSize,
+    description: rawDesc,
+    summary: cleanSummary,
+    damageDiceCount,
+    damageDieSize,
+    extraDiceFormula: "",
+    upcastDiceFormula,
+    damageMode: "static",
+    damageType,
+    flatDamageBonus: 0,
+    explodeCondition: "",
+    chaosJump: false,
+    CRIT_THRESHOLD: 20,
+    attackModifier: 0,
+    isCantripScale,
+    superAdv: false,
+    components: {
+      v: hasV,
+      s: hasS,
+      m: hasM,
+      costly: isCostly,
+      description: matDesc
+    }
+  };
+}
+
+/**
+ * Evaluates whether a spell item is actively prepared, always available,
+ * or castable as an unprepared ritual (e.g. Wizards / Ritual Casters in 2024 rules).
+ * @param {object} item - The Foundry spell item document
+ * @param {object} actor - The owning actor
+ * @returns {boolean} True if the spell should be available in Dice Stuff
+ */
+export function isSpellPrepared(item, actor) {
+  if (!item || item.type !== "spell") return false;
+
+  const sys = item.system || {};
+  const lvl = Number(sys.level ?? 0);
+
+  // 1. Cantrips (Level 0) are always prepared
+  if (lvl === 0) return true;
+
+  const prep = sys.preparation || {};
+  const mode = prep.mode || "prepared";
+
+  // 2. Modes always castable without daily preparation: always, innate, atwill, pact
+  if (["always", "innate", "atwill", "pact"].includes(mode)) return true;
+
+  // 3. Actively prepared on the character sheet
+  if (Boolean(prep.prepared)) return true;
+
+  // 4. Wizard Ritual Exception (2024 Rules / Ritual Caster / Book of Ancient Secrets):
+  // Wizards can ritual cast any ritual spell from their spellbook even if unprepared.
+  const isRitual = Boolean(
+    sys.properties?.has?.("ritual") ||
+    sys.properties?.has?.("rit") ||
+    sys.properties?.rit ||
+    sys.components?.ritual
+  );
+
+  if (isRitual && actor) {
+    const isWizard = Boolean(
+      actor.classes?.wizard ||
+      actor.itemTypes?.class?.some(c => (c.name || "").toLowerCase().includes("wizard"))
+    );
+    const hasRitualFeat = Boolean(
+      actor.itemTypes?.feat?.some(f => {
+        const n = (f.name || "").toLowerCase();
+        return n.includes("ritual caster") || n.includes("book of ancient secrets");
+      })
+    );
+
+    if (isWizard || hasRitualFeat) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Synchronizes actor's configured spells with the spell items on their sheet.
+ * Only syncs prepared spells, always-available spells, cantrips, or wizard rituals.
+ * Prompts user with a confirmation dialog when differences are detected.
+ * @param {object} actor - The Foundry actor
+ * @param {object} options
+ * @param {boolean} [options.promptUser=true] - Whether to show confirmation dialog
+ * @returns {Promise<boolean>} True if changes were applied
+ */
+export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
+  if (!actor) return false;
+
+  const currentSpells = foundry.utils.deepClone(
+    getProfileData(actor, "spellConfigs") ||
+    actor.getFlag?.("world", "spellConfigs") || {}
+  );
+
+  // Filter to spells that are prepared or always available for this actor
+  const sheetSpells = (actor.itemTypes?.spell || [])
+    .filter(sp => isSpellPrepared(sp, actor))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const sheetSpellNames = new Set(sheetSpells.map(s => s.name));
+  const sheetSpellIds = new Set(sheetSpells.map(s => s.id));
+
+  // Determine spells to add or update
+  const toAdd = [];
+  const toUpdate = [];
+
+  for (const spItem of sheetSpells) {
+    const existingKey = Object.keys(currentSpells).find(k => k === spItem.name || currentSpells[k]?.itemId === spItem.id);
+    if (!existingKey) {
+      toAdd.push(spItem);
+    } else {
+      toUpdate.push({ item: spItem, key: existingKey });
+    }
+  }
+
+  // Determine spells to remove (in spellConfigs, originated from sheet, but no longer on sheet)
+  const toRemove = [];
+  for (const [key, cfg] of Object.entries(currentSpells)) {
+    // Only auto-prune if config was linked to a sheet item or matched a sheet spell name
+    if (cfg?.itemId && !sheetSpellIds.has(cfg.itemId) && !sheetSpellNames.has(key)) {
+      toRemove.push(key);
+    }
+  }
+
+  if (toAdd.length === 0 && toRemove.length === 0) {
+    // Refresh definitions for all existing sheet spells without altering custom favorites/HUD slots
+    let updatedAny = false;
+    for (const { item: spItem, key } of toUpdate) {
+      const freshCfg = buildSpellConfigFromItem(spItem, actor);
+      if (freshCfg) {
+        // Preserve user state (favorites, custom assignments)
+        freshCfg.isFavorite = currentSpells[key]?.isFavorite ?? false;
+        currentSpells[key] = freshCfg;
+        updatedAny = true;
+      }
+    }
+
+    if (updatedAny) {
+      await setProfileData(actor, "spellConfigs", currentSpells);
+      if (game.user.isGM) {
+        await actor.setFlag("world", "spellConfigs", currentSpells, { recursive: false });
+      }
+    }
+    return updatedAny;
+  }
+
+  if (promptUser) {
+    const addListHtml = toAdd.length > 0
+      ? `<div style="margin-bottom: 8px;">
+          <div style="font-weight: bold; font-size: 0.85em; color: #2e7d32; margin-bottom: 4px;">
+            <i class="fas fa-plus-circle"></i> Spells to Add (${toAdd.length}):
+          </div>
+          <ul style="margin: 0; padding-left: 18px; font-size: 0.82em; color: #333;">
+            ${toAdd.map(s => `<li><strong>${s.name}</strong> <span style="color: #666;">(Level ${s.system.level ?? 0})</span></li>`).join("")}
+          </ul>
+        </div>`
+      : "";
+
+    const removeListHtml = toRemove.length > 0
+      ? `<div style="margin-bottom: 8px;">
+          <div style="font-weight: bold; font-size: 0.85em; color: #c62828; margin-bottom: 4px;">
+            <i class="fas fa-minus-circle"></i> Spells to Remove (${toRemove.length}):
+          </div>
+          <ul style="margin: 0; padding-left: 18px; font-size: 0.82em; color: #333;">
+            ${toRemove.map(name => `<li><strong>${name}</strong> <span style="color: #888;">(no longer on sheet)</span></li>`).join("")}
+          </ul>
+          <div style="font-size: 0.72em; color: #888; font-style: italic; margin-top: 2px;">
+            Note: Removing these will also unassign them from any HUD slots.
+          </div>
+        </div>`
+      : "";
+
+    const content = `
+      <div style="padding: 6px; font-family: inherit;">
+        <p style="margin: 0 0 8px 0; font-size: 0.88em; color: #333;">
+          Differences were detected between the character sheet and Dice Stuff spell configurations:
+        </p>
+        ${addListHtml}
+        ${removeListHtml}
+        <p style="margin: 8px 0 0 0; font-size: 0.85em; font-weight: bold; color: #4b5d88;">
+          Apply these changes now?
+        </p>
+      </div>
+    `;
+
+    const confirmed = await new Promise(resolve => {
+      new Dialog({
+        title: `Sync Spells: ${actor.name}`,
+        content,
+        buttons: {
+          confirm: {
+            icon: '<i class="fas fa-sync-alt"></i>',
+            label: "Sync Changes",
+            callback: () => resolve(true)
+          },
+          cancel: {
+            icon: '<i class="fas fa-times"></i>',
+            label: "Cancel",
+            callback: () => resolve(false)
+          }
+        },
+        default: "confirm",
+        close: () => resolve(false)
+      }, { width: 380 }).render(true);
+    });
+
+    if (!confirmed) return false;
+  }
+
+  // Apply additions
+  for (const spItem of toAdd) {
+    const cfg = buildSpellConfigFromItem(spItem, actor);
+    if (cfg) {
+      currentSpells[spItem.name] = cfg;
+    }
+  }
+
+  // Also refresh definitions for existing spells while preserving favorite status
+  for (const { item: spItem, key } of toUpdate) {
+    const freshCfg = buildSpellConfigFromItem(spItem, actor);
+    if (freshCfg) {
+      freshCfg.isFavorite = currentSpells[key]?.isFavorite ?? false;
+      currentSpells[key] = freshCfg;
+    }
+  }
+
+  // Apply removals
+  let assignedSlots = foundry.utils.deepClone(
+    getProfileData(actor, "hudAssignedSlots") ||
+    actor.getFlag?.("world", "hudAssignedSlots") || {}
+  );
+  let hudModified = false;
+
+  for (const remKey of toRemove) {
+    delete currentSpells[remKey];
+    for (const [slotNum, slotData] of Object.entries(assignedSlots)) {
+      if (slotData?.category === "spells" && slotData?.name === remKey) {
+        delete assignedSlots[slotNum];
+        hudModified = true;
+      }
+    }
+  }
+
+  // Save updated spell configs
+  await setProfileData(actor, "spellConfigs", currentSpells);
+  if (game.user.isGM) {
+    await actor.setFlag("world", "spellConfigs", currentSpells, { recursive: false });
+  }
+
+  if (hudModified) {
+    await setProfileData(actor, "hudAssignedSlots", assignedSlots);
+    if (game.user.isGM) {
+      await actor.setFlag("world", "hudAssignedSlots", assignedSlots, { recursive: false });
+    }
+    canvas.tokens?.controlled?.forEach(t => t.hud?.render());
+  }
+
+  const changeMsg = [];
+  if (toAdd.length > 0) changeMsg.push(`added ${toAdd.length} spell${toAdd.length === 1 ? '' : 's'}`);
+  if (toRemove.length > 0) changeMsg.push(`removed ${toRemove.length} spell${toRemove.length === 1 ? '' : 's'}`);
+  ui.notifications.info(`Spells synced with character sheet: ${changeMsg.join(", ")}.`);
+
+  return true;
+}
+
 export function initCustomRolls() {
   if (!game.settings.get(MODULE_ID, SETTINGS.FEATURES.CUSTOM_ROLLS)) return;
 
@@ -189,12 +627,16 @@ export function initCustomRolls() {
   window.CustomRolls.getProfileData = getProfileData;
   window.CustomRolls.setProfileData = setProfileData;
   window.CustomRolls.ensureStandardAttacks = ensureStandardAttacks;
+  window.CustomRolls.syncSpellsWithSheet = syncSpellsWithSheet;
+  window.CustomRolls.buildSpellConfigFromItem = buildSpellConfigFromItem;
 
   const mod = game.modules.get(MODULE_ID);
   if (mod?.api) {
     mod.api.getProfileData = getProfileData;
     mod.api.setProfileData = setProfileData;
     mod.api.ensureStandardAttacks = ensureStandardAttacks;
+    mod.api.syncSpellsWithSheet = syncSpellsWithSheet;
+    mod.api.buildSpellConfigFromItem = buildSpellConfigFromItem;
   }
 
   // Hook into D&D 5e rest completion to auto-recharge tracking stuff
@@ -204,6 +646,54 @@ export function initCustomRolls() {
     if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
       await window.CustomRolls.rechargeActorTrackers(actor, restType);
     }
+  });
+
+  // Support interactive click buttons on Spell Save DC cards (works across v12/v13/v14)
+  const hookName = (foundry.utils.isNewerVersion?.(game.version, "13") || Number(game.release?.generation ?? 12) >= 13)
+    ? "renderChatMessageHTML"
+    : "renderChatMessage";
+
+  Hooks.on(hookName, (message, html) => {
+    const root = html instanceof HTMLElement ? html : html[0];
+    if (!root) return;
+
+    root.querySelectorAll(".cheapdice-dc-save-btn").forEach((btn) => {
+      if (btn.dataset.cheapdiceBound) return;
+      btn.dataset.cheapdiceBound = "true";
+
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const abil = btn.dataset.ability;
+        if (!abil) return;
+
+        // Determine rolling actor: controlled token -> targeted token -> user's assigned character
+        const controlledToken = canvas?.tokens?.controlled?.[0];
+        const assignedActor = controlledToken?.actor || game.user?.character || null;
+
+        if (!assignedActor) {
+          return ui.notifications.warn("Please select your token to roll a saving throw.");
+        }
+
+        if (typeof assignedActor.rollSavingThrow === "function") {
+          return assignedActor.rollSavingThrow({ ability: abil });
+        }
+        if (typeof assignedActor.rollAbilitySave === "function") {
+          return assignedActor.rollAbilitySave(abil);
+        }
+
+        // Fallback to socket handler if standard sheet roll is unavailable
+        if (globalThis.attackSocket) {
+          await globalThis.attackSocket.executeAsGM("runD20TestRoll", {
+            rollType: "save",
+            key: `save_${abil}`,
+            isReliableTalent: false,
+            isHalflingLuck: false,
+            otherModString: ""
+          }, assignedActor.id, game.user.id);
+        }
+      });
+    });
   });
 
   // --- 3.1 D20 Test Client-Side Dialog Launcher ---
@@ -783,9 +1273,9 @@ export function initCustomRolls() {
 
     const renderSidebarAbilityCol = (keys) => {
       const header = `
-        <div style="display: flex; justify-content: flex-end; gap: 2px; padding-right: 1px; margin-bottom: 2px; font-size: 0.6em; font-weight: 700; color: #777;">
-          <span style="width: 24px; text-align: center;">Mod</span>
-          <span style="width: 24px; text-align: center;">Save</span>
+        <div style="display: flex; justify-content: flex-end; gap: 2px; padding-right: 1px; margin-bottom: 2px; font-size: 0.72em; font-weight: 700; color: #777;">
+          <span style="width: 26px; text-align: center;">Mod</span>
+          <span style="width: 26px; text-align: center;">Save</span>
         </div>
       `;
       const rows = keys.map(key => {
@@ -799,14 +1289,14 @@ export function initCustomRolls() {
         const name = ABILITIES[key];
         return `
           <div class="ability-card" data-key="${key}" data-type="check" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 3px; background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 3px; margin-bottom: 2px; cursor: pointer;">
-            <span style="font-size: 0.72em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; white-space: nowrap;">
+            <span style="font-size: 0.85em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; white-space: nowrap;">
               ${profMarker}${key.toUpperCase()}&nbsp;<span style="color: #666; font-weight: 600;">${score}</span>
             </span>
             <div style="display: flex; gap: 2px; align-items: center;">
-              <button type="button" class="roll-btn-v2" data-type="check" data-key="${key}" title="Roll ${name} Check" style="width: 24px; height: 18px; font-weight: 700; font-size: 0.7em; padding: 0; border-radius: 2px; border: 1px solid #c0c6ce; background: #fff; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              <button type="button" class="roll-btn-v2" data-type="check" data-key="${key}" title="Roll ${name} Check" style="width: 26px; height: 19px; font-weight: 700; font-size: 0.78em; padding: 0; border-radius: 2px; border: 1px solid #c0c6ce; background: #fff; cursor: pointer; color: #2b3a4a; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${formatSign(mod)}
               </button>
-              <button type="button" class="roll-btn-v2" data-type="save" data-key="${key}" title="Roll ${name} Save" style="width: 24px; height: 18px; font-weight: 700; font-size: 0.7em; padding: 0; border-radius: 2px; border: 1px solid ${isProf ? '#2b7489' : '#c0c6ce'}; background: ${isProf ? '#f0f8fa' : '#fff'}; cursor: pointer; color: ${isProf ? '#2b7489' : '#2b3a4a'}; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              <button type="button" class="roll-btn-v2" data-type="save" data-key="${key}" title="Roll ${name} Save" style="width: 26px; height: 19px; font-weight: 700; font-size: 0.78em; padding: 0; border-radius: 2px; border: 1px solid ${isProf ? '#2b7489' : '#c0c6ce'}; background: ${isProf ? '#f0f8fa' : '#fff'}; cursor: pointer; color: ${isProf ? '#2b7489' : '#2b3a4a'}; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${formatSign(saveMod)}
               </button>
             </div>
@@ -852,10 +1342,10 @@ export function initCustomRolls() {
 
       return `
       <div class="sheet-entry-row" data-key="${key}" data-type="skill" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
-        <span class="entry-label" style="font-size: 0.76em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-          ${profMarker}${s.label} <small style="color: #888; margin-left: 2px;">(${s.ability.toUpperCase()})</small>
+        <span class="entry-label" style="font-size: 1.05em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          ${profMarker}${s.label} <small style="color: #888; margin-left: 2px; font-size: 0.8em;">(${s.ability.toUpperCase()})</small>
         </span>
-        <button type="button" class="roll-btn-v2" data-type="skill" data-key="${key}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+        <button type="button" class="roll-btn-v2" data-type="skill" data-key="${key}" style="width: 34px; height: 20px; font-size: 0.82em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
           ${formatSign(mod)}
         </button>
       </div>
@@ -880,11 +1370,11 @@ export function initCustomRolls() {
         if (cat === "tool") {
           const toolRowHtml = `
           <div class="sheet-entry-row" data-key="${k}" data-type="tool" data-custom="true" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer; background: #fdfaf3;">
-            <span class="entry-label" style="font-size: 0.76em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
+            <span class="entry-label" style="font-size: 1.05em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
               ${profMarker}
-              ${displayName} <small style="color: #888; margin-left: 2px;">(${abil.toUpperCase()})</small>
+              ${displayName} <small style="color: #888; margin-left: 2px; font-size: 0.8em;">(${abil.toUpperCase()})</small>
             </span>
-            <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" title="Roll ${displayName}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+            <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" title="Roll ${displayName}" style="width: 34px; height: 20px; font-size: 0.82em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
               ${formatSign(totalBonus)}
             </button>
           </div>
@@ -897,11 +1387,11 @@ export function initCustomRolls() {
         } else {
           customSkillsList.push(`
           <div class="sheet-entry-row" data-key="${k}" data-type="${cat}" data-custom="true" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer; background: #fdfaf3;">
-            <span class="entry-label" style="font-size: 0.76em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
+            <span class="entry-label" style="font-size: 1.05em; color: #6d5b1f; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${displayName} (${abil.toUpperCase()})">
               ${profMarker}
-              ${displayName} <small style="color: #888; margin-left: 2px;">(${abil.toUpperCase()})</small>
+              ${displayName} <small style="color: #888; margin-left: 2px; font-size: 0.8em;">(${abil.toUpperCase()})</small>
             </span>
-            <button type="button" class="roll-btn-v2" data-type="${cat}" data-key="${k}" title="Roll ${displayName}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+            <button type="button" class="roll-btn-v2" data-type="${cat}" data-key="${k}" title="Roll ${displayName}" style="width: 34px; height: 20px; font-size: 0.82em; font-weight: 700; padding: 0; border: 1px solid #d5c898; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
               ${formatSign(totalBonus)}
             </button>
           </div>
@@ -924,10 +1414,10 @@ export function initCustomRolls() {
         const profMarker = getProfMarker(isProf === 2 ? 2 : (isProf === 0.5 ? 0.5 : 1));
         proficientToolsHtml.push(`
         <div class="sheet-entry-row" data-key="${k}" data-type="tool" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 2px; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
-          <span class="entry-label" style="font-size: 0.76em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            ${profMarker}${t.name} <small style="color: #888; margin-left: 2px;">(${t.ability.toUpperCase()})</small>
+          <span class="entry-label" style="font-size: 1.05em; color: #2b3a4a; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            ${profMarker}${t.name} <small style="color: #888; margin-left: 2px; font-size: 0.8em;">(${t.ability.toUpperCase()})</small>
           </span>
-          <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" style="width: 30px; height: 18px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
+          <button type="button" class="roll-btn-v2" data-type="tool" data-key="${k}" style="width: 34px; height: 20px; font-size: 0.82em; font-weight: 700; padding: 0; border: 1px solid #c0c6ce; background: #fff; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0; margin-left: 4px;">
             ${formatSign(bonus)}
           </button>
         </div>
@@ -939,37 +1429,45 @@ export function initCustomRolls() {
 
     const skillsToolsHtml = `
       <!-- Skills Section Card -->
-      <div style="flex: 1; min-height: 140px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
-          Skills
+      <div id="skills-card-v2" style="flex: 1; min-height: 32px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: flex 0.2s ease;">
+        <div style="font-weight: 700; font-size: 0.85em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
+          <span>Skills</span>
+          <button type="button" id="skills-collapse-toggle-v2" title="Toggle Skills" style="background: none; border: none; cursor: pointer; color: #64748b; padding: 0 4px; font-size: 0.85em; line-height: 1; display: inline-flex; align-items: center; justify-content: center;">
+            <i class="fas fa-chevron-up"></i>
+          </button>
         </div>
-        <div style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; flex: 1; min-height: 0; overflow-y: auto;">
+        <div id="skills-content-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 1px 3px; flex: 1; min-height: 0; overflow-y: auto;">
           ${standardSkillsHtml}
           ${customSkillsList.join('')}
         </div>
       </div>
 
-      <!-- Tools Section Card (Expands up to 50% max, shrinks if fewer tools) -->
-      <div style="max-height: 50%; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-        <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0;">
-          Tools
+      <!-- Tools Section Card (Expands up to 50% max by default, full if skills collapsed, shrinks if fewer tools) -->
+      <div id="tools-card-v2" style="max-height: 50%; min-height: 32px; display: flex; flex-direction: column; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; transition: max-height 0.2s ease, flex 0.2s ease;">
+        <div style="font-weight: 700; font-size: 0.85em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
+          <span>Tools</span>
+          <button type="button" id="tools-collapse-toggle-v2" title="Toggle Tools" style="background: none; border: none; cursor: pointer; color: #64748b; padding: 0 4px; font-size: 0.85em; line-height: 1; display: inline-flex; align-items: center; justify-content: center;">
+            <i class="fas fa-chevron-down"></i>
+          </button>
         </div>
-        <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; max-height: 120px; overflow-y: auto;">
-          ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
-      ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
-      : '<span style="font-size: 0.72em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
-        </div>
+        <div id="tools-content-v2" style="display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden;">
+          <div id="tools-list-container-v2" style="background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 2px 3px; margin-bottom: 4px; flex: 1; min-height: 0; max-height: 100%; overflow-y: auto;">
+            ${(proficientToolsHtml.length > 0 || customProfToolsHtml.length > 0 || customOtherToolsHtml.length > 0)
+        ? `${proficientToolsHtml.join('')}${customProfToolsHtml.join('')}${customOtherToolsHtml.join('')}`
+        : '<span style="font-size: 0.85em; color: #999; padding: 2px; display: block;">No proficient or custom tools.</span>'}
+          </div>
 
-        <div id="other-tools-container-v2" style="flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.64em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
-          <div style="display: flex; flex-direction: column; gap: 3px;">
-            <select id="other-tools-select-v2" style="width: 100%; height: 22px; font-size: 0.74em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 2px; box-sizing: border-box; background: #fff;">
-              <option value="">-- Choose Tool --</option>
-              ${nonProficientToolsHtml.join('')}
-            </select>
-            <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 20px; font-size: 0.72em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-              Roll Selected Tool
-            </button>
+          <div id="other-tools-container-v2" style="flex-shrink: 0;">
+            <div style="font-weight: 700; font-size: 0.72em; color: #777; margin-bottom: 2px;">OTHER TOOLS</div>
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+              <select id="other-tools-select-v2" style="width: 100%; height: 28px; font-size: 1.05em; border-radius: 3px; border: 1px solid #c0c6ce; padding: 0 4px; box-sizing: border-box; background: #fff;">
+                <option value="">-- Choose Tool --</option>
+                ${nonProficientToolsHtml.join('')}
+              </select>
+              <button type="button" id="roll-other-tool-btn-v2" style="width: 100%; height: 22px; font-size: 0.85em; font-weight: 700; cursor: pointer; border-radius: 3px; border: 1px solid #c0c6ce; background: #fff; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+                Roll Selected Tool
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1129,6 +1627,60 @@ Click a numbered modifier badge to execute a roll.</div>
             presetSection.hide();
             presetList.empty();
           }
+        });
+
+        // Toggle collapse/expand for Skills and Tools lists
+        let skillsCollapsed = false;
+        let toolsCollapsed = false;
+
+        const updateColumnLayout = () => {
+          const skillsCard = html.find('#skills-card-v2');
+          const skillsContent = html.find('#skills-content-v2');
+          const skillsBtn = html.find('#skills-collapse-toggle-v2 i');
+
+          const toolsCard = html.find('#tools-card-v2');
+          const toolsContent = html.find('#tools-content-v2');
+          const toolsBtn = html.find('#tools-collapse-toggle-v2 i');
+
+          if (skillsCollapsed) {
+            skillsContent.css("display", "none");
+            skillsCard.css({ flex: '0 0 auto', minHeight: 'auto' });
+            skillsBtn.removeClass('fa-chevron-up').addClass('fa-chevron-down');
+          } else {
+            skillsContent.css("display", "block");
+            skillsCard.css({ flex: '1 1 auto', minHeight: '32px' });
+            skillsBtn.removeClass('fa-chevron-down').addClass('fa-chevron-up');
+          }
+
+          if (toolsCollapsed) {
+            toolsContent.css("display", "none");
+            toolsCard.css({ flex: '0 0 auto', maxHeight: 'none', minHeight: 'auto', marginTop: 'auto' });
+            toolsBtn.removeClass('fa-chevron-down').addClass('fa-chevron-up');
+          } else {
+            toolsContent.css("display", "flex");
+            toolsBtn.removeClass('fa-chevron-up').addClass('fa-chevron-down');
+            if (skillsCollapsed) {
+              // Tools expands to take all remaining space
+              toolsCard.css({ flex: '1 1 auto', maxHeight: 'none', minHeight: '32px', marginTop: '0' });
+            } else {
+              // Both expanded: Tools capped at 50%
+              toolsCard.css({ flex: '0 0 auto', maxHeight: '50%', minHeight: '32px', marginTop: '0' });
+            }
+          }
+        };
+
+        html.find('#skills-collapse-toggle-v2').on('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          skillsCollapsed = !skillsCollapsed;
+          updateColumnLayout();
+        });
+
+        html.find('#tools-collapse-toggle-v2').on('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          toolsCollapsed = !toolsCollapsed;
+          updateColumnLayout();
         });
 
         const executeRoll = async (rollType, key) => {
@@ -2055,7 +2607,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
     function renderChips() {
       if (!trackers || trackers.length === 0) {
-        return `<span style="font-size: 0.72em; color: #888; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong>Manage</strong> to track abilities, charges, or pools.</span>`;
+        return `<span style="font-size: 0.72em; color: #4b5d88; font-style: italic; padding: 4px 2px;">No active trackers. Click <strong style="color: #4b5d88 !important;">Manage</strong> to track abilities, charges, and other resources.</span>`;
       }
 
       return trackers.map(t => {
@@ -2668,23 +3220,28 @@ Click a numbered modifier badge to execute a roll.</div>
   }
 
   // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
-  window.CustomRolls.openActionDialog = async function (initialMode = "d20") {
+  window.CustomRolls.openActionDialog = async function (initialMode = "d20", explicitActor = null) {
     if (!getSetting("featureCustomRolls")) return;
 
-    const token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
-
-    if (!token) {
-      return ui.notifications.warn("Please select your token first.");
+    let token = null;
+    let actor = explicitActor;
+    if (!actor) {
+      token = canvas.tokens.controlled[0] || Array.from(game.user.targets)[0] || canvas.tokens.hover;
+      if (!token) {
+        return ui.notifications.warn("Please select your token first.");
+      }
+      actor = token.actor;
+    } else {
+      token = actor.token?.object || canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id) || null;
     }
 
-    const actor = token.actor;
     if (!actor || !actor.isOwner) {
       return ui.notifications.warn("You don't have permissions to use this token.");
     }
 
     let attacks = window.CustomRolls.getProfileData(actor, "attackConfigs") || actor.getFlag("world", "attackConfigs") || {};
     attacks = await ensureStandardAttacks(actor, attacks);
-    const spellConfigs = window.CustomRolls.getProfileData(actor, "spellConfigs") || actor.getFlag("world", "spellConfigs") || {};
+    let spellConfigs = window.CustomRolls.getProfileData(actor, "spellConfigs") || actor.getFlag("world", "spellConfigs") || {};
 
     let attackNames = Object.keys(attacks);
     let spellKeys = Object.keys(spellConfigs);
@@ -2706,7 +3263,7 @@ Click a numbered modifier badge to execute a roll.</div>
     const trackingHelper = getTrackingStuffHelper(actor);
 
     // Portrait for Persistent Sidebar
-    const portraitSrc = token.document?.texture?.src || actor.img || "icons/svg/mystery-man.svg";
+    const portraitSrc = token?.document?.texture?.src || actor.img || "icons/svg/mystery-man.svg";
 
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
@@ -2830,12 +3387,19 @@ Click a numbered modifier badge to execute a roll.</div>
       if (cfg.resolutionMethod === "attack" && cfg.isMultiAttack) {
         actionVal = `${cfg.effectiveAttacks || cfg.attackCount || 1}x (${atkSign})`;
       } else if (cfg.resolutionMethod === "save") {
-        actionVal = `DC ${spellDC} ${(cfg.saveAbility || 'dex').toUpperCase()}`;
+        let saveAbilStr = cfg.saveAbility;
+        if (saveAbilStr instanceof Set) saveAbilStr = Array.from(saveAbilStr)[0];
+        else if (Array.isArray(saveAbilStr)) saveAbilStr = saveAbilStr[0];
+        else if (typeof saveAbilStr !== "string") saveAbilStr = "dex";
+        actionVal = `DC ${spellDC} ${(saveAbilStr || 'dex').toUpperCase()}`;
       } else if (cfg.resolutionMethod === "auto") {
         actionVal = `${cfg.effectiveProjectiles || cfg.projectileCount || 3} Darts`;
       } else if (isHealing) {
         actionVal = "HEAL";
         typeLabel = "RECOVERY";
+      } else if (cfg.resolutionMethod === "other") {
+        actionVal = "Cast";
+        typeLabel = "UTILITY";
       }
 
       const tags = [];
@@ -2918,8 +3482,13 @@ Click a numbered modifier badge to execute a roll.</div>
             </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span>Atk: <strong style="color: #2b3a4a;">${d.atkSign}</strong></span>
-            <span>Dmg: <strong style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
+            <span class="weapon-card-atk-line" style="display: inline-flex; align-items: center; gap: 4px;">
+              Atk: 
+              <button type="button" class="quick-roll-weapon-btn" data-key="${name}" title="Click to Quick Roll Attack" style="cursor: pointer; font-size: 0.9em; font-weight: 800; color: #235d6e; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 6px; line-height: 1.2;">
+                ${d.atkSign}
+              </button>
+            </span>
+            <span class="weapon-card-dmg-line">Dmg: <strong class="weapon-card-dmg-val" style="color: #2b3a4a;">${d.dmgFormula}</strong></span>
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
         </div>
@@ -2943,7 +3512,7 @@ Click a numbered modifier badge to execute a roll.</div>
           } else if (name === "Improvised Weapon") {
             shortTitle = "Improvised";
           } else if (name === "Off-Hand Attack") {
-            shortTitle = "Off-Hand";
+            shortTitle = "Light/TWF";
           }
 
           return `
@@ -2951,10 +3520,10 @@ Click a numbered modifier badge to execute a roll.</div>
               <div style="display: flex; align-items: center; justify-content: center; max-width: 100%;">
                 <span style="font-weight: 700; font-size: 0.78em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${name}">${shortTitle}</span>
               </div>
-              <div style="font-size: 0.82em; font-weight: 800; color: #235d6e; margin: 1px 0;">
+              <button type="button" class="quick-roll-weapon-btn weapon-card-atk-val" data-key="${name}" title="Click to Quick Roll Attack" style="cursor: pointer; font-size: 0.82em; font-weight: 800; color: #235d6e; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 0 4px; margin: 1px 0; line-height: 1.2;">
                 ${d.atkSign}
-              </div>
-              <div style="font-size: 0.72em; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: monospace;" title="${d.dmgFormula} (${d.dmgType})">
+              </button>
+              <div class="weapon-card-dmg-val" style="font-size: 0.72em; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: monospace;" title="${d.dmgFormula} (${d.dmgType})">
                 ${d.dmgFormula}
               </div>
             </div>
@@ -2976,6 +3545,44 @@ Click a numbered modifier badge to execute a roll.</div>
         <div id="custom-weapons-list" style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding-right: 2px;">
           ${renderCustomWeaponCards()}
         </div>
+        <div id="weapon-trash-zone" style="display: none; height: 32px; border: 2px dashed #e57373; background: #ffebee; color: #c62828; border-radius: 4px; font-size: 0.8em; font-weight: 700; align-items: center; justify-content: center; gap: 6px; margin-top: 4px; flex-shrink: 0; transition: background 0.15s;">
+          <i class="fas fa-trash-alt"></i> Drop here to remove
+        </div>
+      `;
+    }
+
+    // In-memory collapsed state for spell level groups across dialog refreshes
+    window.CustomRolls._collapsedSpellLevels = window.CustomRolls._collapsedSpellLevels || {};
+    // In-memory active spell level/favorite filters (Set of strings: 'fav', '0', '1', etc.)
+    window.CustomRolls._activeSpellFilters = window.CustomRolls._activeSpellFilters || new Set();
+
+    function renderSpellFilterBar(availableLevels, favCount) {
+      const activeFilters = window.CustomRolls._activeSpellFilters;
+      const isFavActive = activeFilters.has("fav");
+
+      const favBtn = `
+        <button type="button" class="btn-spell-filter" data-filter="fav" title="Filter Favorites (${favCount})" style="cursor: pointer; height: 22px; flex: 1 1 auto; min-width: 0; padding: 0 4px; border-radius: 4px; font-weight: 700; font-size: 0.80em; display: inline-flex; align-items: center; justify-content: center; gap: 3px; border: 1px solid ${isFavActive ? '#d97706' : '#cbd5e1'}; background: ${isFavActive ? '#fef3c7' : '#f8fafc'}; color: ${isFavActive ? '#b45309' : '#64748b'}; box-shadow: ${isFavActive ? '0 0 4px rgba(217, 119, 6, 0.35)' : 'none'};">
+          <i class="fas fa-star" style="color: ${isFavActive ? '#d97706' : '#cbd5e1'}; font-size: 0.85em;"></i>
+          ${favCount > 0 ? `<span style="font-size: 0.85em;">${favCount}</span>` : ''}
+        </button>
+      `;
+
+      const levelBtns = availableLevels.map(lvl => {
+        const isActive = activeFilters.has(String(lvl));
+        const label = String(lvl);
+        const title = lvl === 0 ? "Cantrips (Level 0)" : `Level ${lvl}`;
+        return `
+          <button type="button" class="btn-spell-filter" data-filter="${lvl}" title="${title}" style="cursor: pointer; height: 22px; flex: 1 1 auto; min-width: 0; padding: 0 2px; border-radius: 4px; font-weight: 700; font-size: 0.80em; display: inline-flex; align-items: center; justify-content: center; border: 1px solid ${isActive ? '#7289da' : '#cbd5e1'}; background: ${isActive ? '#e0e7ff' : '#f8fafc'}; color: ${isActive ? '#3730a3' : '#64748b'}; box-shadow: ${isActive ? '0 0 4px rgba(114, 137, 218, 0.35)' : 'none'};">
+            ${label}
+          </button>
+        `;
+      }).join("");
+
+      return `
+        <div id="spell-filter-bar" style="display: flex; align-items: center; gap: 3px; width: 100%; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; padding: 2px 0 5px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 4px; flex-shrink: 0;">
+          ${favBtn}
+          ${levelBtns}
+        </div>
       `;
     }
 
@@ -2984,8 +3591,42 @@ Click a numbered modifier badge to execute a roll.</div>
         || actor.getFlag("world", "hudAssignedSlots")
         || {};
 
-      return spellKeys.map(key => {
+      if (spellKeys.length === 0) {
+        return `
+          <div style="color: #888; font-size: 0.8em; font-style: italic; text-align: center; padding: 16px 8px;">
+            No spells configured.<br><small style="color: #aaa;">Click Refresh in the header to sync prepared spells from sheet.</small>
+          </div>
+        `;
+      }
+
+      // Group spells into Favorites and Levels (0-9)
+      const favorites = [];
+      const levels = {}; // 0 through 9
+
+      for (const key of spellKeys) {
         const sp = spellConfigs[key];
+        if (!sp) continue;
+        if (sp.isFavorite) {
+          favorites.push(key);
+        }
+        const lvl = Math.clamp(Number(sp.baseLevel) || 0, 0, 9);
+        if (!levels[lvl]) levels[lvl] = [];
+        levels[lvl].push(key);
+      }
+
+      const collapsedState = window.CustomRolls._collapsedSpellLevels;
+      const activeFilters = window.CustomRolls._activeSpellFilters;
+      const hasActiveFilters = activeFilters && activeFilters.size > 0;
+
+      // Available levels present on the actor
+      const availableLevels = Object.keys(levels).map(Number).sort((a, b) => a - b);
+      if (availableLevels.length === 0) availableLevels.push(0);
+
+      const filterBarHtml = renderSpellFilterBar(availableLevels, favorites.length);
+
+      const renderCard = (key, scope = "level") => {
+        const sp = spellConfigs[key];
+        if (!sp) return "";
         const isSel = key === selectedSpellKey;
         const d = getSpellDetails(sp, sp.baseLevel);
         const lvlLabel = Number(sp.baseLevel) === 0 ? "Cantrip" : `Lvl ${sp.baseLevel}`;
@@ -2996,26 +3637,111 @@ Click a numbered modifier badge to execute a roll.</div>
           ? `<span style="font-size: 0.70em; font-weight: 700; color: #1e5a6a; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 4px; display: inline-flex; align-items: center; gap: 3px;" title="Assigned to HUD Button ${assignedSlot}">HUD <i class="fas fa-square-${assignedSlot}"></i></span>`
           : "";
 
+        const isFav = Boolean(sp.isFavorite);
+        const starIcon = isFav
+          ? `<i class="fas fa-star btn-toggle-spell-favorite" data-key="${key}" title="Remove from Favorites" style="cursor: pointer; color: #f1c40f; font-size: 0.85em; padding: 2px;"></i>`
+          : `<i class="far fa-star btn-toggle-spell-favorite" data-key="${key}" title="Add to Favorites" style="cursor: pointer; color: #aaa; font-size: 0.85em; padding: 2px;"></i>`;
+
+        const isHealing = ["heal", "temp_hp", "max_hp"].includes(sp.resolutionMethod);
+        const isUtility = sp.resolutionMethod === "other";
+
+        let atkLabel = "Atk:";
+        if (sp.resolutionMethod === "save") atkLabel = "Save:";
+        else if (isHealing) atkLabel = "Heal:";
+        else if (isUtility) atkLabel = "Cast:";
+
+        let rightSideHtml = "";
+        if (isHealing) {
+          rightSideHtml = `<span class="weapon-card-dmg-line">Heal: <strong class="weapon-card-dmg-val" style="color: #2e7d32;">${d.valFormula}</strong></span>`;
+        } else if (isUtility) {
+          rightSideHtml = `<span class="weapon-card-dmg-line" style="color: #64748b; font-weight: 600;">Utility</span>`;
+        } else {
+          rightSideHtml = `<span class="weapon-card-dmg-line">Dmg: <strong class="weapon-card-dmg-val" style="color: #2b3a4a;">${d.valFormula}</strong></span>`;
+        }
+
         return `
-        <div class="action-card spell-card custom-spell-card" data-key="${key}" draggable="true" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: grab; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
+        <div class="action-card spell-card custom-spell-card" data-key="${key}" data-level="${sp.baseLevel ?? 0}" data-scope="${scope}" style="border: 2px solid ${isSel ? '#7289da' : '#e0e0e0'}; background: ${isSel ? '#f0f4ff' : '#fff'}; border-radius: 5px; padding: 6px 8px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; margin-bottom: 5px; user-select: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
             <div style="display: flex; align-items: center; gap: 5px; overflow: hidden; min-width: 0;">
-              <i class="fas fa-grip-vertical" style="color: #aaa; font-size: 0.75em; cursor: grab;"></i>
-              <span style="font-weight: bold; font-size: 0.9em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${key}</span>
+              ${starIcon}
+              <span class="spell-card-title" style="font-weight: bold; font-size: 0.9em; color: #2b3a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${key}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
               ${hudBadge}
-              <span style="font-size: 0.75em; font-weight: bold; color: #7289da;">${lvlLabel}</span>
+              <span class="spell-card-level-label" style="font-size: 0.75em; font-weight: bold; color: #555;">${lvlLabel}</span>
             </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; color: #333;">
-            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a;">${d.actionVal}</strong></span>
-            <span>Effect: <strong style="color: #2b3a4a;">${d.valFormula}</strong> <small style="color: #666;">${d.typeLabel}</small></span>
+            <span class="weapon-card-atk-line" style="display: inline-flex; align-items: center; gap: 4px;">
+              ${atkLabel} 
+              <button type="button" class="quick-roll-spell-btn" data-key="${key}" title="Click to Quick Cast / Roll" style="cursor: pointer; font-size: 0.9em; font-weight: 800; color: #235d6e; background: #eef7fa; border: 1px solid #bce1ec; border-radius: 3px; padding: 1px 6px; line-height: 1.2;">
+                ${d.actionVal}
+              </button>
+            </span>
+            ${rightSideHtml}
           </div>
           ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
         </div>
       `;
-      }).join("");
+      };
+
+      let outputHtml = filterBarHtml;
+
+      // Section: Favorites (shown if no filters active OR if 'fav' filter is explicitly active)
+      const showFavSection = favorites.length > 0 && (!hasActiveFilters || activeFilters.has("fav"));
+      if (showFavSection) {
+        outputHtml += `
+          <div class="spell-group-section" style="margin-bottom: 6px;">
+            <div class="spell-group-header" data-group="fav" style="display: flex; align-items: center; justify-content: space-between; background: rgba(241, 196, 15, 0.12); border: 1px solid rgba(241, 196, 15, 0.35); border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; user-select: none;">
+              <span style="font-weight: 700; font-size: 0.75em; color: #b78103; display: flex; align-items: center; gap: 5px;">
+                <i class="fas fa-star" style="color: #f1c40f;"></i> FAVORITES (${favorites.length})
+              </span>
+            </div>
+            <div class="spell-group-cards" data-group="fav" style="display: flex; flex-direction: column; gap: 3px;">
+              ${favorites.map(k => renderCard(k, "fav")).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      // Sections: Spell Levels (0 through 9)
+      const sortedLevels = Object.keys(levels).map(Number).sort((a, b) => a - b);
+      let renderedLevelGroups = 0;
+      for (const lvl of sortedLevels) {
+        const groupKeys = levels[lvl] || [];
+        if (groupKeys.length === 0) continue;
+
+        // Skip if active filters exist and this level is not active
+        if (hasActiveFilters && !activeFilters.has(String(lvl))) continue;
+
+        renderedLevelGroups++;
+        const groupTitle = lvl === 0 ? "CANTRIPS" : `LEVEL ${lvl}`;
+        const slotInfo = getSlotInfo(lvl);
+        const slotLabel = lvl === 0 ? "" : ` • Slots: ${slotInfo.label}`;
+
+        outputHtml += `
+          <div class="spell-group-section" style="margin-bottom: 6px;">
+            <div class="spell-group-header" data-group="lvl_${lvl}" style="display: flex; align-items: center; justify-content: space-between; background: rgba(114, 137, 218, 0.08); border: 1px solid rgba(114, 137, 218, 0.25); border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; user-select: none;">
+              <span style="font-weight: 700; font-size: 0.74em; color: #4b5d88; display: flex; align-items: center; gap: 5px;">
+                ${groupTitle} (${groupKeys.length}${slotLabel})
+              </span>
+            </div>
+            <div class="spell-group-cards" data-group="lvl_${lvl}" style="display: flex; flex-direction: column; gap: 3px;">
+              ${groupKeys.map(k => renderCard(k, "level")).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      if (hasActiveFilters && !showFavSection && renderedLevelGroups === 0) {
+        outputHtml += `
+          <div style="color: #888; font-size: 0.8em; font-style: italic; text-align: center; padding: 16px 8px;">
+            No spells match the selected filters.
+          </div>
+        `;
+      }
+
+      return outputHtml;
     }
 
     function getSelectedWeaponInspectorHtml() {
@@ -3034,6 +3760,17 @@ Click a numbered modifier badge to execute a roll.</div>
           <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #a34848; cursor: pointer; padding: 3px 6px; background: rgba(163, 72, 72, 0.08); border-radius: 3px; border: 1px solid rgba(163, 72, 72, 0.25);">
             <span>GWM / Sharpshooter (-5 / +10)</span>
             <input type="checkbox" id="gwm-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let versatileHtml = "";
+      if (config?.isVersatile) {
+        const vDie = config.versatileDie || "10";
+        versatileHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #2b7489; cursor: pointer; padding: 3px 6px; background: rgba(43, 116, 137, 0.08); border-radius: 3px; border: 1px solid rgba(43, 116, 137, 0.25);">
+            <span>Two-Handed / Versatile (d${vDie})</span>
+            <input type="checkbox" id="versatile-toggle" style="margin: 0;">
           </label>
         `;
       }
@@ -3086,11 +3823,11 @@ Click a numbered modifier badge to execute a roll.</div>
               <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 2px;">
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.95em; font-weight: 600;">Attack:</span>
-                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">1d20 ${d.atkSign}</strong>
+                  <span style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 500;">1d20 ${d.atkSign}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.95em; font-weight: 600;">Damage:</span>
-                  <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.dmgFormula} <small style="font-weight: 600; font-size: 0.8em; color: #666;">(${d.dmgType.toLowerCase()})</small></strong>
+                  <span style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 500;">${d.dmgFormula} <small style="font-weight: 500; font-size: 0.8em; color: #666;">(${d.dmgType.toLowerCase()})</small></span>
                 </div>
               </div>
               ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">${tagsHtml}</div>` : ""}
@@ -3103,11 +3840,11 @@ Click a numbered modifier badge to execute a roll.</div>
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <span style="color: #555; font-size: 0.92em; font-weight: 700;">Total Atk:</span>
-                  <strong id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">1d20 ${d.atkSign}</strong>
+                  <span id="preview-total-atk" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 500;">1d20 ${d.atkSign}</span>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span style="color: #555; font-size: 0.92em; font-weight: 700;">Total Dmg:</span>
-                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700; line-height: 1.4; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 4px 8px;">
+                  <div id="preview-total-dmg" style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 500; line-height: 1.4; word-break: break-word; background: #fff; border: 1px solid #d8dee6; border-radius: 4px; padding: 4px 8px;">
                     ${d.dmgFormula} ${d.dmgType.toLowerCase()}
                   </div>
                 </div>
@@ -3134,9 +3871,10 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
         </div>
 
-        <!-- Optional Damage & GWM Card -->
-        ${(gwmHtml || extrasHtml) ? `
+        <!-- Optional Damage & GWM / Versatile Card -->
+        ${(gwmHtml || versatileHtml || extrasHtml) ? `
           <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
+            ${versatileHtml}
             ${gwmHtml}
             ${extrasHtml}
           </div>
@@ -3151,10 +3889,148 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
     }
 
+    function getSpellcastingSummaryHtml() {
+      const sys = actor?.system || {};
+      const pb = Number(sys.attributes?.prof ?? 0);
+      const spellcastingAbility = sys.attributes?.spellcasting;
+      const hasSpellcasting = Boolean(spellcastingAbility && spellcastingAbility !== "" && spellcastingAbility !== "none");
+      
+      const abilLabel = hasSpellcasting ? String(spellcastingAbility).toUpperCase() : "—";
+      const abilModVal = hasSpellcasting ? Number(sys.abilities?.[spellcastingAbility]?.mod ?? 0) : null;
+      const abilModDisplay = abilModVal !== null ? (abilModVal >= 0 ? `+${abilModVal}` : `${abilModVal}`) : "—";
+      const abilFullDisplay = hasSpellcasting ? `${abilLabel} (${abilModDisplay})` : "—";
+
+      const rawAtk = sys.attributes?.spell?.attack;
+      const spellAtkVal = rawAtk !== undefined ? Number(rawAtk) : (hasSpellcasting ? (pb + (abilModVal ?? 0)) : null);
+      const spellAtkDisplay = spellAtkVal !== null ? (spellAtkVal >= 0 ? `+${spellAtkVal}` : `${spellAtkVal}`) : "—";
+
+      const rawDC = sys.attributes?.spell?.dc ?? sys.attributes?.spelldc;
+      const spellDCVal = rawDC !== undefined ? Number(rawDC) : (hasSpellcasting ? (8 + pb + (abilModVal ?? 0)) : null);
+      const spellDCDisplay = spellDCVal !== null ? String(spellDCVal) : "—";
+
+      return `
+        <!-- Static Spellcasting Summary Bar -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 4px 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; gap: 4px;">
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1.1; border-right: 1px solid #e0e6ed; padding: 0 3px;">
+            <span style="font-size: 0.65em; font-weight: 700; color: #4b5d88; letter-spacing: 0.4px; text-transform: uppercase;">Ability</span>
+            <span style="font-size: 0.88em; font-weight: 800; color: #2b3a4a; white-space: nowrap;">${abilFullDisplay}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1; border-right: 1px solid #e0e6ed; padding: 0 3px;">
+            <button type="button" class="btn-spell-atk-roll" data-atk-bonus="${spellAtkVal ?? 0}" title="Roll Generic Spell Attack (${spellAtkDisplay})" style="width: 100%; height: 26px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a; white-space: nowrap;">
+              <span style="font-size: 0.80em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase;">Spell Atk</span>
+              <span style="font-size: 0.95em; font-weight: 800; color: #7289da;">${spellAtkDisplay}</span>
+            </button>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 3px;">
+            <button type="button" class="btn-spell-dc-card" data-save-dc="${spellDCVal ?? 10}" title="Post Generic Save DC Card (DC ${spellDCDisplay})" style="width: 100%; height: 26px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: #fff; border: 1px solid #7289da; border-radius: 4px; cursor: pointer; color: #2b3a4a; white-space: nowrap;">
+              <span style="font-size: 0.80em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase;">Spell DC</span>
+              <span style="font-size: 0.95em; font-weight: 800; color: #7289da;">${spellDCDisplay}</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    let inspectorSpellSubTab = "details"; // "details" | "slots"
+    const SPELL_SLOT_MODE_STORAGE_KEY = "cheapdice_spell_slot_mode";
+    let spellSlotDisplayMode = localStorage.getItem(SPELL_SLOT_MODE_STORAGE_KEY) || "available"; // "available" | "spent"
+
+    function getSpellSlotsTrackerHtml() {
+      const spells = actor?.system?.spells || {};
+      const slotEntries = [];
+
+      for (let lvl = 1; lvl <= 9; lvl++) {
+        const slot = spells[`spell${lvl}`];
+        const max = Number(slot?.max) || 0;
+        if (max > 0) {
+          slotEntries.push({
+            label: `Lvl ${lvl}`,
+            current: Math.max(0, Number(slot?.value) || 0),
+            max
+          });
+        }
+      }
+
+      if (spells.pact) {
+        const pactMax = Number(spells.pact.max) || 0;
+        if (pactMax > 0) {
+          slotEntries.push({
+            label: "Pact",
+            current: Math.max(0, Number(spells.pact.value) || 0),
+            max: pactMax
+          });
+        }
+      }
+
+      const isAvailMode = spellSlotDisplayMode === "available";
+
+      if (slotEntries.length === 0) {
+        return `
+          <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+            <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+              Spell Slot Tracker
+            </div>
+            <div style="font-size: 0.80em; color: #888; font-style: italic; text-align: center; padding: 6px 0;">
+              No spell slots configured on character sheet.
+            </div>
+          </div>
+        `;
+      }
+
+      const rowsHtml = slotEntries.map(entry => {
+        const available = Math.min(entry.current, entry.max);
+        const spent = Math.max(0, entry.max - available);
+
+        // Circular pips: in "available" mode, filled = available; in "spent" mode, filled = spent
+        const pips = [];
+        for (let i = 0; i < entry.max; i++) {
+          const isFilled = isAvailMode ? (i < available) : (i < spent);
+          if (isFilled) {
+            pips.push(`<i class="fas fa-circle" style="color: #7289da; font-size: 0.85em;"></i>`);
+          } else {
+            pips.push(`<i class="far fa-circle" style="color: #bcc5d3; font-size: 0.85em;"></i>`);
+          }
+        }
+
+        const countText = isAvailMode
+          ? `${available}/${entry.max}`
+          : `${spent}/${entry.max}`;
+
+        return `
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px solid #e0e6ed; font-size: 0.82em;">
+            <span style="font-weight: 700; color: #4b5d88; width: 44px; flex-shrink: 0;">${entry.label}</span>
+            <div style="display: flex; gap: 4px; align-items: center; flex: 1; margin: 0 8px; flex-wrap: wrap;">
+              ${pips.join("")}
+            </div>
+            <span style="font-family: monospace; font-size: 0.9em; font-weight: 700; color: #2b3a4a; flex-shrink: 0;">${countText}</span>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; display: flex; flex-direction: column; gap: 5px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px;">
+            <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
+              <i class="fas fa-circle-notch" style="margin-right: 3px;"></i> Spell Slots Tracker
+            </span>
+            <div style="display: inline-flex; border: 1px solid #7289da; border-radius: 3px; overflow: hidden; height: 19px;">
+              <button type="button" class="btn-toggle-slot-mode ${isAvailMode ? 'active-slot-mode' : ''}" data-mode="available" title="Display slots currently available to cast" style="border: none; padding: 0 6px; font-size: 0.68em; font-weight: 700; cursor: pointer; background: ${isAvailMode ? '#7289da' : '#fff'}; color: ${isAvailMode ? '#fff' : '#4b5d88'}; line-height: 19px;">Available</button>
+              <button type="button" class="btn-toggle-slot-mode ${!isAvailMode ? 'active-slot-mode' : ''}" data-mode="spent" title="Display slots expended/used" style="border: none; padding: 0 6px; font-size: 0.68em; font-weight: 700; cursor: pointer; background: ${!isAvailMode ? '#7289da' : '#fff'}; color: ${!isAvailMode ? '#fff' : '#4b5d88'}; line-height: 19px; border-left: 1px solid #7289da;">Spent</button>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            ${rowsHtml}
+          </div>
+        </div>
+      `;
+    }
+
     function getSelectedSpellInspectorHtml() {
+      const summaryHtml = getSpellcastingSummaryHtml();
       const sp = spellConfigs[selectedSpellKey];
       if (!sp) {
         return `
+          ${summaryHtml}
           <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 0.85em; font-style: italic;">
             Select a spell from the list.
           </div>
@@ -3169,8 +4045,25 @@ Click a numbered modifier badge to execute a roll.</div>
         || {};
       const curSlot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === "spells" && data?.name === selectedSpellKey)?.[0] || "";
 
+      const fullSpellDesc = (sp.description || sp.summary || "").trim();
+      const descHtmlBlock = fullSpellDesc ? `
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 6px; border: 1px solid rgba(75, 93, 136, 0.25); border-radius: 4px; padding: 5px 7px; background: rgba(75, 93, 136, 0.04);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; border-bottom: 1px solid rgba(75, 93, 136, 0.15); padding-bottom: 2px; flex-shrink: 0;">
+            <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;">
+              <i class="fas fa-sparkles" style="margin-right: 3px;"></i> Spell Description
+            </span>
+            <button type="button" class="btn-send-spell-desc-chat" title="Send description to chat" style="width: auto !important; max-width: 58px; height: 18px; line-height: 16px; font-size: 0.70em; font-weight: 700; padding: 0 5px; margin: 0 0 0 auto; border-radius: 3px; border: 1px solid #7289da; background: #fff; color: #4b5d88; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 3px; white-space: nowrap; flex: 0 0 auto;">
+              Chat <i class="fas fa-arrow-right" style="font-size: 0.85em;"></i>
+            </button>
+          </div>
+          <div class="spell-description-content" style="flex: 1; min-height: 0; overflow-y: auto; font-size: 0.82em; line-height: 1.45; color: #2b3a4a;">
+            ${fullSpellDesc}
+          </div>
+        </div>
+      ` : "";
+
       const hudSlotControls = sp ? `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8dee6;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8dee6; flex-shrink: 0;">
           <span style="font-size: 0.82em; font-weight: 700; color: #4b5d88; letter-spacing: 0.3px;">HUD ACTION:</span>
           <div style="display: inline-flex; gap: 4px;">
             <button type="button" class="btn-assign-hud-slot ${!curSlot ? 'active' : ''}" data-category="spells" data-slot="" title="Unassign from HUD" style="height: 26px; line-height: 24px; font-size: 0.80em; font-weight: 700; padding: 0 8px; border-radius: 4px; border: 1px solid ${!curSlot ? '#2b7489' : '#ccc'}; background: ${!curSlot ? '#2b7489' : '#fff'}; color: ${!curSlot ? '#fff' : '#555'}; cursor: pointer;">None</button>
@@ -3182,33 +4075,84 @@ Click a numbered modifier badge to execute a roll.</div>
         </div>
       ` : "";
 
+      const resMethod = sp.resolutionMethod || "attack";
+      const isSave = resMethod === "save";
+      const isHeal = ["heal", "temp_hp", "max_hp"].includes(resMethod);
+      const isAtk = resMethod === "attack";
+
+      const leftModLabel = isAtk ? "EXTRA ATK MOD" : (isSave ? "EXTRA DC MOD" : "EXTRA ACC/DC MOD");
+      const leftModPlaceholder = isAtk ? "e.g. 1d4, +2" : (isSave ? "e.g. +1, +2" : "e.g. +1");
+      const rightModLabel = isHeal ? "EXTRA HEAL MOD" : "EXTRA DMG MOD";
+      const rightModPlaceholder = isHeal ? "e.g. 1d4, +3" : "e.g. 1d6, +2";
+
       return `
-        <!-- Spell Overview Card -->
-        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 5px;">
-            <span style="font-weight: 800; font-size: 1.15em; color: #2b3a4a;">${selectedSpellKey}</span>
-            <span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${lvlLabel}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px;">
-            <span>${sp.resolutionMethod === 'save' ? 'Save' : 'Roll'}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.actionVal}</strong></span>
-            <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
-          </div>
-          ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
-          ${hudSlotControls}
+        ${summaryHtml}
+
+        <!-- Sub-Tabs Navigation (Details vs Slots) -->
+        <div style="display: flex; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 4px; flex-shrink: 0;">
+          <button type="button" class="btn-spell-subtab ${inspectorSpellSubTab === 'details' ? 'active-subtab' : ''}" data-subtab="details" style="flex: 1; height: 26px; font-size: 0.82em; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; background: ${inspectorSpellSubTab === 'details' ? '#7289da' : '#f0f2f5'}; color: ${inspectorSpellSubTab === 'details' ? '#fff' : '#555'};">
+            <i class="fas fa-book-open"></i> Spell Details
+          </button>
+          <button type="button" class="btn-spell-subtab ${inspectorSpellSubTab === 'slots' ? 'active-subtab' : ''}" data-subtab="slots" style="flex: 1; height: 26px; font-size: 0.82em; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; background: ${inspectorSpellSubTab === 'slots' ? '#7289da' : '#f0f2f5'}; color: ${inspectorSpellSubTab === 'slots' ? '#fff' : '#555'};">
+            <i class="fas fa-bolt"></i> Spell Slots
+          </button>
         </div>
 
-        <!-- Upcast & Slot Options Card -->
-        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
-            Cast Options
+        <!-- Scrollable Tab Content Container -->
+        <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column;">
+
+          <!-- TAB 1: Spell Details -->
+          <div id="spell-subtab-details" style="display: ${inspectorSpellSubTab === 'details' ? 'flex' : 'none'}; flex: 1; min-height: 0; flex-direction: column;">
+            <!-- Spell Overview Card (Fills height down to modifiers) -->
+            <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex: 1; min-height: 0; display: flex; flex-direction: column;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 4px; margin-bottom: 5px; flex-shrink: 0;">
+                <span style="font-weight: 800; font-size: 1.15em; color: #2b3a4a;">${selectedSpellKey}</span>
+                <span style="font-size: 0.85em; font-weight: 700; color: #7289da; background: rgba(114, 137, 218, 0.12); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(114, 137, 218, 0.3);">${lvlLabel}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.95em; color: #444; margin-bottom: 3px; flex-shrink: 0;">
+                <span>${sp.resolutionMethod === 'save' ? 'Save' : (['heal', 'temp_hp', 'max_hp'].includes(sp.resolutionMethod) ? 'Heal' : (sp.resolutionMethod === 'other' ? 'Action' : 'Roll'))}: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.actionVal}</strong></span>
+                <span>Effect: <strong style="color: #2b3a4a; font-family: monospace; font-size: 1.1em; font-weight: 700;">${d.valFormula}</strong> <small style="color: #666; font-size: 0.85em; font-weight: 600;">${d.typeLabel}</small></span>
+              </div>
+              ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; flex-shrink: 0;">${tagsHtml}</div>` : ""}
+              ${descHtmlBlock}
+              ${hudSlotControls}
+            </div>
           </div>
-          <div id="spell-options-container">
-            ${getUpcastOptionsHtml(sp)}
+
+          <!-- TAB 2: Spell Slots & Cast Options -->
+          <div id="spell-subtab-slots" style="display: ${inspectorSpellSubTab === 'slots' ? 'flex' : 'none'}; flex-direction: column; gap: 6px;">
+            <!-- Upcast & Slot Options Card -->
+            <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+              <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+                Cast Options
+              </div>
+              <div id="spell-options-container">
+                ${getUpcastOptionsHtml(sp)}
+              </div>
+            </div>
+
+            <!-- Spell Slots Tracker Card -->
+            ${getSpellSlotsTrackerHtml()}
+          </div>
+
+        </div>
+
+        <!-- Extra Modifiers Card (Dynamic ATK/DC & DMG/HEAL, pinned above Cast button) -->
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <div style="display: flex; gap: 6px;">
+            <div style="flex: 1;">
+              <label for="spell-extra-atk" style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">${leftModLabel}</label>
+              <input type="text" id="spell-extra-atk" placeholder="${leftModPlaceholder}" style="width: 100%; height: 24px; font-size: 0.78em; border-radius: 3px; border: 1px solid #ccc; padding: 1px 4px; background: #fff;" />
+            </div>
+            <div style="flex: 1;">
+              <label for="spell-extra-dmg" style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">${rightModLabel}</label>
+              <input type="text" id="spell-extra-dmg" placeholder="${rightModPlaceholder}" style="width: 100%; height: 24px; font-size: 0.78em; border-radius: 3px; border: 1px solid #ccc; padding: 1px 4px; background: #fff;" />
+            </div>
           </div>
         </div>
 
         <!-- Pinned Cast Spell Button -->
-        <div style="margin-top: auto; padding-top: 6px;">
+        <div style="margin-top: auto; padding-top: 4px; flex-shrink: 0;">
           <button type="button" id="btn-cast-spell-now" style="width: 100%; height: 32px; font-weight: 700; font-size: 0.88em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <i class="fas fa-magic"></i> Cast Spell
           </button>
@@ -3216,25 +4160,46 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
     }
 
+    const COMPACT_STORAGE_KEY = "cheapdice_dice_stuff_compact";
+    const COMPACT_TAB_STORAGE_KEY = "cheapdice_dice_stuff_compact_tab";
+    const isInitiallyCompact = localStorage.getItem(COMPACT_STORAGE_KEY) === "true";
+    let compactTab = localStorage.getItem(COMPACT_TAB_STORAGE_KEY) || "abilities";
+
     const content = `
-    <div style="display: flex; gap: 10px; font-family: inherit; height: 520px; box-sizing: border-box; padding: 2px;">
+    <!-- Top Compact Navigation Bar (Visible only in Compact Mode - Icons Only) -->
+    <div id="dice-stuff-compact-nav" style="display: ${isInitiallyCompact ? 'flex' : 'none'}; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 5px; margin-bottom: 6px; flex-shrink: 0;">
+      <button type="button" class="compact-nav-btn ${compactTab === 'abilities' ? 'active-compact-tab' : ''}" data-tab="abilities" title="Abilities & Scores" style="flex: 1; height: 28px; padding: 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95em; background: ${compactTab === 'abilities' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'abilities' ? '#fff' : '#555'};">
+        <i class="fas fa-user-shield"></i>
+      </button>
+      <button type="button" class="compact-nav-btn ${compactTab === 'd20' ? 'active-compact-tab' : ''}" data-tab="d20" title="Skills & Tools" style="flex: 1; height: 28px; padding: 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95em; background: ${compactTab === 'd20' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'd20' ? '#fff' : '#555'};">
+        <i class="fas fa-dice-d20"></i>
+      </button>
+      <button type="button" class="compact-nav-btn ${compactTab === 'weapon' ? 'active-compact-tab' : ''}" data-tab="weapon" title="Weapons & Attacks" style="flex: 1; height: 28px; padding: 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95em; background: ${compactTab === 'weapon' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'weapon' ? '#fff' : '#555'};">
+        <i class="fas fa-sword"></i>
+      </button>
+      <button type="button" class="compact-nav-btn ${compactTab === 'spell' ? 'active-compact-tab' : ''}" data-tab="spell" title="Spells & Slots" style="flex: 1; height: 28px; padding: 2px; font-weight: bold; border-radius: 4px; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95em; background: ${compactTab === 'spell' ? '#7289da' : '#f0f2f5'}; color: ${compactTab === 'spell' ? '#fff' : '#555'};">
+        <i class="fas fa-magic"></i>
+      </button>
+    </div>
+
+    <div id="dice-stuff-main-container" style="display: flex; gap: 10px; font-family: inherit; height: 520px; box-sizing: border-box; padding: 2px;">
       
-      <!-- COLUMN 1: LEFT SIDEBAR: Persistent (~245px) -->
-      <div id="dialog-sidebar-left" style="width: 245px; min-width: 245px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
+      <!-- COLUMN 1: LEFT SIDEBAR: Persistent (~275px) -->
+      <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait (Left) & Stacked Init/Conc (Right) -->
         <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
           <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
           <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
             <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
-              <span class="entry-label" style="font-size: 0.7em; font-weight: 700; color: #235d6e; white-space: nowrap;">Initiative</span>
-              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 46px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              <span class="entry-label" style="font-size: 1.05em; font-weight: 700; color: #235d6e; white-space: nowrap;">Initiative</span>
+              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 52px; height: 20px; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${d20Data.formattedInit}
               </button>
             </div>
             <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
-              <span class="entry-label" style="font-size: 0.7em; font-weight: 700; color: #a34848; white-space: nowrap;">Concentration</span>
-              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 30px; height: 18px; font-size: 0.7em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              <span class="entry-label" style="font-size: 1.05em; font-weight: 700; color: #a34848; white-space: nowrap;">Concentration</span>
+              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 34px; height: 20px; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
                 ${d20Data.formattedConc}
               </button>
             </div>
@@ -3243,7 +4208,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
         <!-- Ability Scores & Saves (2-Col Grid) -->
         <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase;">
+          <div style="font-weight: 700; font-size: 0.78em; color: #4b5d88; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase;">
             Ability Scores & Saves
           </div>
           ${d20Data.sidebarAbilitiesHtml}
@@ -3256,18 +4221,18 @@ Click a numbered modifier badge to execute a roll.</div>
 
       </div>
 
-      <!-- COLUMN 2: CENTER PANEL: Tabs & Active List (~315px) -->
-      <div id="dialog-panel-center" style="flex: 1; min-width: 270px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
+      <!-- COLUMN 2: CENTER PANEL: Tabs & Active List (~345px) -->
+      <div id="dialog-panel-center" style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Tabs Header -->
         <div style="display: flex; gap: 4px; border-bottom: 2px solid #7289da; padding-bottom: 6px; flex-shrink: 0;">
-          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
+          <button type="button" id="tab-btn-d20" style="flex: 1; padding: 6px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.92em;">
             <i class="fas fa-dice-d20"></i> Skills & Tools
           </button>
-          <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
+          <button type="button" id="tab-btn-weapon" style="flex: 1; padding: 6px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.92em;">
             <i class="fas fa-sword"></i> Weapons (${attackNames.length})
           </button>
-          <button type="button" id="tab-btn-spell" style="flex: 1; padding: 5px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78em;">
+          <button type="button" id="tab-btn-spell" style="flex: 1; padding: 6px 2px; font-weight: bold; border-radius: 4px 4px 0 0; border: 1px solid #7289da; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.92em;">
             <i class="fas fa-magic"></i> Spells (${spellKeys.length})
           </button>
         </div>
@@ -3292,8 +4257,8 @@ Click a numbered modifier badge to execute a roll.</div>
 
       </div>
 
-      <!-- COLUMN 3: PERSISTENT RIGHT INSPECTOR (~310px) -->
-      <div id="dialog-panel-right" style="width: 310px; min-width: 310px; display: flex; flex-direction: column; gap: 6px; height: 100%;">
+      <!-- COLUMN 3: PERSISTENT RIGHT INSPECTOR (~340px) -->
+      <div id="dialog-panel-right" style="width: 340px; min-width: 340px; display: flex; flex-direction: column; gap: 6px; height: 100%;">
         <!-- Inspector for Skills & Tools -->
         <div id="inspector-d20" style="display: ${currentMode === 'd20' ? 'flex' : 'none'}; flex-direction: column; gap: 6px; height: 100%;">
           ${d20Data.inspectorHtml}
@@ -3313,7 +4278,7 @@ Click a numbered modifier badge to execute a roll.</div>
     </div>
   `;
 
-    new Dialog({
+    const dlg = new Dialog({
       title: `Dice Stuff: ${actor.name}`,
       content: content,
       buttons: {},
@@ -3321,6 +4286,11 @@ Click a numbered modifier badge to execute a roll.</div>
         html.closest(".dialog").find(".dialog-buttons").remove();
 
         const dialogApp = html.closest(".app.dialog");
+
+        // Set initial window width based on saved compact state
+        if (isInitiallyCompact) {
+          dialogApp.css({ width: "310px", "min-width": "310px" });
+        }
 
         // --- Theme Engine Setup ---
         const THEME_STORAGE_KEY = "cheapdice_dice_stuff_theme";
@@ -3350,103 +4320,6 @@ Click a numbered modifier badge to execute a roll.</div>
           styleTag.id = "cheapdice-theme-styles";
           styleTag.textContent = `
             /* Dice Stuff Theme Engine Styles */
-            .app.dialog.cheapdice-theme-slate,
-            .app.dialog.cheapdice-theme-arcane,
-            .app.dialog.cheapdice-theme-glass {
-              color: #e2e8f0;
-              transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-            }
-
-            /* Common Elements Across All Themes */
-            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="init"],
-            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="init"],
-            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="init"] {
-              background: rgba(56, 189, 248, 0.15) !important;
-              border-color: rgba(56, 189, 248, 0.4) !important;
-            }
-            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="init"] .entry-label,
-            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="init"] .entry-label,
-            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="init"] .entry-label {
-              color: #38bdf8 !important;
-            }
-            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="concentration"],
-            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="concentration"],
-            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="concentration"] {
-              background: rgba(244, 63, 94, 0.15) !important;
-              border-color: rgba(244, 63, 94, 0.4) !important;
-            }
-            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="concentration"] .entry-label,
-            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="concentration"] .entry-label,
-            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="concentration"] .entry-label {
-              color: #fb7185 !important;
-            }
-
-            /* Tracking Chip Inputs and Inc/Dec Buttons */
-            .app.dialog.cheapdice-theme-slate .tracking-chip,
-            .app.dialog.cheapdice-theme-arcane .tracking-chip,
-            .app.dialog.cheapdice-theme-glass .tracking-chip {
-              background: rgba(0, 0, 0, 0.3) !important;
-              border-color: rgba(255, 255, 255, 0.15) !important;
-            }
-            .app.dialog.cheapdice-theme-slate .tracking-chip span,
-            .app.dialog.cheapdice-theme-arcane .tracking-chip span,
-            .app.dialog.cheapdice-theme-glass .tracking-chip span {
-              color: #f1f5f9 !important;
-            }
-            .app.dialog.cheapdice-theme-slate .chip-val-input,
-            .app.dialog.cheapdice-theme-arcane .chip-val-input,
-            .app.dialog.cheapdice-theme-glass .chip-val-input {
-              background: rgba(0, 0, 0, 0.5) !important;
-              color: #38bdf8 !important;
-              border-color: rgba(255, 255, 255, 0.2) !important;
-            }
-            .app.dialog.cheapdice-theme-slate .btn-chip-dec,
-            .app.dialog.cheapdice-theme-slate .btn-chip-inc,
-            .app.dialog.cheapdice-theme-arcane .btn-chip-dec,
-            .app.dialog.cheapdice-theme-arcane .btn-chip-inc,
-            .app.dialog.cheapdice-theme-glass .btn-chip-dec,
-            .app.dialog.cheapdice-theme-glass .btn-chip-inc {
-              background: #252f42 !important;
-              border: 1px solid #38bdf8 !important;
-              color: #38bdf8 !important;
-              font-weight: 800 !important;
-            }
-            .app.dialog.cheapdice-theme-arcane .btn-chip-dec,
-            .app.dialog.cheapdice-theme-arcane .btn-chip-inc {
-              background: #252026 !important;
-              border: 1px solid #d97706 !important;
-              color: #fbbf24 !important;
-            }
-            .app.dialog.cheapdice-theme-glass .btn-chip-dec,
-            .app.dialog.cheapdice-theme-glass .btn-chip-inc {
-              background: rgba(56, 189, 248, 0.25) !important;
-              border: 1px solid #38bdf8 !important;
-              color: #ffffff !important;
-            }
-
-            /* D20 Overview & Options (Super Advantage, Reliable Talent, Halfling Luck) */
-            .app.dialog.cheapdice-theme-slate #inspector-d20 label,
-            .app.dialog.cheapdice-theme-slate #inspector-d20 label span {
-              color: #e2e8f0 !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #inspector-d20 label,
-            .app.dialog.cheapdice-theme-arcane #inspector-d20 label span {
-              color: #fef3c7 !important;
-            }
-            .app.dialog.cheapdice-theme-glass #inspector-d20 label,
-            .app.dialog.cheapdice-theme-glass #inspector-d20 label span {
-              color: #ffffff !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dialog-panel-right span,
-            .app.dialog.cheapdice-theme-glass #dialog-panel-right strong,
-            .app.dialog.cheapdice-theme-glass #dialog-panel-right div {
-              color: #f1f5f9;
-            }
-            .app.dialog.cheapdice-theme-glass #dialog-panel-right span[style*="color: #666"],
-            .app.dialog.cheapdice-theme-glass #dialog-panel-right small[style*="color: #666"] {
-              color: #94a3b8 !important;
-            }
-
             /* Theme Selector in Window Header */
             .dice-stuff-theme-select {
               background: rgba(0, 0, 0, 0.45);
@@ -3473,6 +4346,45 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #131722 !important;
               border: 1px solid #334155 !important;
               box-shadow: 0 10px 25px rgba(0, 0, 0, 0.75) !important;
+              color: #e2e8f0;
+              transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="init"] {
+              background: rgba(56, 189, 248, 0.15) !important;
+              border-color: rgba(56, 189, 248, 0.4) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="init"] .entry-label {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="concentration"] {
+              background: rgba(244, 63, 94, 0.15) !important;
+              border-color: rgba(244, 63, 94, 0.4) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .sheet-entry-row[data-key="concentration"] .entry-label {
+              color: #fb7185 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .tracking-chip {
+              background: rgba(0, 0, 0, 0.3) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .tracking-chip span {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .chip-val-input {
+              background: rgba(0, 0, 0, 0.5) !important;
+              color: #38bdf8 !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-chip-dec,
+            .app.dialog.cheapdice-theme-slate .btn-chip-inc {
+              background: #252f42 !important;
+              border: 1px solid #38bdf8 !important;
+              color: #38bdf8 !important;
+              font-weight: 800 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #inspector-d20 label,
+            .app.dialog.cheapdice-theme-slate #inspector-d20 label span {
+              color: #e2e8f0 !important;
             }
             .app.dialog.cheapdice-theme-slate .window-header {
               background: #1e2536 !important;
@@ -3496,9 +4408,21 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #2e3b52 !important;
               color: #e2e8f0 !important;
             }
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper span[style*="Tracking Stuff"],
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper div[style*="Tracking Stuff"],
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper span[style*="color: #4b5d88"],
+            .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper strong[style*="color: #4b5d88"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #skills-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-slate #tools-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-slate #section-d20 div[style*="letter-spacing: 0.5px"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #skills-content-v2,
+            .app.dialog.cheapdice-theme-slate #tools-list-container-v2,
             .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background: #fff"],
-            .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background:#fff"],
-            .app.dialog.cheapdice-theme-slate #tools-list-container-v2 {
+            .app.dialog.cheapdice-theme-slate #section-d20 > div > div[style*="background:#fff"] {
               background: #141924 !important;
               border-color: #273142 !important;
             }
@@ -3522,6 +4446,43 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate .standard-weapon-card div {
               color: #f1f5f9 !important;
             }
+            /* Weapon & Spell Pane Badges & Damage Types */
+            .app.dialog.cheapdice-theme-slate .custom-weapon-card span[style*="font-weight: bold; color: #555"],
+            .app.dialog.cheapdice-theme-slate .standard-weapon-card div[title*="("],
+            .app.dialog.cheapdice-theme-slate .spell-card-type-label,
+            .app.dialog.cheapdice-theme-slate .spell-card-level-label {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-slate .spell-card-title {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .spell-group-header span {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .spell-group-header[data-group="fav"] span {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .quick-roll-spell-btn {
+              color: #38bdf8 !important;
+              border-color: #38bdf8 !important;
+              background: #252f42 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-slate .weapon-card-atk-line *,
+            .app.dialog.cheapdice-theme-slate .weapon-card-atk-val {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-slate .weapon-card-dmg-line *,
+            .app.dialog.cheapdice-theme-slate .weapon-card-dmg-val {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-slate span[style*="background: rgba(114, 137, 218"],
+            .app.dialog.cheapdice-theme-slate span[title*="Assigned to HUD"] {
+              color: #7dd3fc !important;
+              background: rgba(56, 189, 248, 0.12) !important;
+              border-color: rgba(56, 189, 248, 0.3) !important;
+            }
             .app.dialog.cheapdice-theme-slate .standard-weapon-card.selected,
             .app.dialog.cheapdice-theme-slate .custom-weapon-card.selected,
             .app.dialog.cheapdice-theme-slate .custom-spell-card.selected {
@@ -3529,12 +4490,49 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #38bdf8 !important;
               box-shadow: 0 0 8px rgba(56, 189, 248, 0.25) !important;
             }
+            /* Weapon Overview Headers & Labels */
             .app.dialog.cheapdice-theme-slate #dialog-panel-right > div,
             .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="background: #f8fafc"],
             .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="background:#f8fafc"] {
               background: #1b212f !important;
               border-color: #2e3b52 !important;
               color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="Attack & Damage Overview"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="font-weight: 700; font-size: 0.68em"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right div[style*="font-weight: 700; font-size: 0.78em"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right span[style*="HUD ACTION"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right label[for^="weapon-extra"],
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right label[for^="spell-extra"] {
+              color: #7dd3fc !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-spell-subtab {
+              background: #1b212f !important;
+              color: #94a3b8 !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-spell-subtab.active-subtab {
+              background: #252f42 !important;
+              color: #38bdf8 !important;
+              border-color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right span[style*="color: #555"] {
+              color: #94a3b8 !important;
+            }
+            /* Optional Damage Components Card */
+            .app.dialog.cheapdice-theme-slate #weapon-extras-scroll label {
+              background: #0f131c !important;
+              border-color: #334155 !important;
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #weapon-extras-scroll label span,
+            .app.dialog.cheapdice-theme-slate #weapon-extras-scroll label strong {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #weapon-extras-scroll label small {
+              color: #94a3b8 !important;
             }
             .app.dialog.cheapdice-theme-slate #desc-title-v2 {
               color: #f8fafc !important;
@@ -3544,6 +4542,16 @@ Click a numbered modifier badge to execute a roll.</div>
             }
             .app.dialog.cheapdice-theme-slate #desc-body-v2 {
               color: #e2e8f0 !important;
+            }
+            /* Slate: Spell Description Content (Inspector right-panel only) */
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right .spell-description-content,
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right .spell-description-content * {
+              color: #f8fafc !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dialog-panel-right .btn-send-spell-desc-chat {
+              background: #1e293b !important;
+              border-color: #3b4b66 !important;
+              color: #38bdf8 !important;
             }
             .app.dialog.cheapdice-theme-slate input,
             .app.dialog.cheapdice-theme-slate select,
@@ -3574,6 +4582,45 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #121216 !important;
               border: 1px solid #854d0e !important;
               box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85), 0 0 10px rgba(217, 119, 6, 0.15) !important;
+              color: #e5e5e5;
+              transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            }
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="init"] {
+              background: rgba(217, 119, 6, 0.15) !important;
+              border-color: rgba(217, 119, 6, 0.4) !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="init"] .entry-label {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="concentration"] {
+              background: rgba(185, 28, 28, 0.18) !important;
+              border-color: rgba(185, 28, 28, 0.45) !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .sheet-entry-row[data-key="concentration"] .entry-label {
+              color: #f87171 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .tracking-chip {
+              background: rgba(0, 0, 0, 0.4) !important;
+              border-color: rgba(120, 53, 15, 0.4) !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .tracking-chip span {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .chip-val-input {
+              background: #0d0c0f !important;
+              color: #fbbf24 !important;
+              border-color: #78350f !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-chip-dec,
+            .app.dialog.cheapdice-theme-arcane .btn-chip-inc {
+              background: #252026 !important;
+              border: 1px solid #d97706 !important;
+              color: #fbbf24 !important;
+              font-weight: 800 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #inspector-d20 label,
+            .app.dialog.cheapdice-theme-arcane #inspector-d20 label span {
+              color: #fef3c7 !important;
             }
             .app.dialog.cheapdice-theme-arcane .window-header {
               background: #1b171f !important;
@@ -3597,9 +4644,23 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #38312e !important;
               color: #fef3c7 !important;
             }
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper span[style*="Tracking Stuff"],
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper div[style*="Tracking Stuff"] {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper span[style*="color: #4b5d88"],
+            .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper strong[style*="color: #4b5d88"] {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #skills-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-arcane #tools-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-arcane #section-d20 div[style*="letter-spacing: 0.5px"] {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #skills-content-v2,
+            .app.dialog.cheapdice-theme-arcane #tools-list-container-v2,
             .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background: #fff"],
-            .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background:#fff"],
-            .app.dialog.cheapdice-theme-arcane #tools-list-container-v2 {
+            .app.dialog.cheapdice-theme-arcane #section-d20 > div > div[style*="background:#fff"] {
               background: #141318 !important;
               border-color: #38312e !important;
             }
@@ -3623,6 +4684,44 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-arcane .standard-weapon-card div {
               color: #fef3c7 !important;
             }
+            /* Arcane Weapon & Spell Selector Atk, Dmg, and Badges */
+            .app.dialog.cheapdice-theme-arcane .spell-card-title {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .spell-card-type-label,
+            .app.dialog.cheapdice-theme-arcane .spell-card-level-label {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .spell-group-header span {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .spell-group-header[data-group="fav"] span {
+              color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-arcane .weapon-card-atk-line *,
+            .app.dialog.cheapdice-theme-arcane .weapon-card-atk-val,
+            .app.dialog.cheapdice-theme-arcane .quick-roll-weapon-btn {
+              color: #fbbf24 !important;
+              border-color: #d97706 !important;
+              background: #252026 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-arcane .weapon-card-dmg-line *,
+            .app.dialog.cheapdice-theme-arcane .weapon-card-dmg-val {
+              color: #f87171 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane span[style*="background: rgba(114, 137, 218"],
+            .app.dialog.cheapdice-theme-arcane span[title*="Assigned to HUD"] {
+              color: #fef3c7 !important;
+              background: rgba(120, 53, 15, 0.4) !important;
+              border-color: rgba(217, 119, 6, 0.35) !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .quick-roll-spell-btn {
+              color: #fbbf24 !important;
+              border-color: #d97706 !important;
+              background: #252026 !important;
+            }
             .app.dialog.cheapdice-theme-arcane .standard-weapon-card.selected,
             .app.dialog.cheapdice-theme-arcane .custom-weapon-card.selected,
             .app.dialog.cheapdice-theme-arcane .custom-spell-card.selected {
@@ -3637,6 +4736,43 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #38312e !important;
               color: #fef3c7 !important;
             }
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="Attack & Damage Overview"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="letter-spacing: 0.5px"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="font-weight: 700; font-size: 0.68em"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right div[style*="font-weight: 700; font-size: 0.78em"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="font-weight: 700; font-size: 0.68em"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right label[for^="spell-extra"] {
+              color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-subtab {
+              background: #141318 !important;
+              color: #a8a29e !important;
+              border-color: #78350f !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-subtab.active-subtab {
+              background: #252026 !important;
+              color: #fbbf24 !important;
+              border-color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="color: #666"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right small[style*="color: #666"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="color: #555"],
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right label span {
+              color: #d4cfc5 !important;
+            }
+            /* Optional Damage Components in Arcane */
+            .app.dialog.cheapdice-theme-arcane #weapon-extras-scroll label {
+              background: #141318 !important;
+              border-color: #78350f !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #weapon-extras-scroll label span,
+            .app.dialog.cheapdice-theme-arcane #weapon-extras-scroll label strong {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #weapon-extras-scroll label small {
+              color: #d4cfc5 !important;
+            }
             .app.dialog.cheapdice-theme-arcane #desc-title-v2 {
               color: #fbbf24 !important;
             }
@@ -3645,6 +4781,16 @@ Click a numbered modifier badge to execute a roll.</div>
             }
             .app.dialog.cheapdice-theme-arcane #desc-body-v2 {
               color: #fef3c7 !important;
+            }
+            /* Arcane Midnight: Spell Description Content (Inspector right-panel only) */
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right .spell-description-content,
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right .spell-description-content * {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dialog-panel-right .btn-send-spell-desc-chat {
+              background: #1c1a21 !important;
+              border-color: #78350f !important;
+              color: #fbbf24 !important;
             }
             .app.dialog.cheapdice-theme-arcane input,
             .app.dialog.cheapdice-theme-arcane select,
@@ -3677,6 +4823,54 @@ Click a numbered modifier badge to execute a roll.</div>
               -webkit-backdrop-filter: blur(16px) !important;
               border: 1px solid rgba(255, 255, 255, 0.18) !important;
               box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5) !important;
+              color: #f1f5f9;
+              transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            }
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="init"] {
+              background: rgba(56, 189, 248, 0.15) !important;
+              border-color: rgba(56, 189, 248, 0.4) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="init"] .entry-label {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="concentration"] {
+              background: rgba(244, 63, 94, 0.15) !important;
+              border-color: rgba(244, 63, 94, 0.4) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .sheet-entry-row[data-key="concentration"] .entry-label {
+              color: #fb7185 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .tracking-chip {
+              background: rgba(0, 0, 0, 0.3) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .tracking-chip span {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .chip-val-input {
+              background: rgba(0, 0, 0, 0.5) !important;
+              color: #38bdf8 !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-chip-dec,
+            .app.dialog.cheapdice-theme-glass .btn-chip-inc {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border: 1px solid #38bdf8 !important;
+              color: #ffffff !important;
+              font-weight: 800 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #inspector-d20 label,
+            .app.dialog.cheapdice-theme-glass #inspector-d20 label span {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right span,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right strong,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right div {
+              color: #f1f5f9;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right span[style*="color: #666"],
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right small[style*="color: #666"] {
+              color: #94a3b8 !important;
             }
             .app.dialog.cheapdice-theme-glass .window-header {
               background: rgba(15, 23, 42, 0.55) !important;
@@ -3700,9 +4894,23 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: rgba(255, 255, 255, 0.12) !important;
               color: #ffffff !important;
             }
+            .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper span[style*="Tracking Stuff"],
+            .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper div[style*="Tracking Stuff"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper span[style*="color: #4b5d88"],
+            .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper strong[style*="color: #4b5d88"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #skills-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-glass #tools-card-v2 > div:first-child span,
+            .app.dialog.cheapdice-theme-glass #section-d20 div[style*="letter-spacing: 0.5px"] {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #skills-content-v2,
+            .app.dialog.cheapdice-theme-glass #tools-list-container-v2,
             .app.dialog.cheapdice-theme-glass #section-d20 > div > div[style*="background: #fff"],
-            .app.dialog.cheapdice-theme-glass #section-d20 > div > div[style*="background:#fff"],
-            .app.dialog.cheapdice-theme-glass #tools-list-container-v2 {
+            .app.dialog.cheapdice-theme-glass #section-d20 > div > div[style*="background:#fff"] {
               background: rgba(0, 0, 0, 0.25) !important;
               border-color: rgba(255, 255, 255, 0.1) !important;
             }
@@ -3712,6 +4920,12 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass .sheet-entry-row .entry-label,
             .app.dialog.cheapdice-theme-glass .entry-label {
               color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-sidebar-left .roll-btn-v2 {
+              background: rgba(56, 189, 248, 0.45) !important;
+              border-color: #38bdf8 !important;
+              color: #000000 !important;
+              font-weight: 800 !important;
             }
             .app.dialog.cheapdice-theme-glass .roll-btn-v2 {
               background: rgba(56, 189, 248, 0.18) !important;
@@ -3723,7 +4937,58 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: rgba(255, 255, 255, 0.15) !important;
             }
             .app.dialog.cheapdice-theme-glass .standard-weapon-card span,
-            .app.dialog.cheapdice-theme-glass .standard-weapon-card div {
+            .app.dialog.cheapdice-theme-glass .standard-weapon-card div,
+            .app.dialog.cheapdice-theme-glass #section-weapon,
+            .app.dialog.cheapdice-theme-glass #section-weapon div,
+            .app.dialog.cheapdice-theme-glass #section-weapon span,
+            .app.dialog.cheapdice-theme-glass #section-weapon strong,
+            .app.dialog.cheapdice-theme-glass #section-spell,
+            .app.dialog.cheapdice-theme-glass #section-spell div,
+            .app.dialog.cheapdice-theme-glass #section-spell span,
+            .app.dialog.cheapdice-theme-glass #section-spell strong {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .spell-card-type-label,
+            .app.dialog.cheapdice-theme-glass .spell-card-level-label {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass .spell-group-header span {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .spell-group-header[data-group="fav"] span {
+              color: #fde047 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .quick-roll-spell-btn {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-line *,
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-atk-val,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-atk-line,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-atk-line * {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-line *,
+            .app.dialog.cheapdice-theme-glass #section-weapon .weapon-card-dmg-val,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-dmg-line,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-dmg-line *,
+            .app.dialog.cheapdice-theme-glass #section-spell .weapon-card-dmg-val {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card {
+              background: rgba(255, 255, 255, 0.06) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card span,
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card div,
+            .app.dialog.cheapdice-theme-glass .custom-weapon-card strong,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card span,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card div,
+            .app.dialog.cheapdice-theme-glass .custom-spell-card strong {
               color: #ffffff !important;
             }
             .app.dialog.cheapdice-theme-glass .standard-weapon-card.selected,
@@ -3738,7 +5003,21 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #dialog-panel-right div[style*="background:#f8fafc"] {
               background: rgba(255, 255, 255, 0.05) !important;
               border-color: rgba(255, 255, 255, 0.12) !important;
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right span,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right div,
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right label {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dialog-panel-right strong,
+            .app.dialog.cheapdice-theme-glass #preview-total-atk,
+            .app.dialog.cheapdice-theme-glass #preview-total-dmg {
               color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #preview-total-dmg {
+              background: rgba(0, 0, 0, 0.35) !important;
+              border-color: rgba(255, 255, 255, 0.18) !important;
             }
             .app.dialog.cheapdice-theme-glass #desc-title-v2 {
               color: #ffffff !important;
@@ -3765,10 +5044,208 @@ Click a numbered modifier badge to execute a roll.</div>
               background: rgba(56, 189, 248, 0.25) !important;
               border-color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-glass .btn-spell-subtab {
+              background: rgba(255, 255, 255, 0.06) !important;
+              color: #94a3b8 !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-subtab.active-subtab {
+              background: rgba(56, 189, 248, 0.22) !important;
+              color: #38bdf8 !important;
+              border: 1px solid #38bdf8 !important;
+              border-bottom: 2px solid #38bdf8 !important;
+              box-shadow: 0 0 10px rgba(56, 189, 248, 0.35) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-subtab.active-subtab i {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass span[style*="background: rgba(114, 137, 218"] {
+              color: #38bdf8 !important;
+              background: rgba(56, 189, 248, 0.15) !important;
+              border-color: rgba(56, 189, 248, 0.35) !important;
+            }
+            .app.dialog.cheapdice-theme-glass span[title*="Assigned to HUD"] {
+              color: #38bdf8 !important;
+              background: rgba(15, 23, 42, 0.75) !important;
+              border: 1px solid rgba(56, 189, 248, 0.6) !important;
+            }
+            .app.dialog.cheapdice-theme-glass span[title*="Assigned to HUD"] i {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label {
+              background: rgba(0, 0, 0, 0.35) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label span,
+            .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label strong {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #weapon-extras-scroll label small {
+              color: #94a3b8 !important;
+            }
             .app.dialog.cheapdice-theme-glass strong,
             .app.dialog.cheapdice-theme-glass span[style*="color: #2b3a4a"],
             .app.dialog.cheapdice-theme-glass span[style*="color:#2b3a4a"] {
+              color: #ffffff !important;
+            }
+
+            /* --- Right-Side Action Tabs Styles --- */
+            .app.dialog.minimized .dice-stuff-side-tabs {
+              display: none !important;
+            }
+            .app.dialog .dice-stuff-side-tab-btn {
+              width: 34px;
+              height: 34px;
+              padding: 0;
+              margin: 0;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              border: 1px solid #c0c6ce;
+              border-left: none;
+              border-radius: 0 6px 6px 0;
+              background: url("/ui/parchment.jpg") repeat, #fbf7ef;
+              color: #2b3a4a;
+              cursor: pointer;
+              box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+              font-size: 15px;
+              transition: transform 0.1s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+            }
+            .app.dialog .dice-stuff-side-tab-btn.tab-empty {
+              color: #8c97a7;
+              opacity: 0.85;
+            }
+            .app.dialog .dice-stuff-side-tab-btn:hover {
+              background: #f0f4ff;
+              color: #7289da;
+              border-color: #7289da;
+              transform: translateX(2px);
+              opacity: 1;
+            }
+
+            /* Tactical Glass Side Tabs */
+            .app.dialog.cheapdice-theme-glass .dice-stuff-side-tab-btn {
+              background: rgba(15, 23, 42, 0.72) !important;
+              backdrop-filter: blur(16px) !important;
+              -webkit-backdrop-filter: blur(16px) !important;
+              border: 1px solid rgba(255, 255, 255, 0.18) !important;
+              border-left: none !important;
+              color: #e0e7ff !important;
+              box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.5) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-side-tab-btn.tab-empty {
+              color: #64748b !important;
+              opacity: 0.75;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-side-tab-btn:hover {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
               color: #38bdf8 !important;
+              transform: translateX(2px);
+              opacity: 1;
+            }
+
+            /* Slate & Obsidian Side Tabs */
+            .app.dialog.cheapdice-theme-slate .dice-stuff-side-tab-btn {
+              background: #1e293b !important;
+              border: 1px solid #334155 !important;
+              border-left: none !important;
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-side-tab-btn.tab-empty {
+              color: #64748b !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-side-tab-btn:hover {
+              background: #334155 !important;
+              color: #38bdf8 !important;
+              border-color: #38bdf8 !important;
+            }
+
+            /* Arcane Midnight Side Tabs */
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-side-tab-btn {
+              background: #18152e !important;
+              border: 1px solid #4a3e75 !important;
+              border-left: none !important;
+              color: #e0d8f7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-side-tab-btn.tab-empty {
+              color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-side-tab-btn:hover {
+              background: #2a2347 !important;
+              color: #a78bfa !important;
+              border-color: #a78bfa !important;
+            }
+
+            /* Spell Filter Bar Themes */
+            .app.dialog.cheapdice-theme-arcane #spell-filter-bar {
+              border-bottom-color: #38312e !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter {
+              background: #1c1a21 !important;
+              border-color: #38312e !important;
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter[data-filter="fav"] i {
+              color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] {
+              background: #2d2417 !important;
+              border-color: #d97706 !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] i {
+              color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-spell-filter[style*="box-shadow: 0 0 4px rgba(114"] {
+              background: #2a2347 !important;
+              border-color: #a78bfa !important;
+              color: #e0d8f7 !important;
+            }
+
+            .app.dialog.cheapdice-theme-glass #spell-filter-bar {
+              border-bottom-color: rgba(255, 255, 255, 0.12) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter {
+              background: rgba(255, 255, 255, 0.06) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter[data-filter="fav"] i {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] {
+              background: rgba(245, 158, 11, 0.25) !important;
+              border-color: #f59e0b !important;
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] i {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-spell-filter[style*="box-shadow: 0 0 4px rgba(114"] {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+
+            .app.dialog.cheapdice-theme-slate .btn-spell-filter,
+            .app.dialog.cheapdice-theme-obsidian .btn-spell-filter {
+              background: #1e293b !important;
+              border-color: #334155 !important;
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"],
+            .app.dialog.cheapdice-theme-obsidian .btn-spell-filter[data-filter="fav"][style*="box-shadow: 0 0 4px"] {
+              background: #451a03 !important;
+              border-color: #d97706 !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-spell-filter[style*="box-shadow: 0 0 4px rgba(114"],
+            .app.dialog.cheapdice-theme-obsidian .btn-spell-filter[style*="box-shadow: 0 0 4px rgba(114"] {
+              background: #1e3a8a !important;
+              border-color: #60a5fa !important;
+              color: #93c5fd !important;
             }
           `;
           document.head.appendChild(styleTag);
@@ -3776,15 +5253,16 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Header Theme Button Injection (Works reliably with window dragging)
         const header = dialogApp.find(".window-header");
+        let themeBtnElem = null;
         if (header.find(".dice-stuff-theme-btn").length === 0) {
           const currentThemeObj = THEMES.find(t => t.key === savedTheme) || THEMES[0];
-          const themeBtn = $(`
+          themeBtnElem = $(`
             <a class="header-button dice-stuff-theme-btn" title="Current Theme: ${currentThemeObj.label} (Click to switch)" style="cursor: pointer; margin-right: 4px;">
               <i class="fas fa-palette"></i> <span class="theme-label-text">${currentThemeObj.label}</span>
             </a>
           `);
 
-          themeBtn.on("click", (e) => {
+          themeBtnElem.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
 
@@ -3816,22 +5294,110 @@ Click a numbered modifier badge to execute a roll.</div>
                   const selectedKey = $(this).data("theme");
                   applyTheme(selectedKey);
                   const matched = THEMES.find(t => t.key === selectedKey) || THEMES[0];
-                  themeBtn.find(".theme-label-text").text(matched.label);
-                  themeBtn.attr("title", `Current Theme: ${matched.label} (Click to switch)`);
+                  themeBtnElem.find(".theme-label-text").text(matched.label);
+                  themeBtnElem.attr("title", `Current Theme: ${matched.label} (Click to switch)`);
                   themeHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
                 });
               }
             }, { width: 260 }).render(true);
           });
-
-          // Insert before GM tools if present, else before close button
-          const gmBtn = header.find(".gm-tools-header-btn");
-          if (gmBtn.length > 0) {
-            gmBtn.before(themeBtn);
-          } else {
-            header.find(".close").before(themeBtn);
-          }
         }
+
+        // Header Refresh Button Injection (Directly before Close button)
+        let refreshBtnElem = null;
+        if (header.find(".dice-stuff-refresh-btn").length === 0) {
+          refreshBtnElem = $(`
+            <a class="header-button dice-stuff-refresh-btn" title="Refresh Dice Stuff" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas fa-sync-alt"></i> <span class="refresh-label-text">Refresh</span>
+            </a>
+          `);
+
+          refreshBtnElem.on("click", async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Run spell synchronization check with confirmation dialog
+            try {
+              await syncSpellsWithSheet(actor, { promptUser: true });
+            } catch (err) {
+              console.error("[Dice Stuff] Error during spell synchronization:", err);
+            }
+
+            dlg.close();
+            await window.CustomRolls.openActionDialog(currentMode, actor);
+          });
+        }
+
+        // Header Compact Mode Toggle Button Injection
+        let collapseBtnElem = null;
+        if (header.find(".dice-stuff-collapse-btn").length === 0) {
+          collapseBtnElem = $(`
+            <a class="header-button dice-stuff-collapse-btn" title="${isInitiallyCompact ? 'Expand to Full View' : 'Collapse to Compact View'}" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas ${isInitiallyCompact ? 'fa-expand-alt' : 'fa-compress-alt'}"></i> <span class="collapse-label-text">${isInitiallyCompact ? 'Expand' : 'Compact'}</span>
+            </a>
+          `);
+
+          collapseBtnElem.on("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleCompactMode();
+          });
+        }
+
+        // GM Tools Header Button in Dialog Title Bar
+        let gmBtnElem = null;
+        if (game.user.isGM && header.find(".gm-tools-header-btn").length === 0) {
+          gmBtnElem = $(`
+            <a class="header-button gm-tools-header-btn" title="GM Tools" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas fa-crown" style="color: #d97706;"></i> <span class="gm-label-text">GM Tools</span>
+            </a>
+          `);
+          gmBtnElem.on("click", (ev) => {
+            ev.preventDefault();
+            new Dialog({
+              title: `Dice Stuff: GM Tools (${actor.name})`,
+              content: `
+                <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
+                  <button type="button" id="gm-menu-presets" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-sliders" style="color: #4b5d88; width: 16px;"></i> Presets
+                  </button>
+                  <button type="button" id="gm-menu-actions" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-pen-to-square" style="color: #2b7489; width: 16px;"></i> Action Editor
+                  </button>
+                  <button type="button" id="gm-menu-generator" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-wand-magic-sparkles" style="color: #7289da; width: 16px;"></i> Generate Actions
+                  </button>
+                  <button type="button" id="gm-menu-storage" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
+                    <i class="fas fa-database" style="color: #d97706; width: 16px;"></i> Storage Inspector
+                  </button>
+                </div>
+              `,
+              buttons: {
+                close: { label: "Close" }
+              },
+              default: "close",
+              render: (subHtml) => {
+                subHtml.find("#gm-menu-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.(actor));
+                subHtml.find("#gm-menu-actions").on("click", () => window.CustomRolls?.openActionEditor?.("weapons", actor));
+                subHtml.find("#gm-menu-generator").on("click", () => window.CustomRolls?.openActionGenerator?.(actor));
+                subHtml.find("#gm-menu-storage").on("click", () => window.CustomRolls?.openStorageInspector?.());
+              }
+            }, { width: 260 }).render(true);
+          });
+        }
+
+        // Ordered Header Button Injection:
+        // Left-to-right order: [GM Tools] [Compact/Expand] [Theme] [Refresh] [Close]
+        // Inserted backwards before .close:
+        // 1. refreshBtn before close
+        // 2. themeBtn before refreshBtn
+        // 3. collapseBtn before themeBtn
+        // 4. gmBtn before collapseBtn
+        const closeBtnElem = header.find(".close");
+        if (refreshBtnElem) closeBtnElem.before(refreshBtnElem);
+        if (themeBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : closeBtnElem).before(themeBtnElem);
+        if (collapseBtnElem) (header.find(".dice-stuff-theme-btn").length ? header.find(".dice-stuff-theme-btn") : closeBtnElem).before(collapseBtnElem);
+        if (gmBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem).before(gmBtnElem);
 
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
@@ -3847,56 +5413,6 @@ Click a numbered modifier badge to execute a roll.</div>
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
 
-        // GM Tools Header Button in Dialog Title Bar
-        if (game.user.isGM) {
-          const header = html.closest(".app").find(".window-header");
-          if (header.find(".gm-tools-header-btn").length === 0) {
-            const btn = $(`
-              <a class="header-button gm-tools-header-btn" title="GM Tools" style="cursor: pointer; margin-right: 4px;">
-                <i class="fas fa-crown" style="color: #d97706;"></i> GM Tools
-              </a>
-            `);
-            btn.on("click", (ev) => {
-              ev.preventDefault();
-              new Dialog({
-                title: `Dice Stuff: GM Tools (${actor.name})`,
-                content: `
-                  <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
-                    <button type="button" id="gm-menu-presets" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                      <i class="fas fa-sliders" style="color: #4b5d88; width: 16px;"></i> Presets
-                    </button>
-                    <button type="button" id="gm-menu-actions" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                      <i class="fas fa-pen-to-square" style="color: #2b7489; width: 16px;"></i> Action Editor
-                    </button>
-                    <button type="button" id="gm-menu-generator" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                      <i class="fas fa-wand-magic-sparkles" style="color: #7289da; width: 16px;"></i> Generate Actions
-                    </button>
-                    <button type="button" id="gm-menu-storage" style="height: 30px; font-weight: 700; font-size: 0.82em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px;">
-                      <i class="fas fa-database" style="color: #d97706; width: 16px;"></i> Storage Inspector
-                    </button>
-                  </div>
-                `,
-                buttons: {
-                  close: { label: "Close" }
-                },
-                default: "close",
-                render: (subHtml) => {
-                  subHtml.find("#gm-menu-presets").on("click", () => window.CustomRolls?.openD20PresetEditorV2?.(actor));
-                  subHtml.find("#gm-menu-actions").on("click", () => window.CustomRolls?.openActionEditor?.("weapons", actor));
-                  subHtml.find("#gm-menu-generator").on("click", () => window.CustomRolls?.openActionGenerator?.(actor));
-                  subHtml.find("#gm-menu-storage").on("click", () => window.CustomRolls?.openStorageInspector?.());
-                }
-              }, { width: 260 }).render(true);
-            });
-            header.find(".close").before(btn);
-            // Ensure Theme Button stays to the left of GM Tools button
-            const existingThemeBtn = header.find(".dice-stuff-theme-btn");
-            if (existingThemeBtn.length > 0) {
-              btn.before(existingThemeBtn);
-            }
-          }
-        }
-
         // Persistent Weapon Roll Handler (Keeps dialog open)
         html.on("click", "#btn-roll-weapon-now", async () => {
           const rawConfig = attacks[selectedWeaponKey];
@@ -3907,6 +5423,12 @@ Click a numbered modifier badge to execute a roll.</div>
             config.attackCircumstanceModifier = (Number(config.attackCircumstanceModifier) || 0) - 5;
             config.damageModifier = (Number(config.damageModifier) || 0) + 10;
             config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [GWM/SS -5/+10]`;
+          }
+
+          if (config.isVersatile && html.find("#versatile-toggle").is(":checked")) {
+            const vDie = config.versatileDie || "10";
+            config.damageDieSize = `d${vDie}`;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [Two-Handed 2H]`;
           }
 
           if (config.additionalDamageComponents) {
@@ -4030,8 +5552,175 @@ Click a numbered modifier badge to execute a roll.</div>
             return ui.notifications.error("SocketLib attack handler is not initialized. Please refresh the page.");
           }
 
+          // Pass extra attack / DC & damage / heal modifiers from spell inspector inputs
+          config.extraAttackModifier = html.find("#spell-extra-atk").val() || "";
+          config.extraDamageModifier = html.find("#spell-extra-dmg").val() || "";
+
           config.targetIds = Array.from(game.user.targets).map(t => t.id);
           await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+        });
+
+        // Generic Spell Attack Roll Handler
+        html.on("click", ".btn-spell-atk-roll", async function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const bonus = Number($(this).data("atk-bonus")) || 0;
+          const sign = bonus >= 0 ? "+" : "-";
+          const formula = bonus !== 0 ? `1d20 ${sign} ${Math.abs(bonus)}` : "1d20";
+          try {
+            const roll = await new Roll(formula).evaluate();
+            if (game.dice3d) {
+              await game.dice3d.showForRoll(roll, game.user, true);
+            }
+            const rollHtml = await roll.render();
+            const content = `
+              <div style="font-family: inherit; color: #333;">
+                <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #7289da; padding-bottom: 3px; margin-bottom: 6px;">
+                  <span style="font-size: 1.05em; font-weight: bold; color: #2b3a4a;"><i class="fas fa-dice-d20" style="color: #7289da; margin-right: 4px;"></i>Spell Attack Roll</span>
+                  <span style="font-size: 0.8em; color: #777;">${actor.name}</span>
+                </div>
+                <div style="margin-top: 4px;">
+                  ${rollHtml}
+                </div>
+              </div>
+            `;
+            await ChatMessage.create({
+              user: game.user.id,
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content,
+              rolls: [roll],
+              sound: CONFIG.sounds?.dice
+            });
+          } catch (err) {
+            console.error("Failed to roll generic spell attack:", err);
+            ui.notifications.error("Failed to execute spell attack roll.");
+          }
+        });
+
+        // Generic Spell Save DC Chat Card Handler
+        html.on("click", ".btn-spell-dc-card", async function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const dc = $(this).data("save-dc") || 10;
+          const abilities = [
+            { key: "str", label: "STR", name: "Strength" },
+            { key: "dex", label: "DEX", name: "Dexterity" },
+            { key: "con", label: "CON", name: "Constitution" },
+            { key: "int", label: "INT", name: "Intelligence" },
+            { key: "wis", label: "WIS", name: "Wisdom" },
+            { key: "cha", label: "CHA", name: "Charisma" }
+          ];
+
+          const saveButtonsHtml = abilities.map(a => {
+            return `
+              <button type="button" class="cheapdice-dc-save-btn" data-ability="${a.key}" style="flex: 1 1 calc(33.333% - 6px); max-width: calc(33.333% - 6px); height: 26px; line-height: 24px; padding: 0 4px; box-sizing: border-box; text-align: center; border-radius: 4px; border: 1px solid #7289da; background: #fff; color: #4b5d88; font-size: 0.78em; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 3px; white-space: nowrap;">
+                <i class="fas fa-dice-d20" style="color: #7289da; font-size: 0.9em;"></i> ${a.label} Save
+              </button>
+            `;
+          }).join("");
+
+          const rawCardHtml = `
+            <div style="font-family: inherit; color: #2b3a4a;">
+              <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #7289da; padding-bottom: 4px; margin-bottom: 6px;">
+                <span style="font-size: 1.05em; font-weight: 800; color: #2b3a4a;">
+                  <i class="fas fa-shield-alt" style="color: #7289da; margin-right: 4px;"></i>Spell Save DC
+                </span>
+                <span style="font-size: 1.1em; font-weight: 800; color: #fff; background: #7289da; padding: 1px 7px; border-radius: 4px;">
+                  DC ${dc}
+                </span>
+              </div>
+              <div style="font-size: 0.85em; color: #555; margin-bottom: 6px;">
+                <strong>${actor.name}</strong> imposes a saving throw:
+              </div>
+              <div style="background: rgba(114, 137, 218, 0.08); border: 1px solid rgba(114, 137, 218, 0.25); border-radius: 4px; padding: 6px 8px; text-align: center;">
+                <div style="font-size: 0.72em; font-weight: 700; color: #4b5d88; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                  Click to Roll Save
+                </div>
+                <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px;">
+                  ${saveButtonsHtml}
+                </div>
+              </div>
+            </div>
+          `;
+
+          try {
+            await ChatMessage.create({
+              user: game.user.id,
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content: rawCardHtml
+            });
+          } catch (err) {
+            console.error("Failed to create spell save DC card:", err);
+            ui.notifications.error("Failed to post Save DC card to chat.");
+          }
+        });
+
+        // Spell Inspector Sub-Tab Switcher
+        html.on("click", ".btn-spell-subtab", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          inspectorSpellSubTab = $(this).data("subtab") || "details";
+          html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+        });
+
+        // Spell Slot Tracker Mode Toggle (Available vs Spent)
+        html.on("click", ".btn-toggle-slot-mode", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const mode = $(this).data("mode") || "available";
+          spellSlotDisplayMode = mode;
+          try {
+            localStorage.setItem(SPELL_SLOT_MODE_STORAGE_KEY, mode);
+          } catch (_err) {}
+          html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+        });
+
+        // Send Spell Description to Chat Handler
+        html.on("click", ".btn-send-spell-desc-chat", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const sp = spellConfigs[selectedSpellKey];
+          if (!sp) return;
+
+          const desc = (sp.description || sp.summary || "").trim();
+          if (!desc) {
+            return ui.notifications.warn(`No description available for "${selectedSpellKey}".`);
+          }
+
+          const lvlLabel = Number(sp.baseLevel) === 0 ? "Cantrip" : `Level ${sp.baseLevel}`;
+          const d = getSpellDetails(sp, sp.baseLevel);
+          const tagsHtml = d.tags.map(t => {
+            const isConc = t === "Concentration";
+            const isSlot = t.startsWith("Slot:");
+            const bg = isConc ? "rgba(163, 72, 72, 0.15)" : (isSlot ? "rgba(43, 116, 137, 0.15)" : "rgba(114, 137, 218, 0.18)");
+            const border = isConc ? "rgba(163, 72, 72, 0.4)" : (isSlot ? "rgba(43, 116, 137, 0.4)" : "rgba(114, 137, 218, 0.4)");
+            const color = isConc ? "#a34848" : (isSlot ? "#235d6e" : "#4b5d88");
+            return `<span style="display: inline-block; background: ${bg}; border: 1px solid ${border}; border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: ${color};">${t}</span>`;
+          }).join(" ");
+
+          const chatContent = `
+            <div style="font-family: inherit; color: #333;">
+              <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #343a40; padding-bottom: 3px; margin-bottom: 6px;">
+                <span style="font-size: 1.05em; font-weight: bold; color: #2b3a4a;">${selectedSpellKey}</span>
+                <span style="font-size: 0.8em; color: #777;">${actor.name}</span>
+              </div>
+
+              ${tagsHtml ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px;">${tagsHtml}</div>` : ""}
+
+              <div style="background: rgba(75, 93, 136, 0.08); border: 1px solid rgba(75, 93, 136, 0.3); border-radius: 4px; padding: 8px 10px; margin-top: 4px;">
+                <div style="font-weight: bold; font-size: 0.8em; color: #4b5d88; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px;">
+                  <i class="fas fa-sparkles"></i> Spell Description
+                </div>
+                <div style="font-size: 0.9em; line-height: 1.4; color: #2b3a4a;">${desc}</div>
+              </div>
+            </div>
+          `;
+
+          await ChatMessage.create({
+            user: game.user.id,
+            speaker: ChatMessage.getSpeaker({ actor }),
+            content: chatContent
+          });
         });
 
         function updateCardStyles() {
@@ -4077,6 +5766,262 @@ Click a numbered modifier badge to execute a roll.</div>
           if (mode === "spell") bindSpellDragAndDrop();
         }
 
+        // --- Compact Mode Toggle & View Switching ---
+        let isCompact = isInitiallyCompact;
+        const compactNav = html.find("#dice-stuff-compact-nav");
+        const panelLeft = html.find("#dialog-sidebar-left");
+        const panelCenter = html.find("#dialog-panel-center");
+        const panelRight = html.find("#dialog-panel-right");
+
+        function updateCompactView() {
+          const collapseBtn = dialogApp.find(".dice-stuff-collapse-btn");
+          const themeBtn = dialogApp.find(".dice-stuff-theme-btn");
+          const gmBtn = dialogApp.find(".gm-tools-header-btn");
+          const refreshBtn = dialogApp.find(".dice-stuff-refresh-btn");
+          const closeBtn = dialogApp.find(".header-button.close");
+
+          if (isCompact) {
+            collapseBtn.find("i").removeClass("fa-compress-alt").addClass("fa-expand-alt");
+            collapseBtn.find(".collapse-label-text").hide();
+            collapseBtn.attr("title", "Expand to Full View");
+
+            // Hide text labels in header buttons in compact mode (icons only)
+            themeBtn.find(".theme-label-text").hide();
+            refreshBtn.find(".refresh-label-text").hide();
+            gmBtn.find(".gm-label-text").hide();
+            gmBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
+            dialogApp.find(".gm-label-text").hide();
+
+            closeBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="close-label-text" style="display: none;"></span>');
+            dialogApp.find(".close-label-text").hide();
+
+            compactNav.css("display", "flex");
+            panelRight.hide();
+
+            // Highlight active compact tab button
+            compactNav.find(".compact-nav-btn").each(function () {
+              const t = $(this).data("tab");
+              const isAct = t === compactTab;
+              $(this).css({
+                background: isAct ? "#7289da" : "#f0f2f5",
+                color: isAct ? "#fff" : "#555"
+              });
+            });
+
+            if (compactTab === "abilities") {
+              panelLeft.show().css({ width: "100%", "min-width": "0", "border-right": "none", "padding-right": "0" });
+              panelCenter.hide();
+            } else {
+              panelLeft.hide();
+              panelCenter.show().css({ width: "100%", "min-width": "0", "border-right": "none", "padding-right": "0" });
+              panelCenter.find("> div:first-child").hide(); // Hide center 3-tab bar in compact mode
+              if (compactTab === "weapon") {
+                secWeapon.css("display", "flex");
+                secSpell.hide();
+                secD20.hide();
+                bindWeaponDragAndDrop();
+              } else if (compactTab === "spell") {
+                secSpell.css("display", "flex");
+                secWeapon.hide();
+                secD20.hide();
+                bindSpellDragAndDrop();
+              } else if (compactTab === "d20") {
+                secD20.css("display", "flex");
+                secWeapon.hide();
+                secSpell.hide();
+              }
+            }
+
+            dialogApp.css({ width: "310px", "min-width": "310px" });
+            if (dlg?.setPosition) {
+              dlg.setPosition({ width: 310, height: "auto" });
+            } else if (dlg?.position) {
+              dlg.position.width = 310;
+            }
+          } else {
+            collapseBtn.find("i").removeClass("fa-expand-alt").addClass("fa-compress-alt");
+            collapseBtn.find(".collapse-label-text").show().text("Compact");
+            collapseBtn.attr("title", "Collapse to Compact View");
+
+            // Restore text labels in header buttons in expanded mode
+            themeBtn.find(".theme-label-text").show();
+            refreshBtn.find(".refresh-label-text").show();
+            dialogApp.find(".gm-label-text").show();
+            dialogApp.find(".close-label-text").show();
+
+            compactNav.hide();
+            panelLeft.show().css({ width: "275px", "min-width": "275px", "border-right": "1px solid #bcc5d3", "padding-right": "8px" });
+            panelCenter.show().css({ width: "auto", "min-width": "300px", "border-right": "1px solid #bcc5d3", "padding-right": "8px" });
+            panelCenter.find("> div:first-child").show(); // Restore center 3-tab bar
+            panelRight.show();
+
+            setTab(currentMode);
+            dialogApp.css({ width: "980px", "min-width": "980px" });
+            if (dlg?.setPosition) {
+              dlg.setPosition({ width: 980, height: "auto" });
+            } else if (dlg?.position) {
+              dlg.position.width = 980;
+            }
+          }
+        }
+
+        function toggleCompactMode() {
+          isCompact = !isCompact;
+          try {
+            localStorage.setItem(COMPACT_STORAGE_KEY, String(isCompact));
+          } catch (e) {}
+          updateCompactView();
+        }
+
+        // Compact Navigation Buttons Click
+        compactNav.find(".compact-nav-btn").on("click", function (e) {
+          e.preventDefault();
+          compactTab = $(this).data("tab");
+          try {
+            localStorage.setItem(COMPACT_TAB_STORAGE_KEY, compactTab);
+          } catch (e) {}
+          if (compactTab !== "abilities") {
+            currentMode = compactTab;
+          }
+          updateCompactView();
+        });
+
+        // Quick Roll Attack Click (Base Attack Roll)
+        html.on("click", ".quick-roll-weapon-btn", async function (e) {
+          e.stopPropagation();
+          const key = $(this).data("key") || selectedWeaponKey;
+          const rawConfig = attacks[key];
+          if (!rawConfig) return;
+
+          const config = foundry.utils.duplicate(rawConfig);
+          config.targetIds = Array.from(game.user.targets).map(t => t.id);
+
+          // Quick Roll is strictly base damage; disable all optional extra damage components
+          if (config.additionalDamageComponents) {
+            config.additionalDamageComponents.forEach(c => c.isActive = false);
+          }
+          config.extraDamageModifier = "";
+          config.extraAttackModifier = "";
+
+          if (e.shiftKey) config.rollMode = "advantage";
+          else if (e.altKey || e.ctrlKey || e.metaKey) config.rollMode = "disadvantage";
+
+          if (key === "Unarmed Strike") {
+            const hasTavern = actor.items?.some(i => (i.name || "").toLowerCase().includes("tavern brawler")) ?? false;
+            const monk = actor.items?.find(i => i.type === "class" && (i.name || "").toLowerCase().includes("monk")) || actor.classes?.monk;
+            const monkLvl = monk?.system?.levels || 0;
+            const strMod = actor.system?.abilities?.str?.mod ?? 0;
+            const dexMod = actor.system?.abilities?.dex?.mod ?? 0;
+            const saveDC = 8 + (actor.system?.attributes?.prof ?? 2) + (monkLvl > 0 ? Math.max(strMod, dexMod) : strMod);
+
+            let choiceConfirmed = false;
+            await new Promise(resolve => {
+              new Dialog({
+                title: `${actor.name}: Unarmed Strike`,
+                content: `
+                  <div style="padding: 6px; font-family: inherit;">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                      <button type="button" id="unarmed-choice-damage" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #7289da; color: #fff; border: 1px solid #5b6eae; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i class="fas fa-hand-fist"></i> Damage
+                      </button>
+                      <button type="button" id="unarmed-choice-grapple" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #2b7489; color: #fff; border: 1px solid #1f5564; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i class="fas fa-hand-holding-hand"></i> Grapple (DC ${saveDC} Save)
+                      </button>
+                      <button type="button" id="unarmed-choice-shove" style="height: 32px; font-weight: 700; font-size: 0.85em; background: #a34848; color: #fff; border: 1px solid #7c3535; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i class="fas fa-person-falling"></i> Shove (DC ${saveDC} Save)
+                      </button>
+                    </div>
+                  </div>
+                `,
+                buttons: { cancel: { label: "Cancel" } },
+                default: "cancel",
+                render: (dlgHtml) => {
+                  dlgHtml.find("#unarmed-choice-damage").on("click", async () => {
+                    dlgHtml.closest(".dialog").find(".close").trigger("click");
+                    await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
+                  });
+                  dlgHtml.find("#unarmed-choice-grapple").on("click", async () => {
+                    dlgHtml.closest(".dialog").find(".close").trigger("click");
+                    await globalThis.attackSocket.executeAsGM("runUnarmedManeuver", "grapple", config, actor.id, game.user.id);
+                  });
+                  dlgHtml.find("#unarmed-choice-shove").on("click", async () => {
+                    dlgHtml.closest(".dialog").find(".close").trigger("click");
+                    await globalThis.attackSocket.executeAsGM("runUnarmedManeuver", "shove", config, actor.id, game.user.id);
+                  });
+                }
+              }, { width: 300 }).render(true);
+            });
+          } else {
+            await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
+          }
+        });
+
+        // Quick Cast Spell Click (Base Level Spell Cast)
+        html.on("click", ".quick-roll-spell-btn", async function (e) {
+          e.stopPropagation();
+          const key = $(this).data("key") || selectedSpellKey;
+          const rawConfig = spellConfigs[key];
+          if (!rawConfig) return;
+
+          const castLvl = Number(rawConfig.baseLevel) || 0;
+          const { cfg: config } = getEffectiveSpellConfig(rawConfig, castLvl);
+
+          if (castLvl === 0) {
+            config.skipSlotDeduction = true;
+          } else {
+            const slotKey = `spell${castLvl}`;
+            const currentSlotVal = Number(actor.system.spells?.[slotKey]?.value) || 0;
+            if (currentSlotVal <= 0) {
+              const proceed = await Dialog.confirm({
+                title: "No Spell Slots Remaining",
+                content: `<p><strong>${actor.name}</strong> has <strong>0</strong> Level ${castLvl} spell slots remaining. Cast anyway?</p>`
+              });
+              if (!proceed) return;
+              config.skipSlotDeduction = true;
+            }
+          }
+
+          if (e.shiftKey) config.rollMode = "advantage";
+          else if (e.altKey || e.ctrlKey || e.metaKey) config.rollMode = "disadvantage";
+
+          if (config.hasDamageTypeChoice && config.damageTypes?.length > 0) {
+            let choiceConfirmed = false;
+            const choiceOptions = config.damageTypes.map(t => `<option value="${t}">${t.toUpperCase()}</option>`).join("");
+            await new Promise(resolve => {
+              new Dialog({
+                title: `${config.spellName}: Damage Type`,
+                content: `<div style="padding: 6px;"><select id="chosenType" style="width:100%; height:30px;">${choiceOptions}</select></div>`,
+                buttons: {
+                  ok: { label: "Confirm", callback: (chHtml) => { choiceConfirmed = true; config.damageType = chHtml.find("#chosenType").val(); } },
+                  cancel: { label: "Cancel" }
+                },
+                default: "ok",
+                close: () => resolve()
+              }, { width: 260 }).render(true);
+            });
+            if (!choiceConfirmed) return;
+          }
+
+          config.targetIds = Array.from(game.user.targets).map(t => t.id);
+          await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+        });
+
+        // Initial setup for compact mode
+        if (isInitiallyCompact) {
+          updateCompactView();
+        } else {
+          setTab(currentMode);
+          updateWeaponOverviewTotals();
+        }
+
+        // Intercept native minimize/maximize to maintain compact dimensions
+        const origMaximize = dlg.maximize.bind(dlg);
+        dlg.maximize = async function () {
+          await origMaximize();
+          if (isCompact) {
+            updateCompactView();
+          }
+        };
         function updateWeaponOverviewTotals() {
           const config = attacks[selectedWeaponKey];
           if (!config) return;
@@ -4091,6 +6036,13 @@ Click a numbered modifier badge to execute a roll.</div>
           if (config.hasGWM && isGWM) {
             atkMod -= 5;
             dmgMod += 10;
+          }
+
+          // Check Versatile toggle
+          let baseDieSize = d.dieSize;
+          const isVersatileChecked = html.find("#versatile-toggle").is(":checked");
+          if (config.isVersatile && isVersatileChecked) {
+            baseDieSize = config.versatileDie || "10";
           }
 
           // Check extra attack input
@@ -4121,8 +6073,8 @@ Click a numbered modifier badge to execute a roll.</div>
           // Format total damage string
           const dmgModSign = dmgMod >= 0 ? `+ ${dmgMod}` : `- ${Math.abs(dmgMod)}`;
           let totalDmgStr = "";
-          if (d.diceCount > 0 && d.dieSize) {
-            totalDmgStr = `${d.diceCount}d${d.dieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim();
+          if (d.diceCount > 0 && baseDieSize) {
+            totalDmgStr = `${d.diceCount}d${baseDieSize} ${dmgMod !== 0 ? dmgModSign : ""}`.trim();
           } else {
             totalDmgStr = `${dmgMod}`;
           }
@@ -4142,12 +6094,14 @@ Click a numbered modifier badge to execute a roll.</div>
         btnWeapon.on("click", () => setTab("weapon"));
         btnSpell.on("click", () => setTab("spell"));
         btnD20.on("click", () => setTab("d20"));
-        setTab(currentMode);
-        updateWeaponOverviewTotals();
+        if (!isInitiallyCompact) {
+          setTab(currentMode);
+          updateWeaponOverviewTotals();
+        }
 
         // Live formula updates on keystroke and checkbox changes
         html.on("input", "#weapon-extra-atk, #weapon-extra-dmg", updateWeaponOverviewTotals);
-        html.on("change", "#gwm-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
+        html.on("change", "#gwm-toggle, #versatile-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
 
         html.on("click", ".weapon-card", function () {
           selectedWeaponKey = $(this).data("key");
@@ -4164,17 +6118,178 @@ Click a numbered modifier badge to execute a roll.</div>
 
         function bindWeaponDragAndDrop() {
           const list = html.find("#custom-weapons-list");
+          const trashZone = html.find("#weapon-trash-zone");
+
           list.find(".custom-weapon-card").off("dragstart dragend dragover dragleave drop");
+          list.off("dragover dragleave drop");
+          trashZone.off("dragover dragleave drop");
+
+          // Helper to import a weapon item dropped from an actor's sheet
+          async function importWeaponFromDrop(item) {
+            if (!item || item.type !== "weapon") {
+              ui.notifications.warn("Only weapons can be added to the weapon column.");
+              return;
+            }
+
+            const sys = item.system || {};
+            const isFinesse = Boolean(sys.properties?.has ? sys.properties.has("fin") : sys.properties?.fin);
+            const isRanged = sys.actionType === "rwak";
+            const strMod = actor.system.abilities?.str?.mod || 0;
+            const dexMod = actor.system.abilities?.dex?.mod || 0;
+            const abilityScore = (isRanged || (isFinesse && dexMod > strMod)) ? "dex" : "str";
+
+            let formula = "";
+            let dmgType = "slashing";
+            if (sys.damage?.base?.formula) {
+              formula = sys.damage.base.formula;
+              dmgType = sys.damage.base.types?.first?.() || sys.damage.base.types?.[0] || "slashing";
+            } else if (sys.damage?.parts?.[0]) {
+              formula = sys.damage.parts[0][0] || "";
+              dmgType = sys.damage.parts[0][1] || "slashing";
+            }
+
+            let damageDiceCount = 1;
+            let damageDieSize = "d8";
+            const match = formula.match(/(\d*)d(\d+)/i);
+            if (match) {
+              damageDiceCount = parseInt(match[1]) || 1;
+              damageDieSize = `d${match[2]}`;
+            }
+
+            let weaponModifier = 0;
+            if (typeof sys.magicalBonus === "number" && sys.magicalBonus !== 0) {
+              weaponModifier = sys.magicalBonus;
+            } else if (typeof sys.attackBonus === "number" && sys.attackBonus !== 0) {
+              weaponModifier = sys.attackBonus;
+            }
+
+            // Robust proficiency check across dnd5e versions (item.isProficient, sys.proficient, sys.prof?.hasProficiency)
+            const isProf = Boolean(item.isProficient ?? sys.proficient ?? sys.prof?.hasProficiency ?? false);
+            const isVersatile = Boolean(sys.properties?.has ? sys.properties.has("ver") : sys.properties?.ver);
+            let versatileDie = "10";
+            if (sys.damage?.versatile) {
+              const vm = String(sys.damage.versatile).match(/d(\d+)/i);
+              if (vm) versatileDie = vm[1];
+            }
+
+            // Determine if GWM can be allowed (heavy weapons)
+            const isHeavy = Boolean(sys.properties?.has ? sys.properties.has("hvy") : sys.properties?.hvy);
+
+            // Always query the latest persistent storage to ensure GM edits are captured
+            const freshAttacks = foundry.utils.deepClone(
+              window.CustomRolls?.getProfileData?.(actor, "attackConfigs") ||
+              actor.getFlag?.("world", "attackConfigs") ||
+              attacks
+            );
+
+            // Check if attack with this name or item already exists
+            const existingConfig = freshAttacks[item.name] || Object.values(freshAttacks).find(a => a.itemId === item.id);
+            if (existingConfig) {
+              const isGmConfigured = existingConfig.addedBy === "gm" || existingConfig.gmModified === true;
+              if (!game.user.isGM && isGmConfigured) {
+                return ui.notifications.warn(`"${item.name}" is already configured by the GM and cannot be overwritten.`);
+              }
+              if (game.user.isGM) {
+                const confirmed = await Dialog.confirm({
+                  title: `Overwrite ${item.name}?`,
+                  content: `<p><strong>${item.name}</strong> already exists in attacks. Do you want to overwrite it with default stats from the character sheet?</p>`
+                });
+                if (!confirmed) return;
+              }
+            }
+
+            const newAttackConfig = {
+              itemId: item.id,
+              macroName: item.name,
+              chatCardTitle: item.name,
+              abilityScore: abilityScore,
+              isProficient: isProf,
+              damageDiceCount: damageDiceCount,
+              damageDieSize: damageDieSize,
+              damageType: (dmgType || "slashing").toLowerCase(),
+              weaponModifier: weaponModifier,
+              attackCircumstanceModifier: 0,
+              damageModifier: 0,
+              CRIT_THRESHOLD: 20,
+              extraCriticalBonus: "",
+              GWF_REROLL_THRESHOLD: 0,
+              HAS_HALFLING_LUCKY: false,
+              HALFLING_LUCKY_REROLL_THRESHOLD: 0,
+              superAdv: false,
+              hasGWM: isHeavy || isRanged,
+              isVersatile: isVersatile,
+              versatileDie: versatileDie,
+              addedBy: game.user.isGM ? "gm" : "player",
+              additionalDamageComponents: []
+            };
+
+            const updatedAttacks = foundry.utils.deepClone(freshAttacks);
+            updatedAttacks[item.name] = newAttackConfig;
+
+            await window.CustomRolls.setProfileData(actor, "attackConfigs", updatedAttacks);
+            if (game.user.isGM) {
+              await actor.setFlag("world", "attackConfigs", updatedAttacks, { recursive: false });
+            }
+
+            attacks = updatedAttacks;
+            attackNames = Object.keys(attacks);
+            selectedWeaponKey = item.name;
+
+            html.find("#custom-weapons-list").html(renderCustomWeaponCards());
+            html.find("#inspector-weapon").html(getSelectedWeaponInspectorHtml());
+            bindWeaponDragAndDrop();
+            updateCardStyles();
+            updateWeaponOverviewTotals();
+            ui.notifications.info(`Added "${item.name}" to weapon attacks.`);
+          }
+
+          // Container-level drop listener for dropping an item from the character sheet
+          list.on("dragover", function (e) {
+            e.preventDefault();
+            e.originalEvent.dataTransfer.dropEffect = "copy";
+          });
+
+          list.on("drop", async function (e) {
+            let data = null;
+            try {
+              data = JSON.parse(e.originalEvent.dataTransfer.getData("text/plain"));
+            } catch (err) {
+              data = null;
+            }
+
+            // If it's a reorder of an existing action card, the card drop listener handles it
+            if (!data || data.type !== "Item") return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            let droppedItem = null;
+            if (data.uuid) {
+              droppedItem = fromUuidSync(data.uuid);
+            } else if (data.data) {
+              droppedItem = data.data;
+            }
+
+            // Verify the item belongs directly to the character sheet of the active actor
+            const actorItem = actor.items.get(droppedItem?.id) || (droppedItem?.parent?.id === actor.id ? droppedItem : null);
+            if (!actorItem) {
+              return ui.notifications.warn("Please add the weapon to your character sheet first, then drag it here.");
+            }
+
+            await importWeaponFromDrop(actorItem);
+          });
 
           list.find(".custom-weapon-card").on("dragstart", function (e) {
             e.originalEvent.dataTransfer.setData("text/plain", $(this).data("key"));
             e.originalEvent.dataTransfer.effectAllowed = "move";
             $(this).css("opacity", "0.4");
+            trashZone.css("display", "flex");
           });
 
           list.find(".custom-weapon-card").on("dragend", function () {
             $(this).css("opacity", "1");
             list.find(".custom-weapon-card").css({ "border-top": "", "border-bottom": "" });
+            trashZone.css("display", "none");
           });
 
           list.find(".custom-weapon-card").on("dragover", function (e) {
@@ -4194,9 +6309,27 @@ Click a numbered modifier badge to execute a roll.</div>
           });
 
           list.find(".custom-weapon-card").on("drop", async function (e) {
+            let plainText = "";
+            try {
+              plainText = e.originalEvent.dataTransfer.getData("text/plain");
+            } catch (err) {}
+
+            // Check if this was an Item drop from character sheet
+            let isItemDrop = false;
+            try {
+              const parsed = JSON.parse(plainText);
+              if (parsed?.type === "Item") isItemDrop = true;
+            } catch (err) {}
+
+            if (isItemDrop) {
+              // Defer to container drop handler
+              return;
+            }
+
             e.preventDefault();
+            e.stopPropagation();
             $(this).css({ "border-top": "", "border-bottom": "" });
-            const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
+            const draggedKey = plainText;
             const targetKey = $(this).data("key");
             if (!draggedKey || draggedKey === targetKey) return;
 
@@ -4235,6 +6368,95 @@ Click a numbered modifier badge to execute a roll.</div>
             bindWeaponDragAndDrop();
             updateCardStyles();
           });
+
+          // Trash Zone Drag and Drop Handlers
+          trashZone.on("dragover", function (e) {
+            e.preventDefault();
+            e.originalEvent.dataTransfer.dropEffect = "move";
+            $(this).css({ "background": "#ffcdd2", "border-color": "#b71c1c" });
+          });
+
+          trashZone.on("dragleave", function () {
+            $(this).css({ "background": "#ffebee", "border-color": "#e57373" });
+          });
+
+          trashZone.on("drop", async function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            trashZone.css("display", "none");
+
+            const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
+            if (!draggedKey || !attacks[draggedKey]) return;
+
+            const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+            if (STANDARD_KEYS.includes(draggedKey)) {
+              return ui.notifications.warn(`"${draggedKey}" is a standard attack and cannot be removed.`);
+            }
+
+            // Fetch latest attack configurations to accurately verify GM ownership
+            const currentAttacksStore = foundry.utils.deepClone(
+              window.CustomRolls?.getProfileData?.(actor, "attackConfigs") ||
+              actor.getFlag?.("world", "attackConfigs") ||
+              attacks
+            );
+
+            const targetConfig = currentAttacksStore[draggedKey] || attacks[draggedKey];
+            const isPlayerAdded = targetConfig?.addedBy === "player" && !targetConfig?.gmModified;
+
+            if (!game.user.isGM && !isPlayerAdded) {
+              return ui.notifications.warn(`"${draggedKey}" was configured by the GM and cannot be removed.`);
+            }
+
+            // If GM is removing a GM-configured action, prompt confirmation
+            if (game.user.isGM && !isPlayerAdded) {
+              const confirmRemove = await Dialog.confirm({
+                title: `Remove ${draggedKey}?`,
+                content: `<p>Are you sure you want to remove <strong>${draggedKey}</strong>? This will permanently delete this GM-configured action.</p>`
+              });
+              if (!confirmRemove) return;
+            }
+
+            const newAttacks = foundry.utils.deepClone(currentAttacksStore);
+            delete newAttacks[draggedKey];
+
+            await window.CustomRolls.setProfileData(actor, "attackConfigs", newAttacks);
+            if (game.user.isGM) {
+              await actor.setFlag("world", "attackConfigs", newAttacks, { recursive: false });
+            }
+
+            // Clean up any assigned HUD slots for this removed weapon
+            let assignedSlots = foundry.utils.deepClone(
+              window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots") ||
+              actor.getFlag("world", "hudAssignedSlots") || {}
+            );
+            let slotCleaned = false;
+            for (const [sNum, data] of Object.entries(assignedSlots)) {
+              if (data?.category === "weapons" && data?.name === draggedKey) {
+                delete assignedSlots[sNum];
+                slotCleaned = true;
+              }
+            }
+            if (slotCleaned) {
+              await window.CustomRolls.setProfileData(actor, "hudAssignedSlots", assignedSlots);
+              if (game.user.isGM) {
+                await actor.setFlag("world", "hudAssignedSlots", assignedSlots, { recursive: false });
+              }
+              canvas.tokens?.controlled?.forEach(t => t.hud?.render());
+            }
+
+            attacks = newAttacks;
+            attackNames = Object.keys(attacks);
+            if (selectedWeaponKey === draggedKey) {
+              selectedWeaponKey = attackNames[0] || null;
+            }
+
+            html.find("#custom-weapons-list").html(renderCustomWeaponCards());
+            html.find("#inspector-weapon").html(getSelectedWeaponInspectorHtml());
+            bindWeaponDragAndDrop();
+            updateCardStyles();
+            updateWeaponOverviewTotals();
+            ui.notifications.info(`Removed "${draggedKey}".`);
+          });
         }
 
         bindWeaponDragAndDrop();
@@ -4242,71 +6464,56 @@ Click a numbered modifier badge to execute a roll.</div>
         function bindSpellDragAndDrop() {
           const list = html.find("#section-spell");
           list.find(".custom-spell-card").off("dragstart dragend dragover dragleave drop");
-
-          list.find(".custom-spell-card").on("dragstart", function (e) {
-            e.originalEvent.dataTransfer.setData("text/plain", $(this).data("key"));
-            e.originalEvent.dataTransfer.effectAllowed = "move";
-            $(this).css("opacity", "0.4");
-          });
-
-          list.find(".custom-spell-card").on("dragend", function () {
-            $(this).css("opacity", "1");
-            list.find(".custom-spell-card").css({ "border-top": "", "border-bottom": "" });
-          });
-
-          list.find(".custom-spell-card").on("dragover", function (e) {
-            e.preventDefault();
-            e.originalEvent.dataTransfer.dropEffect = "move";
-            const rect = this.getBoundingClientRect();
-            const relY = e.clientY - rect.top;
-            if (relY < rect.height / 2) {
-              $(this).css({ "border-top": "3px solid #7289da", "border-bottom": "" });
-            } else {
-              $(this).css({ "border-bottom": "3px solid #7289da", "border-top": "" });
-            }
-          });
-
-          list.find(".custom-spell-card").on("dragleave", function () {
-            $(this).css({ "border-top": "", "border-bottom": "" });
-          });
-
-          list.find(".custom-spell-card").on("drop", async function (e) {
-            e.preventDefault();
-            $(this).css({ "border-top": "", "border-bottom": "" });
-            const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
-            const targetKey = $(this).data("key");
-            if (!draggedKey || draggedKey === targetKey) return;
-
-            const rect = this.getBoundingClientRect();
-            const relY = e.clientY - rect.top;
-            const insertBefore = relY < rect.height / 2;
-
-            const fromIdx = spellKeys.indexOf(draggedKey);
-            const toIdx = spellKeys.indexOf(targetKey);
-            if (fromIdx === -1 || toIdx === -1) return;
-
-            spellKeys.splice(fromIdx, 1);
-            const newTargetIdx = spellKeys.indexOf(targetKey);
-            const finalIdx = insertBefore ? newTargetIdx : newTargetIdx + 1;
-            spellKeys.splice(finalIdx, 0, draggedKey);
-
-            const newSpells = {};
-            for (const k of spellKeys) {
-              if (spellConfigs[k]) newSpells[k] = spellConfigs[k];
-            }
-
-            await window.CustomRolls.setProfileData(actor, "spellConfigs", newSpells);
-            if (game.user.isGM) {
-              await actor.setFlag("world", "spellConfigs", newSpells, { recursive: false });
-            }
-
-            html.find("#section-spell").html(renderSpellCards());
-            bindSpellDragAndDrop();
-            updateCardStyles();
-          });
+          list.off("dragover dragleave drop");
         }
 
         bindSpellDragAndDrop();
+
+        // Spell Filter Click Handler (Multi-select toggles)
+        html.on("click", ".btn-spell-filter", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const filterVal = String($(this).data("filter"));
+          window.CustomRolls._activeSpellFilters = window.CustomRolls._activeSpellFilters || new Set();
+
+          if (window.CustomRolls._activeSpellFilters.has(filterVal)) {
+            window.CustomRolls._activeSpellFilters.delete(filterVal);
+          } else {
+            window.CustomRolls._activeSpellFilters.add(filterVal);
+          }
+
+          html.find("#section-spell").html(renderSpellCards());
+          updateCardStyles();
+        });
+
+        // Favorite Toggle Click Handler
+        html.on("click", ".btn-toggle-spell-favorite", async function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const key = $(this).data("key");
+          const sp = spellConfigs[key];
+          if (!sp) return;
+
+          const freshSpells = foundry.utils.deepClone(
+            window.CustomRolls?.getProfileData?.(actor, "spellConfigs") ||
+            actor.getFlag?.("world", "spellConfigs") ||
+            spellConfigs
+          );
+
+          if (!freshSpells[key]) return;
+          freshSpells[key].isFavorite = !freshSpells[key].isFavorite;
+
+          await window.CustomRolls.setProfileData(actor, "spellConfigs", freshSpells);
+          if (game.user.isGM) {
+            await actor.setFlag("world", "spellConfigs", freshSpells, { recursive: false });
+          }
+
+          spellConfigs = freshSpells;
+          html.find("#section-spell").html(renderSpellCards());
+          updateCardStyles();
+        });
 
         html.on("click", ".btn-assign-hud-slot", async function (e) {
           e.stopPropagation();
@@ -4353,10 +6560,58 @@ Click a numbered modifier badge to execute a roll.</div>
             updateCardStyles();
             html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
           }
+          renderSideTabs();
         });
+
+        // --- Render Right-Side Action Tabs ---
+        function renderSideTabs() {
+          let sideTabs = dialogApp.find(".dice-stuff-side-tabs");
+          if (sideTabs.length === 0) {
+            sideTabs = $(`
+              <div class="dice-stuff-side-tabs" style="
+                position: absolute;
+                top: 30px;
+                right: -36px;
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+                z-index: 100;
+              "></div>
+            `);
+            dialogApp.append(sideTabs);
+          }
+          sideTabs.empty();
+
+          const slots = [
+            { num: 1, hotbar: 47 },
+            { num: 2, hotbar: 48 },
+            { num: 3, hotbar: 49 },
+            { num: 4, hotbar: 50 }
+          ];
+
+          for (const s of slots) {
+            const info = getButtonInfo(actor, s.num, s.hotbar);
+            const isAssigned = info.type !== "Empty";
+            const tabBtn = $(`
+              <button type="button" class="dice-stuff-side-tab-btn ${isAssigned ? 'tab-assigned' : 'tab-empty'}" data-slot="${s.num}" data-hotbar="${s.hotbar}" title="${info.title}">
+                <i class="${info.icon}"></i>
+              </button>
+            `);
+
+            tabBtn.on("click", async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              await runHudButtonSlot(actor, s.num, s.hotbar);
+            });
+
+            sideTabs.append(tabBtn);
+          }
+        }
+
+        renderSideTabs();
       }
     }, {
-      width: 890,
+      width: isInitiallyCompact ? 310 : 980,
       height: "auto",
       resizable: true
     }).render(true);

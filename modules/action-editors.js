@@ -1182,6 +1182,16 @@ export function initActionEditors() {
                 <span>Allow GWM / Sharpshooter (-5 / +10)</span>
                 <input type="checkbox" name="hasGWM"/>
               </label>
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer; color: #2b7489; font-weight: bold;">
+                  <input type="checkbox" name="isVersatile"/>
+                  <span>Versatile Weapon</span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <span style="font-size: 0.75em; color: #555;">2H Die: d</span>
+                  <input type="text" name="versatileDie" value="10" style="width: 36px; height: 22px; font-size: 0.8em; text-align: center;"/>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1224,6 +1234,8 @@ export function initActionEditors() {
               const HALFLING_LUCKY_REROLL_THRESHOLD = parseInt(getVal("HALFLING_LUCKY_REROLL_THRESHOLD")) || 0;
               const superAdv = getCheck("superAdv");
               const hasGWM = getCheck("hasGWM");
+              const isVersatile = getCheck("isVersatile");
+              const versatileDie = getVal("versatileDie")?.replace(/^d/i, "").trim() || "10";
 
               const components = [];
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
@@ -1247,6 +1259,8 @@ export function initActionEditors() {
                 weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
                 extraCriticalBonus, GWF_REROLL_THRESHOLD, HAS_HALFLING_LUCKY,
                 HALFLING_LUCKY_REROLL_THRESHOLD, superAdv, hasGWM,
+                isVersatile, versatileDie,
+                addedBy: "gm", gmModified: true,
                 additionalDamageComponents: components
               };
 
@@ -1333,9 +1347,19 @@ export function initActionEditors() {
               html.find('input[name="weaponModifier"]').val(sys.attackBonus);
             }
 
-            // Proficiency check
-            const isProf = sys.proficient !== undefined ? Boolean(sys.proficient) : true;
+            // Proficiency check across dnd5e versions
+            const isProf = Boolean(item.isProficient ?? sys.proficient ?? sys.prof?.hasProficiency ?? false);
             html.find('input[name="isProficient"]').prop('checked', isProf);
+
+            // Versatile check & auto-detection
+            const isVersatile = Boolean(sys.properties?.has ? sys.properties.has("ver") : sys.properties?.ver);
+            let vDie = "10";
+            if (sys.damage?.versatile) {
+              const vm = String(sys.damage.versatile).match(/d(\d+)/i);
+              if (vm) vDie = vm[1];
+            }
+            html.find('input[name="isVersatile"]').prop('checked', isVersatile);
+            html.find('input[name="versatileDie"]').val(vDie);
           });
         }
       }, { width: 480, height: "auto" }).render(true);
@@ -1815,34 +1839,82 @@ export function initActionEditors() {
             const cleanSummary = rawDesc.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
             html.find('input[name="summary"]').val(cleanSummary);
 
-            // Resolution Method & Damage
-            const actionType = sys.actionType;
-            if (actionType === "save") {
-              resSelect.val("save");
-              html.find('select[name="saveAbility"]').val(sys.save?.ability || "dex");
-              html.find('select[name="saveSuccess"]').val(sys.save?.scaling === "half" ? "half" : "none");
-            } else if (actionType === "heal") {
-              resSelect.val("heal");
-            } else if (actionType === "rsak" || actionType === "msak") {
-              resSelect.val("attack");
-            } else if (actionType === "util" || !actionType) {
-              resSelect.val("other");
-            }
+            // Resolution Method & Damage (Support modern activities & legacy actionType)
+            if (sys.activities && (sys.activities.size > 0 || (typeof sys.activities.values === "function" && Array.from(sys.activities.values()).length > 0))) {
+              const activities = Array.from(sys.activities.values());
+              const saveAct = activities.find(a => a.type === "save" || a.save);
+              const healAct = activities.find(a => a.type === "heal" || a.healing);
+              const attackAct = activities.find(a => a.type === "attack" || a.attack);
+              const damageAct = activities.find(a => a.type === "damage" || (a.damage?.parts && a.damage.parts.length > 0));
 
-            // Damage Parts
-            const parts = sys.damage?.parts || [];
-            if (parts.length > 0) {
-              const firstPart = parts[0];
-              const formula = firstPart[0] || "";
-              const dmgType = (firstPart[1] || "fire").toLowerCase();
-
-              const diceMatch = formula.match(/(\d*)d(\d+)/i);
-              if (diceMatch) {
-                html.find('input[name="damageDiceCount"]').val(parseInt(diceMatch[1]) || 1);
-                html.find('select[name="damageDieSize"]').val(`d${diceMatch[2]}`);
+              if (saveAct) {
+                resSelect.val("save");
+                let rawSaveAbil = saveAct.save?.ability;
+                if (rawSaveAbil instanceof Set) rawSaveAbil = Array.from(rawSaveAbil)[0];
+                else if (Array.isArray(rawSaveAbil)) rawSaveAbil = rawSaveAbil[0];
+                else if (typeof rawSaveAbil !== "string") rawSaveAbil = "dex";
+                html.find('select[name="saveAbility"]').val(rawSaveAbil || "dex");
+                html.find('select[name="saveSuccess"]').val(saveAct.save?.scaling === "half" ? "half" : "none");
+              } else if (healAct) {
+                resSelect.val("heal");
+              } else if (attackAct) {
+                resSelect.val("attack");
+              } else {
+                resSelect.val("other");
               }
 
-              html.find('select[name="damageType"]').val(dmgType);
+              const primaryDmgAct = damageAct || saveAct || attackAct || healAct;
+              const parts = primaryDmgAct?.damage?.parts || primaryDmgAct?.healing?.parts || [];
+              if (parts.length > 0) {
+                const firstPart = parts[0];
+                if (typeof firstPart === "object" && (firstPart.number || firstPart.denomination || firstPart.formula)) {
+                  html.find('input[name="damageDiceCount"]').val(Number(firstPart.number) || 1);
+                  html.find('select[name="damageDieSize"]').val(firstPart.denomination ? `d${firstPart.denomination}` : "d6");
+                  if (firstPart.types && firstPart.types.size > 0) {
+                    html.find('select[name="damageType"]').val(Array.from(firstPart.types)[0].toLowerCase());
+                  } else if (primaryDmgAct === healAct) {
+                    html.find('select[name="damageType"]').val("healing");
+                  }
+                } else if (Array.isArray(firstPart)) {
+                  const formula = firstPart[0] || "";
+                  const dmgType = (firstPart[1] || (primaryDmgAct === healAct ? "healing" : "fire")).toLowerCase();
+                  const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
+                  if (diceMatch) {
+                    html.find('input[name="damageDiceCount"]').val(parseInt(diceMatch[1]) || 1);
+                    html.find('select[name="damageDieSize"]').val(`d${diceMatch[2]}`);
+                  }
+                  html.find('select[name="damageType"]').val(dmgType);
+                }
+              }
+            } else {
+              const actionType = sys.actionType;
+              if (actionType === "save") {
+                resSelect.val("save");
+                html.find('select[name="saveAbility"]').val(sys.save?.ability || "dex");
+                html.find('select[name="saveSuccess"]').val(sys.save?.scaling === "half" ? "half" : "none");
+              } else if (actionType === "heal") {
+                resSelect.val("heal");
+              } else if (actionType === "rsak" || actionType === "msak") {
+                resSelect.val("attack");
+              } else if (actionType === "util" || !actionType) {
+                resSelect.val("other");
+              }
+
+              // Damage Parts
+              const parts = sys.damage?.parts || [];
+              if (parts.length > 0) {
+                const firstPart = parts[0];
+                const formula = firstPart[0] || "";
+                const dmgType = (firstPart[1] || "fire").toLowerCase();
+
+                const diceMatch = formula.match(/(\d*)d(\d+)/i);
+                if (diceMatch) {
+                  html.find('input[name="damageDiceCount"]').val(parseInt(diceMatch[1]) || 1);
+                  html.find('select[name="damageDieSize"]').val(`d${diceMatch[2]}`);
+                }
+
+                html.find('select[name="damageType"]').val(dmgType);
+              }
             }
 
             // Cantrip scaling checkbox
@@ -2490,6 +2562,16 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                 <span>Allow GWM / Sharpshooter (-5 / +10)</span>
                 <input type="checkbox" name="hasGWM" ${item.hasGWM ? 'checked' : ''}/>
               </label>
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer; color: #2b7489; font-weight: bold;">
+                  <input type="checkbox" name="isVersatile" ${item.isVersatile ? 'checked' : ''}/>
+                  <span>Versatile Weapon</span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <span style="font-size: 0.75em; color: #555;">2H Die: d</span>
+                  <input type="text" name="versatileDie" value="${item.versatileDie || '10'}" style="width: 36px; height: 22px; font-size: 0.8em; text-align: center;"/>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2524,6 +2606,8 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               const HALFLING_LUCKY_REROLL_THRESHOLD = parseInt(getVal("HALFLING_LUCKY_REROLL_THRESHOLD")) || 0;
               const superAdv = getCheck("superAdv");
               const hasGWM = getCheck("hasGWM");
+              const isVersatile = getCheck("isVersatile");
+              const versatileDie = getVal("versatileDie")?.replace(/^d/i, "").trim() || "10";
 
               const components = [];
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
@@ -2543,10 +2627,13 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               }
 
               const configData = {
+                itemId: item.itemId || null,
                 macroName: newMacroName, chatCardTitle, abilityScore, isProficient, damageDiceCount, damageDieSize, damageType,
                 weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
                 extraCriticalBonus, GWF_REROLL_THRESHOLD, HAS_HALFLING_LUCKY,
                 HALFLING_LUCKY_REROLL_THRESHOLD, superAdv, hasGWM,
+                isVersatile, versatileDie,
+                addedBy: "gm", gmModified: true,
                 additionalDamageComponents: components
               };
 
