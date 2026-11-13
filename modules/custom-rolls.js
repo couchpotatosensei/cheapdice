@@ -3932,6 +3932,98 @@ Click a numbered modifier badge to execute a roll.</div>
     }
 
     let inspectorSpellSubTab = "details"; // "details" | "slots"
+    const SPELL_SLOT_MODE_STORAGE_KEY = "cheapdice_spell_slot_mode";
+    let spellSlotDisplayMode = localStorage.getItem(SPELL_SLOT_MODE_STORAGE_KEY) || "available"; // "available" | "spent"
+
+    function getSpellSlotsTrackerHtml() {
+      const spells = actor?.system?.spells || {};
+      const slotEntries = [];
+
+      for (let lvl = 1; lvl <= 9; lvl++) {
+        const slot = spells[`spell${lvl}`];
+        const max = Number(slot?.max) || 0;
+        if (max > 0) {
+          slotEntries.push({
+            label: `Lvl ${lvl}`,
+            current: Math.max(0, Number(slot?.value) || 0),
+            max
+          });
+        }
+      }
+
+      if (spells.pact) {
+        const pactMax = Number(spells.pact.max) || 0;
+        if (pactMax > 0) {
+          slotEntries.push({
+            label: "Pact",
+            current: Math.max(0, Number(spells.pact.value) || 0),
+            max: pactMax
+          });
+        }
+      }
+
+      const isAvailMode = spellSlotDisplayMode === "available";
+
+      if (slotEntries.length === 0) {
+        return `
+          <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+            <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
+              Spell Slot Tracker
+            </div>
+            <div style="font-size: 0.80em; color: #888; font-style: italic; text-align: center; padding: 6px 0;">
+              No spell slots configured on character sheet.
+            </div>
+          </div>
+        `;
+      }
+
+      const rowsHtml = slotEntries.map(entry => {
+        const available = Math.min(entry.current, entry.max);
+        const spent = Math.max(0, entry.max - available);
+
+        // Circular pips: in "available" mode, filled = available; in "spent" mode, filled = spent
+        const pips = [];
+        for (let i = 0; i < entry.max; i++) {
+          const isFilled = isAvailMode ? (i < available) : (i < spent);
+          if (isFilled) {
+            pips.push(`<i class="fas fa-circle" style="color: #7289da; font-size: 0.85em;"></i>`);
+          } else {
+            pips.push(`<i class="far fa-circle" style="color: #bcc5d3; font-size: 0.85em;"></i>`);
+          }
+        }
+
+        const countText = isAvailMode
+          ? `${available}/${entry.max}`
+          : `${spent}/${entry.max}`;
+
+        return `
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px solid #e0e6ed; font-size: 0.82em;">
+            <span style="font-weight: 700; color: #4b5d88; width: 44px; flex-shrink: 0;">${entry.label}</span>
+            <div style="display: flex; gap: 4px; align-items: center; flex: 1; margin: 0 8px; flex-wrap: wrap;">
+              ${pips.join("")}
+            </div>
+            <span style="font-family: monospace; font-size: 0.9em; font-weight: 700; color: #2b3a4a; flex-shrink: 0;">${countText}</span>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; display: flex; flex-direction: column; gap: 5px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e6ed; padding-bottom: 3px;">
+            <span style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase;">
+              <i class="fas fa-circle-notch" style="margin-right: 3px;"></i> Spell Slots Tracker
+            </span>
+            <div style="display: inline-flex; border: 1px solid #7289da; border-radius: 3px; overflow: hidden; height: 19px;">
+              <button type="button" class="btn-toggle-slot-mode ${isAvailMode ? 'active-slot-mode' : ''}" data-mode="available" title="Display slots currently available to cast" style="border: none; padding: 0 6px; font-size: 0.68em; font-weight: 700; cursor: pointer; background: ${isAvailMode ? '#7289da' : '#fff'}; color: ${isAvailMode ? '#fff' : '#4b5d88'}; line-height: 19px;">Available</button>
+              <button type="button" class="btn-toggle-slot-mode ${!isAvailMode ? 'active-slot-mode' : ''}" data-mode="spent" title="Display slots expended/used" style="border: none; padding: 0 6px; font-size: 0.68em; font-weight: 700; cursor: pointer; background: ${!isAvailMode ? '#7289da' : '#fff'}; color: ${!isAvailMode ? '#fff' : '#4b5d88'}; line-height: 19px; border-left: 1px solid #7289da;">Spent</button>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            ${rowsHtml}
+          </div>
+        </div>
+      `;
+    }
 
     function getSelectedSpellInspectorHtml() {
       const summaryHtml = getSpellcastingSummaryHtml();
@@ -4032,12 +4124,15 @@ Click a numbered modifier badge to execute a roll.</div>
             <!-- Upcast & Slot Options Card -->
             <div style="background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
               <div style="font-weight: 700; font-size: 0.68em; color: #4b5d88; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; border-bottom: 1px solid #e0e6ed; padding-bottom: 2px;">
-                Cast Options & Spell Slots
+                Cast Options
               </div>
               <div id="spell-options-container">
                 ${getUpcastOptionsHtml(sp)}
               </div>
             </div>
+
+            <!-- Spell Slots Tracker Card -->
+            ${getSpellSlotsTrackerHtml()}
           </div>
 
         </div>
@@ -5565,6 +5660,18 @@ Click a numbered modifier badge to execute a roll.</div>
           e.preventDefault();
           e.stopPropagation();
           inspectorSpellSubTab = $(this).data("subtab") || "details";
+          html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+        });
+
+        // Spell Slot Tracker Mode Toggle (Available vs Spent)
+        html.on("click", ".btn-toggle-slot-mode", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const mode = $(this).data("mode") || "available";
+          spellSlotDisplayMode = mode;
+          try {
+            localStorage.setItem(SPELL_SLOT_MODE_STORAGE_KEY, mode);
+          } catch (_err) {}
           html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
         });
 

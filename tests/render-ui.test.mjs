@@ -259,5 +259,72 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(favAnd3.showFavSection, true);
     assert.deepEqual(favAnd3.visibleLevels, [3]);
   });
+
+  it('generates correct circular pips and counts for available vs spent display modes', () => {
+    const mockActorWithSlots = {
+      system: {
+        spells: {
+          spell1: { value: 3, max: 4 },
+          spell2: { value: 0, max: 2 },
+          pact: { value: 2, max: 2 }
+        }
+      }
+    };
+
+    function simulateSlotTracker(actor, mode) {
+      const spells = actor?.system?.spells || {};
+      const slotEntries = [];
+      for (let lvl = 1; lvl <= 9; lvl++) {
+        const slot = spells[`spell${lvl}`];
+        const max = Number(slot?.max) || 0;
+        if (max > 0) {
+          slotEntries.push({
+            label: `Lvl ${lvl}`,
+            current: Math.max(0, Number(slot?.value) || 0),
+            max
+          });
+        }
+      }
+      if (spells.pact?.max > 0) {
+        slotEntries.push({
+          label: "Pact",
+          current: Math.max(0, Number(spells.pact.value) || 0),
+          max: spells.pact.max
+        });
+      }
+
+      const isAvail = mode === "available";
+      return slotEntries.map(entry => {
+        const available = Math.min(entry.current, entry.max);
+        const spent = Math.max(0, entry.max - available);
+        let filledCount = 0;
+        let emptyCount = 0;
+        for (let i = 0; i < entry.max; i++) {
+          const isFilled = isAvail ? (i < available) : (i < spent);
+          if (isFilled) filledCount++;
+          else emptyCount++;
+        }
+        const countText = isAvail ? `${available}/${entry.max}` : `${spent}/${entry.max}`;
+        return { label: entry.label, filledCount, emptyCount, countText };
+      });
+    }
+
+    const availRows = simulateSlotTracker(mockActorWithSlots, "available");
+    assert.equal(availRows.length, 3);
+    // Level 1: 3/4 available -> 3 filled, 1 empty
+    assert.deepEqual(availRows[0], { label: "Lvl 1", filledCount: 3, emptyCount: 1, countText: "3/4" });
+    // Level 2: 0/2 available -> 0 filled, 2 empty
+    assert.deepEqual(availRows[1], { label: "Lvl 2", filledCount: 0, emptyCount: 2, countText: "0/2" });
+    // Pact: 2/2 available -> 2 filled, 0 empty
+    assert.deepEqual(availRows[2], { label: "Pact", filledCount: 2, emptyCount: 0, countText: "2/2" });
+
+    const spentRows = simulateSlotTracker(mockActorWithSlots, "spent");
+    // Level 1: 1/4 spent -> 1 filled, 3 empty
+    assert.deepEqual(spentRows[0], { label: "Lvl 1", filledCount: 1, emptyCount: 3, countText: "1/4" });
+    // Level 2: 2/2 spent -> 2 filled, 0 empty
+    assert.deepEqual(spentRows[1], { label: "Lvl 2", filledCount: 2, emptyCount: 0, countText: "2/2" });
+    // Pact: 0/2 spent -> 0 filled, 2 empty
+    assert.deepEqual(spentRows[2], { label: "Pact", filledCount: 0, emptyCount: 2, countText: "0/2" });
+  });
 });
 
