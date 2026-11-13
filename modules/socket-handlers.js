@@ -892,11 +892,12 @@ function registerSocketHandlers() {
 
     // Handle charge/use deduction for items/feats
     if (deductChargeItemId) {
+      const chargeCost = Math.max(1, Number(config.deductChargeCost) || 1);
       const chargeItem = actor.items?.get(deductChargeItemId);
       if (chargeItem && Number(chargeItem.system?.uses?.max) > 0) {
         const curUses = Number(chargeItem.system.uses.value) || 0;
         const maxUses = Number(chargeItem.system.uses.max) || 0;
-        const newUses = Math.max(0, curUses - 1);
+        const newUses = Math.max(0, curUses - chargeCost);
         await chargeItem.update({ "system.uses.value": newUses });
         slotTag = `${chargeItem.name}: (${newUses}/${maxUses} charges left)`;
       }
@@ -2689,6 +2690,46 @@ function registerSocketHandlers() {
 
     await actor.setFlag("world", category, data, { recursive: false });
     return true;
+  });
+
+  socket.register("updateActorTrackerValueAsGM", async (actorId, trackerId, type, itemRefId, resourceSlot, newVal, userId) => {
+    const actor = game.actors.get(actorId);
+    if (!actor) return false;
+
+    const callingUser = game.users.get(userId);
+    if (callingUser && !callingUser.isGM && !actor.testUserPermission(callingUser, "OWNER")) {
+      return false;
+    }
+
+    if (type === "item" && itemRefId) {
+      const item = actor.items.get(itemRefId);
+      if (item) await item.update({ "system.uses.value": newVal });
+    } else if (type === "resource" && resourceSlot) {
+      await actor.update({ [`system.resources.${resourceSlot}.value`]: newVal });
+    }
+
+    const trackers = actor.getFlag("world", "trackingStuff") || [];
+    const t = trackers.find(x => x.id === trackerId);
+    if (t) {
+      t.value = newVal;
+      await actor.setFlag("world", "trackingStuff", trackers);
+    }
+    return true;
+  });
+
+  socket.register("rechargeActorTrackersAsGM", async (actorId, restType, userId) => {
+    const actor = game.actors.get(actorId);
+    if (!actor) return [];
+
+    const callingUser = game.users.get(userId);
+    if (callingUser && !callingUser.isGM && !actor.testUserPermission(callingUser, "OWNER")) {
+      return [];
+    }
+
+    if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
+      return await window.CustomRolls.rechargeActorTrackers(actor, restType);
+    }
+    return [];
   });
 
   socket.register("closeMusicForAll", async () => {

@@ -2669,17 +2669,23 @@ Click a numbered modifier badge to execute a roll.</div>
           const newVal = Math.clamp(targetVal, 0, live.max);
           if (newVal === live.value && directValue === null) return;
 
+          // Optimistic local UI update (zero visual delay!)
           t.value = newVal;
-          if (t.type === "item" && t.itemRefId) {
-            const item = actor.items.get(t.itemRefId);
-            if (item) await item.update({ "system.uses.value": newVal });
-          } else if (t.type === "resource" && t.resourceSlot) {
-            await actor.update({ [`system.resources.${t.resourceSlot}.value`]: newVal });
-          }
-          await actor.setFlag("world", "trackingStuff", trackers);
-
           containerHtml.find(`.chip-val-input[data-id="${t.id}"]`).val(newVal);
           containerHtml.find(`.tracker-val-display[data-id="${t.id}"], .chip-val-display[data-id="${t.id}"]`).text(`${newVal} / ${live.max}`);
+
+          // Persist update via GM socket so player clients reliably update embedded items
+          if (globalThis.attackSocket?.executeAsGM) {
+            await globalThis.attackSocket.executeAsGM("updateActorTrackerValueAsGM", actor.id, t.id, t.type, t.itemRefId, t.resourceSlot, newVal, game.user.id);
+          } else {
+            if (t.type === "item" && t.itemRefId) {
+              const item = actor.items.get(t.itemRefId);
+              if (item) await item.update({ "system.uses.value": newVal });
+            } else if (t.type === "resource" && t.resourceSlot) {
+              await actor.update({ [`system.resources.${t.resourceSlot}.value`]: newVal });
+            }
+            await actor.setFlag("world", "trackingStuff", trackers);
+          }
         };
 
         const bindChipEvents = () => {
@@ -2720,7 +2726,12 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Short Rest button handler
         containerHtml.find('#btn-recharge-sr').off('click').on('click', async function () {
-          const lines = await rechargeActorTrackers(actor, "sr");
+          let lines = [];
+          if (globalThis.attackSocket?.executeAsGM) {
+            lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "sr", game.user.id);
+          } else {
+            lines = await rechargeActorTrackers(actor, "sr");
+          }
           refreshChips();
           if (lines && lines.length > 0) {
             await ChatMessage.create({
@@ -2742,7 +2753,12 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Long Rest button handler
         containerHtml.find('#btn-recharge-lr').off('click').on('click', async function () {
-          const lines = await rechargeActorTrackers(actor, "lr");
+          let lines = [];
+          if (globalThis.attackSocket?.executeAsGM) {
+            lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id);
+          } else {
+            lines = await rechargeActorTrackers(actor, "lr");
+          }
           refreshChips();
           if (lines && lines.length > 0) {
             await ChatMessage.create({
@@ -2764,7 +2780,12 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Dawn button handler
         containerHtml.find('#btn-recharge-dawn-all').off('click').on('click', async function () {
-          const lines = await rechargeActorTrackers(actor, "dawn");
+          let lines = [];
+          if (globalThis.attackSocket?.executeAsGM) {
+            lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "dawn", game.user.id);
+          } else {
+            lines = await rechargeActorTrackers(actor, "dawn");
+          }
           refreshChips();
           if (lines && lines.length > 0) {
             await ChatMessage.create({
@@ -2962,7 +2983,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 <div style="font-size: 0.84em; color: #2b3a4a;">
                   <strong>${a.label}</strong> <small style="color: #666;">(${a.value}/${a.max}${a.rechargeFormula ? ` • 🔄 ${a.rechargeFormula}` : ''})</small>
                 </div>
-                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777; width: auto; min-width: 60px; max-width: 20%; flex: 0 0 auto; margin: 0; display: inline-flex; align-items: center; justify-content: center;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff; width: auto; min-width: 60px; max-width: 20%; flex: 0 0 auto; margin: 0; display: inline-flex; align-items: center; justify-content: center;"'}>
+                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777; width: 60px; min-width: 60px; max-width: 60px; flex: 0 0 60px; margin: 0; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff; width: 60px; min-width: 60px; max-width: 60px; flex: 0 0 60px; margin: 0; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;"'}>
                   ${a.isAdded ? 'Added' : 'Add'}
                 </button>
               </div>
@@ -3148,7 +3169,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
                   const addBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${id}"], .btn-add-trackable-item[data-id="resource_${t.resourceSlot}"]`);
                   if (addBtn.length) {
-                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;').text('Add');
+                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff; width: 60px; min-width: 60px; max-width: 60px; flex: 0 0 60px; margin: 0; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;').text('Add');
                   }
                 });
               };
@@ -3174,7 +3195,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
                 await syncResources();
                 await actor.setFlag("world", "trackingStuff", trackers);
-                $(this).prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;').text('Added');
+                $(this).prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777; width: 60px; min-width: 60px; max-width: 60px; flex: 0 0 60px; margin: 0; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;').text('Added');
                 refreshChips();
                 modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
                 bindActiveTrackerEvents();
@@ -3462,6 +3483,25 @@ Click a numbered modifier badge to execute a roll.</div>
         return null;
       }
 
+      // Detect explicit charge cost from dnd5e activities if present
+      let detectedCost = null;
+      if (it.system?.activities) {
+        const acts = it.system.activities instanceof Map ? Array.from(it.system.activities.values()) : Object.values(it.system.activities || {});
+        for (const act of acts) {
+          const targets = act.consumption?.targets || [];
+          for (const target of targets) {
+            if (target.type === "itemUses" && typeof target.value !== "undefined") {
+              detectedCost = Number(target.value);
+              break;
+            }
+          }
+          if (detectedCost !== null) break;
+        }
+      }
+
+      // If atwill or innate with 0 consumption, chargeCost is 0
+      let chargeCost = detectedCost !== null ? detectedCost : (prepMode === "atwill" ? 0 : 1);
+
       const curUses = Number(targetItem.system?.uses?.value ?? 0);
       const maxUses = Number(targetItem.system?.uses?.max ?? 0);
       const isPureItem = Boolean(sourceItem) || isNonSpellType || (hasItemUses && !["prepared", "always"].includes(prepMode));
@@ -3476,6 +3516,7 @@ Click a numbered modifier badge to execute a roll.</div>
         curUses,
         maxUses,
         isPureItem,
+        chargeCost,
         label: hasItemUses ? `${curUses}/${maxUses} charges` : (isInnateOrAtWill ? (prepMode === "atwill" ? "At-Will" : "Innate") : targetItem.name)
       };
     }
@@ -3550,12 +3591,24 @@ Click a numbered modifier badge to execute a roll.</div>
             <span style="font-weight: 600; color: #4b5d88;">Deduct slot from sheet</span>
             <input type="checkbox" id="deductSlotToggle" ${slotDeductChecked ? 'checked' : ''} ${slotDeductDisabled ? 'disabled' : ''} style="margin: 0;" />
           </label>
-          ${srcInfo && srcInfo.hasItemUses ? `
-          <label id="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.8em; cursor: pointer; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed;" title="Deduct charge/use from item on character sheet">
-            <span style="font-weight: 600; color: #3b5998;">Deduct charge from ${srcInfo.name}</span>
-            <input type="checkbox" id="deductChargeToggle" data-item-id="${srcInfo.itemId}" ${chargeDeductChecked ? 'checked' : ''} style="margin: 0;" />
-          </label>
-          ` : ''}
+          ${srcInfo && srcInfo.hasItemUses ? (
+            srcInfo.chargeCost > 0 ? `
+              <div id="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed; font-size: 0.8em;">
+                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; flex: 1; min-width: 0;" title="Deduct charge/use from item on character sheet">
+                  <input type="checkbox" id="deductChargeToggle" data-item-id="${srcInfo.itemId}" ${chargeDeductChecked ? 'checked' : ''} style="margin: 0;" />
+                  <span style="font-weight: 600; color: #3b5998; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Deduct charge from ${srcInfo.name}</span>
+                </label>
+                <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;" title="Number of charges to expend for this cast">
+                  <input type="number" id="deductChargeCostInput" min="1" max="${srcInfo.maxUses}" value="${srcInfo.chargeCost}" style="width: 32px; height: 18px; line-height: 16px; text-align: center; font-size: 0.82em; font-weight: 700; border: 1px solid #ccc; border-radius: 2px; padding: 0; background: #fafbfc; color: #1e293b; margin: 0;" />
+                  <span style="font-size: 0.72em; color: #666; font-weight: 600;">charges</span>
+                </div>
+              </div>
+            ` : `
+              <div style="font-size: 0.75em; color: #2e6b35; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 3px; padding: 2px 6px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                <i class="fas fa-check-circle"></i> Cast at will via ${srcInfo.name} (0 charge cost)
+              </div>
+            `
+          ) : ''}
         </div>
       </div>
     `;
@@ -5676,18 +5729,21 @@ Click a numbered modifier badge to execute a roll.</div>
           // Handle Item / Feat charge deduction
           const chargeToggle = html.find("#deductChargeToggle");
           if (chargeToggle.length > 0 && chargeToggle.is(":checked")) {
-            const chargeItemId = chargeToggle.data("item-id") || rawConfig.itemId;
+            const chargeItemId = chargeToggle.attr("data-item-id") || chargeToggle.data("item-id") || rawConfig.itemId;
             const chargeItem = chargeItemId ? actor.items.get(chargeItemId) : null;
+            const costVal = Number(html.find("#deductChargeCostInput").val());
+            const chargeCost = !isNaN(costVal) && costVal > 0 ? costVal : 1;
             if (chargeItem && Number(chargeItem.system?.uses?.max) > 0) {
               const currentUses = Number(chargeItem.system.uses.value) || 0;
-              if (currentUses <= 0) {
+              if (currentUses < chargeCost) {
                 const proceed = await Dialog.confirm({
-                  title: "No Charges Remaining",
-                  content: `<p><strong>${chargeItem.name}</strong> has <strong>0</strong> charges remaining on the character sheet. Cast anyway?</p>`
+                  title: "Insufficient Charges Remaining",
+                  content: `<p><strong>${chargeItem.name}</strong> only has <strong>${currentUses}</strong> charges remaining (requires ${chargeCost}). Cast anyway?</p>`
                 });
                 if (!proceed) return;
               } else {
                 config.deductChargeItemId = chargeItemId;
+                config.deductChargeCost = chargeCost;
               }
             }
           }
@@ -6153,15 +6209,16 @@ Click a numbered modifier badge to execute a roll.</div>
             config.skipSlotDeduction = true;
           } else if (srcInfo && srcInfo.isPureItem) {
             config.skipSlotDeduction = true;
-            if (srcInfo.hasItemUses) {
-              if (srcInfo.curUses <= 0) {
+            if (srcInfo.hasItemUses && srcInfo.chargeCost > 0) {
+              if (srcInfo.curUses < srcInfo.chargeCost) {
                 const proceed = await Dialog.confirm({
-                  title: "No Charges Remaining",
-                  content: `<p><strong>${srcInfo.name}</strong> has <strong>0</strong> charges remaining. Cast anyway?</p>`
+                  title: "Insufficient Charges Remaining",
+                  content: `<p><strong>${srcInfo.name}</strong> only has <strong>${srcInfo.curUses}</strong> charges remaining (requires ${srcInfo.chargeCost}). Cast anyway?</p>`
                 });
                 if (!proceed) return;
               } else {
                 config.deductChargeItemId = srcInfo.itemId;
+                config.deductChargeCost = srcInfo.chargeCost;
               }
             }
           } else {
