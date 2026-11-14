@@ -396,14 +396,15 @@ export function isSpellPrepared(item, actor) {
   // 1. Cantrips (Level 0) are always prepared
   if (lvl === 0) return true;
 
-  const prep = sys.preparation || {};
-  const mode = prep.mode || "prepared";
+  // Modern dnd5e 5.1+ uses sys.method / sys.prepared, older uses sys.preparation
+  const mode = sys.method || sys.preparation?.mode || "prepared";
+  const isPrep = sys.prepared !== undefined ? Boolean(sys.prepared) : Boolean(sys.preparation?.prepared);
 
   // 2. Modes always castable without daily preparation: always, innate, atwill, pact
   if (["always", "innate", "atwill", "pact"].includes(mode)) return true;
 
   // 3. Actively prepared on the character sheet
-  if (Boolean(prep.prepared)) return true;
+  if (isPrep) return true;
 
   // 4. Wizard Ritual Exception (2024 Rules / Ritual Caster / Book of Ancient Secrets):
   // Wizards can ritual cast any ritual spell from their spellbook even if unprepared.
@@ -597,6 +598,13 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
       }
     }
   }
+
+  // Sort alphabetically by spell name before persisting
+  const sortedSpells = {};
+  for (const k of Object.keys(currentSpells).sort((a, b) => a.localeCompare(b))) {
+    sortedSpells[k] = currentSpells[k];
+  }
+  currentSpells = sortedSpells;
 
   // Save updated spell configs
   await setProfileData(actor, "spellConfigs", currentSpells);
@@ -2391,12 +2399,16 @@ Click a numbered modifier badge to execute a roll.</div>
         const item = actor.items.get(t.itemRefId);
         if (item) {
           const uses = item.system.uses;
-          const cur = Number(uses?.value ?? t.value ?? 0);
           const max = Number(uses?.max ?? t.max ?? 0);
+          const cur = uses?.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses?.value ?? t.value ?? 0);
           if (isReset1 || isReset0) {
             const targetVal = isReset1 ? 1 : 0;
             if (cur !== targetVal) {
-              itemUpdates.push({ _id: item.id, "system.uses.value": targetVal });
+              itemUpdates.push({
+                _id: item.id,
+                "system.uses.spent": Math.max(0, max - targetVal),
+                "system.uses.value": targetVal
+              });
               t.value = targetVal;
               trackersModified = true;
               rechargeChatLines.push(`• <strong>${item.name}</strong>: Reset to ${targetVal}/${max}`);
@@ -2408,7 +2420,11 @@ Click a numbered modifier badge to execute a roll.</div>
                 const roll = new Roll(formula);
                 await roll.evaluate();
                 const newVal = Math.min(max, cur + roll.total);
-                itemUpdates.push({ _id: item.id, "system.uses.value": newVal });
+                itemUpdates.push({
+                  _id: item.id,
+                  "system.uses.spent": Math.max(0, max - newVal),
+                  "system.uses.value": newVal
+                });
                 t.value = newVal;
                 trackersModified = true;
                 rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
@@ -2416,7 +2432,11 @@ Click a numbered modifier badge to execute a roll.</div>
                 console.error("Recharge formula error", err);
               }
             } else {
-              itemUpdates.push({ _id: item.id, "system.uses.value": max });
+              itemUpdates.push({
+                _id: item.id,
+                "system.uses.spent": 0,
+                "system.uses.value": max
+              });
               t.value = max;
               trackersModified = true;
               rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
@@ -2499,7 +2519,9 @@ Click a numbered modifier badge to execute a roll.</div>
         } else if (isDawn) {
           shouldRecharge = (per === "day" || per === "dawn" || per === "charges");
         }
-        if (shouldRecharge && uses.value < uses.max) {
+        const max = Number(uses.max) || 0;
+        const cur = uses.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses.value ?? 0);
+        if (shouldRecharge && cur < max) {
           let formula = "";
           if (uses.recovery && Array.isArray(uses.recovery)) {
             const formRec = uses.recovery.find(r => r.formula);
@@ -2513,15 +2535,21 @@ Click a numbered modifier badge to execute a roll.</div>
             try {
               const roll = new Roll(formula);
               await roll.evaluate();
-              const cur = Number(uses.value) || 0;
-              const max = Number(uses.max) || 0;
               const newVal = Math.min(max, cur + roll.total);
-              itemUpdates.push({ _id: item.id, "system.uses.value": newVal });
+              itemUpdates.push({
+                _id: item.id,
+                "system.uses.spent": Math.max(0, max - newVal),
+                "system.uses.value": newVal
+              });
               rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
             } catch (err) {}
           } else {
-            itemUpdates.push({ _id: item.id, "system.uses.value": uses.max });
-            rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${uses.max}/${uses.max}`);
+            itemUpdates.push({
+              _id: item.id,
+              "system.uses.spent": 0,
+              "system.uses.value": max
+            });
+            rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
           }
         }
       }
@@ -2581,10 +2609,17 @@ Click a numbered modifier badge to execute a roll.</div>
       if (t.type === "item" && t.itemRefId) {
         const it = actor.items.get(t.itemRefId);
         const name = it?.name || t.label || t.name || "Item";
+        const max = Number(it?.system?.uses?.max ?? t.max ?? 0);
+        let val;
+        if (it?.system?.uses?.spent !== undefined) {
+          val = Math.max(0, max - Number(it.system.uses.spent));
+        } else {
+          val = Number(it?.system?.uses?.value ?? t.value ?? 0);
+        }
         return {
           label: name,
-          value: it?.system?.uses?.value ?? t.value ?? 0,
-          max: it?.system?.uses?.max ?? t.max ?? 0,
+          value: val,
+          max: max,
           rechargeFormula: t.rechargeFormula
         };
       } else if (t.type === "resource" && t.resourceSlot) {
@@ -2661,6 +2696,7 @@ Click a numbered modifier badge to execute a roll.</div>
           containerHtml.find('#tracking-chips-container').html(renderChips());
           bindChipEvents();
         };
+        window.CustomRolls._refreshTrackingChips = refreshChips;
 
         const updateVal = async (t, delta, directValue = null) => {
           const live = getLiveTracker(t);
@@ -2668,17 +2704,30 @@ Click a numbered modifier badge to execute a roll.</div>
           const newVal = Math.clamp(targetVal, 0, live.max);
           if (newVal === live.value && directValue === null) return;
 
+          // Optimistic local UI update (zero visual delay!)
           t.value = newVal;
-          if (t.type === "item" && t.itemRefId) {
-            const item = actor.items.get(t.itemRefId);
-            if (item) await item.update({ "system.uses.value": newVal });
-          } else if (t.type === "resource" && t.resourceSlot) {
-            await actor.update({ [`system.resources.${t.resourceSlot}.value`]: newVal });
-          }
-          await actor.setFlag("world", "trackingStuff", trackers);
-
           containerHtml.find(`.chip-val-input[data-id="${t.id}"]`).val(newVal);
           containerHtml.find(`.tracker-val-display[data-id="${t.id}"], .chip-val-display[data-id="${t.id}"]`).text(`${newVal} / ${live.max}`);
+
+          // Persist update via GM socket so player clients reliably update embedded items
+          if (globalThis.attackSocket?.executeAsGM) {
+            await globalThis.attackSocket.executeAsGM("updateActorTrackerValueAsGM", actor.id, t.id, t.type, t.itemRefId, t.resourceSlot, newVal, game.user.id);
+          } else {
+            if (t.type === "item" && t.itemRefId) {
+              const item = actor.items.get(t.itemRefId);
+              if (item) {
+                const max = Number(item.system?.uses?.max || 0);
+                const newSpent = Math.max(0, max - newVal);
+                await item.update({
+                  "system.uses.spent": newSpent,
+                  "system.uses.value": newVal
+                });
+              }
+            } else if (t.type === "resource" && t.resourceSlot) {
+              await actor.update({ [`system.resources.${t.resourceSlot}.value`]: newVal });
+            }
+            await actor.setFlag("world", "trackingStuff", trackers);
+          }
         };
 
         const bindChipEvents = () => {
@@ -2719,7 +2768,12 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Short Rest button handler
         containerHtml.find('#btn-recharge-sr').off('click').on('click', async function () {
-          const lines = await rechargeActorTrackers(actor, "sr");
+          let lines = [];
+          if (globalThis.attackSocket?.executeAsGM) {
+            lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "sr", game.user.id);
+          } else {
+            lines = await rechargeActorTrackers(actor, "sr");
+          }
           refreshChips();
           if (lines && lines.length > 0) {
             await ChatMessage.create({
@@ -2741,7 +2795,12 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Long Rest button handler
         containerHtml.find('#btn-recharge-lr').off('click').on('click', async function () {
-          const lines = await rechargeActorTrackers(actor, "lr");
+          let lines = [];
+          if (globalThis.attackSocket?.executeAsGM) {
+            lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id);
+          } else {
+            lines = await rechargeActorTrackers(actor, "lr");
+          }
           refreshChips();
           if (lines && lines.length > 0) {
             await ChatMessage.create({
@@ -2763,7 +2822,12 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Dawn button handler
         containerHtml.find('#btn-recharge-dawn-all').off('click').on('click', async function () {
-          const lines = await rechargeActorTrackers(actor, "dawn");
+          let lines = [];
+          if (globalThis.attackSocket?.executeAsGM) {
+            lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "dawn", game.user.id);
+          } else {
+            lines = await rechargeActorTrackers(actor, "dawn");
+          }
           refreshChips();
           if (lines && lines.length > 0) {
             await ChatMessage.create({
@@ -2825,14 +2889,15 @@ Click a numbered modifier badge to execute a roll.</div>
               }
 
               const per = String(u.per || "").toLowerCase();
-              const resetOn = per === "sr" ? "sr" : (per === "lr" ? "lr" : (formula || per === "day" ? "dawn" : "none"));
+              const resetOn = per === "sr" ? "sr" : (per === "lr" ? "lr" : (formula || per === "day" || per === "dawn" || per === "charges" ? "dawn" : "none"));
 
+              const curItemUses = u.spent !== undefined ? Math.max(0, Number(u.max) - Number(u.spent)) : Number(u.value ?? u.max);
               available.push({
                 id,
                 type: "item",
                 itemRefId: it.id,
                 label: it.name,
-                value: u.value ?? u.max,
+                value: curItemUses,
                 max: u.max,
                 rechargeFormula: formula,
                 resetOn,
@@ -2961,7 +3026,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 <div style="font-size: 0.84em; color: #2b3a4a;">
                   <strong>${a.label}</strong> <small style="color: #666;">(${a.value}/${a.max}${a.rechargeFormula ? ` • 🔄 ${a.rechargeFormula}` : ''})</small>
                 </div>
-                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777; width: auto; min-width: 60px; max-width: 20%; flex: 0 0 auto; margin: 0; display: inline-flex; align-items: center; justify-content: center;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff; width: auto; min-width: 60px; max-width: 20%; flex: 0 0 auto; margin: 0; display: inline-flex; align-items: center; justify-content: center;"'}>
+                <button type="button" class="btn-add-trackable-item" data-id="${a.id}" ${a.isAdded ? 'disabled style="opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777; width: 60px; min-width: 60px; max-width: 60px; flex: 0 0 60px; margin: 0; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;"' : 'style="cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff; width: 60px; min-width: 60px; max-width: 60px; flex: 0 0 60px; margin: 0; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;"'}>
                   ${a.isAdded ? 'Added' : 'Add'}
                 </button>
               </div>
@@ -3147,7 +3212,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
                   const addBtn = modalHtml.find(`.btn-add-trackable-item[data-id="${id}"], .btn-add-trackable-item[data-id="resource_${t.resourceSlot}"]`);
                   if (addBtn.length) {
-                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff;').text('Add');
+                    addBtn.prop('disabled', false).attr('style', 'cursor:pointer; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #4a6fa5; background: #4a6fa5; color: #fff; width: 60px; min-width: 60px; max-width: 60px; flex: 0 0 60px; margin: 0; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;').text('Add');
                   }
                 });
               };
@@ -3173,7 +3238,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
                 await syncResources();
                 await actor.setFlag("world", "trackingStuff", trackers);
-                $(this).prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 6px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777;').text('Added');
+                $(this).prop('disabled', true).attr('style', 'opacity:0.5; font-size: 0.74em; font-weight: 600; height: 20px; line-height: 18px; padding: 0 8px; border-radius: 3px; border: 1px solid #ccc; background: #eee; color: #777; width: 60px; min-width: 60px; max-width: 60px; flex: 0 0 60px; margin: 0; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;').text('Added');
                 refreshChips();
                 modalHtml.find('#manage-active-trackers-container').html(renderActiveTrackersList());
                 bindActiveTrackerEvents();
@@ -3410,8 +3475,103 @@ Click a numbered modifier badge to execute a roll.</div>
       return { actionVal, valFormula, typeLabel, tags };
     }
 
+    function getSpellItemSourceInfo(spell) {
+      if (!spell || !actor) return null;
+      let it = (spell.itemId ? actor.items?.get(spell.itemId) : null)
+        || actor.items?.getName(spell.spellName);
+      if (!it) return null;
+
+      // Check if this spell originates from a parent item (e.g. Staff of the Magi, Wand)
+      let sourceItem = null;
+      const flags = it.flags || {};
+      const dndFlags = flags.dnd5e || {};
+      const parentId = dndFlags.sourceItem || dndFlags.cachedFor || flags.magicitems?.sourceItem || it.system?.sourceItem;
+      if (parentId && actor.items?.get(parentId)) {
+        sourceItem = actor.items.get(parentId);
+      } else if (it.system?.activities) {
+        // Modern dnd5e activities checking consumption targets pointing to an item
+        const acts = it.system.activities instanceof Map ? Array.from(it.system.activities.values()) : Object.values(it.system.activities || {});
+        for (const act of acts) {
+          const targets = act.consumption?.targets || [];
+          for (const target of targets) {
+            if (target.type === "itemUses" && target.target && actor.items?.get(target.target)) {
+              sourceItem = actor.items.get(target.target);
+              break;
+            }
+          }
+          if (sourceItem) break;
+        }
+      }
+
+      // If no explicit parent ID, check if an equipment/weapon/feat with the same or related name exists with charges
+      if (!sourceItem && it.type === "spell") {
+        const customSrc = it.system?.source?.custom || it.system?.source?.rules || "";
+        if (customSrc) {
+          const match = actor.items?.find(i => i.type !== "spell" && (i.name.toLowerCase() === customSrc.toLowerCase() || customSrc.toLowerCase().includes(i.name.toLowerCase())));
+          if (match && Number(match.system?.uses?.max) > 0) {
+            sourceItem = match;
+          }
+        }
+      }
+
+      // Target item holding the uses (either the parent staff/wand or the spell/feat itself)
+      const targetItem = sourceItem || it;
+      const isNonSpellType = targetItem.type !== "spell";
+      // Modern dnd5e 5.1+ uses sys.method, older uses sys.preparation.mode
+      const prepMode = it.system?.method || it.system?.preparation?.mode;
+      const hasItemUses = Boolean(targetItem.system?.uses && Number(targetItem.system.uses.max) > 0);
+      const isInnateOrAtWill = ["innate", "atwill"].includes(prepMode);
+
+      if (!isNonSpellType && !hasItemUses && !isInnateOrAtWill && !sourceItem) {
+        return null;
+      }
+
+      // Detect explicit charge cost from dnd5e activities if present
+      let detectedCost = null;
+      if (it.system?.activities) {
+        const acts = it.system.activities instanceof Map ? Array.from(it.system.activities.values()) : Object.values(it.system.activities || {});
+        for (const act of acts) {
+          const targets = act.consumption?.targets || [];
+          for (const target of targets) {
+            if (target.type === "itemUses" && typeof target.value !== "undefined") {
+              detectedCost = Number(target.value);
+              break;
+            }
+          }
+          if (detectedCost !== null) break;
+        }
+      }
+
+      // If atwill or innate with 0 consumption, chargeCost is 0
+      let chargeCost = detectedCost !== null ? detectedCost : (prepMode === "atwill" ? 0 : 1);
+
+      const maxUses = Number(targetItem.system?.uses?.max ?? 0);
+      const curUses = targetItem.system?.uses?.spent !== undefined
+        ? Math.max(0, maxUses - Number(targetItem.system.uses.spent))
+        : Number(targetItem.system?.uses?.value ?? 0);
+      const actorHasSpellSlots = Object.values(actor.system?.spells || {}).some(s => Number(s?.max) > 0);
+      const isEquipmentItem = ["equipment", "weapon", "consumable", "loot", "container", "tool"].includes(targetItem.type);
+      const isPureItem = (Boolean(sourceItem) && isEquipmentItem) || (!actorHasSpellSlots && isNonSpellType);
+
+      return {
+        item: targetItem,
+        itemId: targetItem.id,
+        name: targetItem.name,
+        type: targetItem.type,
+        prepMode,
+        hasItemUses,
+        curUses,
+        maxUses,
+        isPureItem,
+        chargeCost,
+        label: hasItemUses ? `${curUses}/${maxUses} charges` : (isInnateOrAtWill ? (prepMode === "atwill" ? "At-Will" : "Innate") : targetItem.name)
+      };
+    }
+
     function getUpcastOptionsHtml(spell) {
       const baseLevel = Number(spell?.baseLevel) || 0;
+      const srcInfo = getSpellItemSourceInfo(spell);
+
       if (baseLevel === 0) {
         return `
         <div style="font-size: 0.82em; color: #555; padding: 4px 6px; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px solid #e0e0e0;">
@@ -3421,8 +3581,53 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
       }
 
+      let resourceSelectorHtml = "";
+      let slotDeductDisabled = false;
+      let slotDeductChecked = true;
+      let chargeDeductChecked = false;
+      let chargeDeductDisabled = false;
+
+      if (srcInfo) {
+        const hasEnoughCharges = srcInfo.hasItemUses ? (srcInfo.curUses >= (srcInfo.chargeCost || 1)) : true;
+        if (!hasEnoughCharges && srcInfo.hasItemUses) {
+          chargeDeductDisabled = true;
+        }
+
+        if (srcInfo.isPureItem) {
+          // Pure item/feat without normal slot casting (e.g. Wand, Staff)
+          slotDeductDisabled = true;
+          slotDeductChecked = false;
+          chargeDeductChecked = srcInfo.hasItemUses && hasEnoughCharges;
+          resourceSelectorHtml = `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: #eef4ff; border-radius: 3px; border: 1px solid #c8d8f4; margin-bottom: 5px; font-size: 0.8em;">
+              <span style="font-weight: 700; color: #3b5998;"><i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i> Source: ${srcInfo.name}</span>
+              <span style="font-weight: 700; color: ${hasEnoughCharges ? '#4b5d88' : '#c62828'}; font-family: monospace;">${srcInfo.label}</span>
+            </div>
+          `;
+        } else if (srcInfo.hasItemUses && srcInfo.maxUses > 0) {
+          // Dual-cast spell (e.g. Magic Initiate, Fey Touched: 1 free feat use OR standard spell slots)
+          const featHasCharges = srcInfo.curUses >= (srcInfo.chargeCost || 1);
+          chargeDeductChecked = featHasCharges;
+          slotDeductChecked = !featHasCharges;
+
+          resourceSelectorHtml = `
+            <div style="display: flex; gap: 4px; margin-bottom: 5px; border-bottom: 1px dashed #d2d7df; padding-bottom: 5px;">
+              <label style="flex: 1; display: flex; align-items: center; gap: 4px; font-size: 0.78em; font-weight: 700; color: ${featHasCharges ? '#3b5998' : '#888'}; cursor: ${featHasCharges ? 'pointer' : 'not-allowed'}; opacity: ${featHasCharges ? '1' : '0.5'}; background: #fff; padding: 2px 4px; border-radius: 3px; border: 1px solid #c8d8f4;">
+                <input type="radio" name="spellCastResourceMode" value="charge" ${featHasCharges ? 'checked' : ''} ${!featHasCharges ? 'disabled' : ''} style="margin: 0;" />
+                Free/Feat (${srcInfo.curUses}/${srcInfo.maxUses})
+              </label>
+              <label style="flex: 1; display: flex; align-items: center; gap: 4px; font-size: 0.78em; font-weight: 700; color: #4b5d88; cursor: pointer; background: #fff; padding: 2px 4px; border-radius: 3px; border: 1px solid #d2d7df;">
+                <input type="radio" name="spellCastResourceMode" value="slot" ${!featHasCharges ? 'checked' : ''} style="margin: 0;" />
+                Spell Slot
+              </label>
+            </div>
+          `;
+        }
+      }
+
       let html = `
       <div style="background: rgba(0,0,0,0.02); border: 1px solid #d2d7df; border-radius: 4px; padding: 6px;">
+        ${resourceSelectorHtml}
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
           <span style="font-size: 0.8em; font-weight: bold; color: #4b5d88;">CAST AT LEVEL:</span>
           <select id="castLevelSelect" style="height: 26px; font-size: 0.85em; border-radius: 4px; border: 1px solid #7289da; padding: 0 4px;">
@@ -3434,10 +3639,36 @@ Click a numbered modifier badge to execute a roll.</div>
       html += `
           </select>
         </div>
-        <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.8em; cursor: pointer; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e0e0; margin-top: 4px;">
-          <span style="font-weight: 600; color: #4b5d88;">Deduct slot from sheet</span>
-          <input type="checkbox" id="deductSlotToggle" style="margin: 0;" />
-        </label>
+        <div style="display: flex; flex-direction: column; gap: 3px; margin-top: 4px;">
+          <div id="slot-deduct-row" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed; font-size: 0.8em; opacity: ${slotDeductDisabled ? '0.6' : '1'};">
+            <label style="display: flex; align-items: center; gap: 4px; cursor: ${slotDeductDisabled ? 'not-allowed' : 'pointer'}; flex: 1; min-width: 0;" title="${slotDeductDisabled ? 'Spell is cast using item charges or feat uses rather than spell slots' : 'Deduct spell slot from sheet'}">
+              <input type="checkbox" id="deductSlotToggle" ${slotDeductChecked ? 'checked' : ''} ${slotDeductDisabled ? 'disabled' : ''} style="margin: 0;" />
+              <span style="font-weight: 600; color: #4b5d88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Deduct slot from sheet</span>
+            </label>
+            <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;" title="Spell slot cost">
+              <input type="number" min="1" max="1" value="1" disabled style="width: 32px; height: 18px; line-height: 16px; text-align: center; font-size: 0.82em; font-weight: 700; border: 1px solid #ccc; border-radius: 2px; padding: 0; background: #fafbfc; color: #1e293b; margin: 0; opacity: 0.85;" />
+              <span style="font-size: 0.72em; color: #666; font-weight: 600;">slot</span>
+            </div>
+          </div>
+          ${srcInfo && srcInfo.hasItemUses ? (
+            srcInfo.chargeCost > 0 ? `
+              <div id="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed; font-size: 0.8em; opacity: ${chargeDeductDisabled ? '0.5' : '1'};">
+                <label style="display: flex; align-items: center; gap: 4px; cursor: ${chargeDeductDisabled ? 'not-allowed' : 'pointer'}; flex: 1; min-width: 0;" title="${chargeDeductDisabled ? 'No charges remaining on item' : 'Deduct charge/use from item on character sheet'}">
+                  <input type="checkbox" id="deductChargeToggle" data-item-id="${srcInfo.itemId}" ${chargeDeductChecked ? 'checked' : ''} ${chargeDeductDisabled ? 'disabled' : ''} style="margin: 0;" />
+                  <span style="font-weight: 600; color: ${chargeDeductDisabled ? '#888' : '#3b5998'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Deduct charge from ${srcInfo.name}${chargeDeductDisabled ? ' (0 charges left)' : ''}</span>
+                </label>
+                <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;" title="Number of charges to expend for this cast">
+                  <input type="number" id="deductChargeCostInput" min="1" max="${srcInfo.maxUses}" value="${srcInfo.chargeCost}" ${chargeDeductDisabled ? 'disabled' : ''} style="width: 32px; height: 18px; line-height: 16px; text-align: center; font-size: 0.82em; font-weight: 700; border: 1px solid #ccc; border-radius: 2px; padding: 0; background: #fafbfc; color: #1e293b; margin: 0;" />
+                  <span style="font-size: 0.72em; color: #666; font-weight: 600;">charges</span>
+                </div>
+              </div>
+            ` : `
+              <div style="font-size: 0.75em; color: #2e6b35; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 3px; padding: 2px 6px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                <i class="fas fa-check-circle"></i> Cast at will via ${srcInfo.name} (0 charge cost)
+              </div>
+            `
+          ) : ''}
+        </div>
       </div>
     `;
       return html;
@@ -3612,6 +3843,12 @@ Click a numbered modifier badge to execute a roll.</div>
         const lvl = Math.clamp(Number(sp.baseLevel) || 0, 0, 9);
         if (!levels[lvl]) levels[lvl] = [];
         levels[lvl].push(key);
+      }
+
+      // Sort favorites and each spell level alphabetically
+      favorites.sort((a, b) => a.localeCompare(b));
+      for (const lvl of Object.keys(levels)) {
+        levels[lvl].sort((a, b) => a.localeCompare(b));
       }
 
       const collapsedState = window.CustomRolls._collapsedSpellLevels;
@@ -4518,6 +4755,15 @@ Click a numbered modifier badge to execute a roll.</div>
               color: #38bdf8 !important;
               border-color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-slate .btn-toggle-slot-mode {
+              background: #1b212f !important;
+              color: #94a3b8 !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .btn-toggle-slot-mode.active-slot-mode {
+              background: #252f42 !important;
+              color: #38bdf8 !important;
+            }
             .app.dialog.cheapdice-theme-slate #dialog-panel-right span[style*="color: #555"] {
               color: #94a3b8 !important;
             }
@@ -4753,6 +4999,15 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #252026 !important;
               color: #fbbf24 !important;
               border-color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-toggle-slot-mode {
+              background: #141318 !important;
+              color: #a8a29e !important;
+              border-color: #78350f !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .btn-toggle-slot-mode.active-slot-mode {
+              background: #252026 !important;
+              color: #fbbf24 !important;
             }
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right span[style*="color: #666"],
             .app.dialog.cheapdice-theme-arcane #dialog-panel-right small[style*="color: #666"],
@@ -5059,6 +5314,16 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass .btn-spell-subtab.active-subtab i {
               color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-glass .btn-toggle-slot-mode {
+              background: rgba(255, 255, 255, 0.06) !important;
+              color: #94a3b8 !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .btn-toggle-slot-mode.active-slot-mode {
+              background: rgba(56, 189, 248, 0.25) !important;
+              color: #38bdf8 !important;
+              box-shadow: 0 0 8px rgba(56, 189, 248, 0.35) !important;
+            }
             .app.dialog.cheapdice-theme-glass span[style*="background: rgba(114, 137, 218"] {
               color: #38bdf8 !important;
               background: rgba(56, 189, 248, 0.15) !important;
@@ -5176,6 +5441,195 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #2a2347 !important;
               color: #a78bfa !important;
               border-color: #a78bfa !important;
+            }
+
+            /* --- Side Dice Tray Flyout Styles --- */
+            .app.dialog .dice-stuff-flyout-tray {
+              position: absolute;
+              top: 0;
+              left: 40px;
+              width: 58px;
+              background: url("/ui/parchment.jpg") repeat, #fbf7ef;
+              border: 1px solid #c0c6ce;
+              border-radius: 6px;
+              box-shadow: 3px 4px 12px rgba(0,0,0,0.3);
+              padding: 5px 4px;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 4px;
+              z-index: 105;
+              box-sizing: border-box;
+            }
+            .app.dialog .dice-stuff-flyout-tray button {
+              margin: 0;
+              padding: 0;
+              cursor: pointer;
+              box-sizing: border-box;
+            }
+            .app.dialog .dice-stuff-flyout-die-btn {
+              position: relative;
+              width: 44px;
+              height: 28px;
+              font-size: 0.82em;
+              font-weight: 700;
+              background: #fff;
+              border: 1px solid #b0b8c4;
+              border-radius: 4px;
+              color: #2b3a4a;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              transition: background 0.1s ease, border-color 0.1s ease;
+            }
+            .app.dialog .dice-stuff-flyout-die-btn:hover {
+              background: #f0f4ff;
+              border-color: #7289da;
+              color: #7289da;
+            }
+            .app.dialog .dice-stuff-flyout-badge {
+              position: absolute;
+              top: -4px;
+              right: -4px;
+              background: #e03e3e;
+              color: #fff;
+              font-size: 0.72em;
+              font-weight: 800;
+              min-width: 15px;
+              height: 15px;
+              line-height: 15px;
+              border-radius: 8px;
+              padding: 0 2px;
+              text-align: center;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+              pointer-events: none;
+            }
+            .app.dialog .dice-stuff-flyout-mode-btn {
+              width: 46px;
+              height: 22px;
+              font-size: 0.72em;
+              font-weight: 800;
+              border-radius: 3px;
+              border: 1px solid #7289da;
+              background: #eef2ff;
+              color: #4338ca;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              text-transform: uppercase;
+              letter-spacing: 0.3px;
+            }
+            .app.dialog .dice-stuff-flyout-mode-btn.mode-adv {
+              background: #ecfdf5;
+              border-color: #059669;
+              color: #047857;
+            }
+            .app.dialog .dice-stuff-flyout-mode-btn.mode-dis {
+              background: #fef2f2;
+              border-color: #dc2626;
+              color: #b91c1c;
+            }
+            .app.dialog .dice-stuff-flyout-roll-btn {
+              width: 46px;
+              height: 26px;
+              font-size: 0.78em;
+              font-weight: 800;
+              background: #2563eb;
+              border: 1px solid #1d4ed8;
+              color: #fff;
+              border-radius: 4px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 3px;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+            }
+            .app.dialog .dice-stuff-flyout-roll-btn:hover {
+              background: #1d4ed8;
+            }
+            .app.dialog .dice-stuff-flyout-clear-btn {
+              width: 46px;
+              height: 20px;
+              font-size: 0.75em;
+              font-weight: 700;
+              background: #f1f5f9;
+              border: 1px solid #cbd5e1;
+              color: #64748b;
+              border-radius: 3px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .app.dialog .dice-stuff-flyout-clear-btn:hover {
+              background: #fee2e2;
+              border-color: #f87171;
+              color: #dc2626;
+            }
+
+            /* Tactical Glass Flyout */
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-tray {
+              background: rgba(15, 23, 42, 0.88) !important;
+              backdrop-filter: blur(16px) !important;
+              -webkit-backdrop-filter: blur(16px) !important;
+              border: 1px solid rgba(255, 255, 255, 0.18) !important;
+              box-shadow: 4px 6px 18px rgba(0, 0, 0, 0.6) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-die-btn {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border: 1px solid rgba(255, 255, 255, 0.15) !important;
+              color: #e0e7ff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-die-btn:hover {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-clear-btn {
+              background: rgba(255, 255, 255, 0.05) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+              color: #94a3b8 !important;
+            }
+
+            /* Slate Flyout */
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-tray {
+              background: #1e293b !important;
+              border: 1px solid #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-die-btn {
+              background: #0f172a !important;
+              border: 1px solid #334155 !important;
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-die-btn:hover {
+              background: #1e293b !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-clear-btn {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+              color: #94a3b8 !important;
+            }
+
+            /* Arcane Midnight Flyout */
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-tray {
+              background: #18152e !important;
+              border: 1px solid #4a3e75 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-die-btn {
+              background: #100d20 !important;
+              border: 1px solid #3b3060 !important;
+              color: #e0d8f7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-die-btn:hover {
+              background: #231c3e !important;
+              border-color: #a78bfa !important;
+              color: #a78bfa !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-clear-btn {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
+              color: #7c729c !important;
             }
 
             /* Spell Filter Bar Themes */
@@ -5526,6 +5980,28 @@ Click a numbered modifier badge to execute a roll.</div>
             }
           }
 
+          // Handle Item / Feat charge deduction
+          const chargeToggle = html.find("#deductChargeToggle");
+          if (chargeToggle.length > 0 && chargeToggle.is(":checked")) {
+            const chargeItemId = chargeToggle.attr("data-item-id") || chargeToggle.data("item-id") || rawConfig.itemId;
+            const chargeItem = chargeItemId ? actor.items.get(chargeItemId) : null;
+            const costVal = Number(html.find("#deductChargeCostInput").val());
+            const chargeCost = !isNaN(costVal) && costVal > 0 ? costVal : 1;
+            if (chargeItem && Number(chargeItem.system?.uses?.max) > 0) {
+              const currentUses = Number(chargeItem.system.uses.value) || 0;
+              if (currentUses < chargeCost) {
+                const proceed = await Dialog.confirm({
+                  title: "Insufficient Charges Remaining",
+                  content: `<p><strong>${chargeItem.name}</strong> only has <strong>${currentUses}</strong> charges remaining (requires ${chargeCost}). Cast anyway?</p>`
+                });
+                if (!proceed) return;
+              } else {
+                config.deductChargeItemId = chargeItemId;
+                config.deductChargeCost = chargeCost;
+              }
+            }
+          }
+
           if (config.damageMode === "choice" && !["heal", "temp_hp", "max_hp"].includes(config.resolutionMethod)) {
             const choiceOptions = [
               "acid", "cold", "fire", "force", "lightning",
@@ -5558,6 +6034,14 @@ Click a numbered modifier badge to execute a roll.</div>
 
           config.targetIds = Array.from(game.user.targets).map(t => t.id);
           await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+
+          // Live real-time refresh of spell slots, inspector, and tracking stuff after cast
+          html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+          html.find("#section-spell").html(renderSpellCards());
+          updateCardStyles();
+          if (typeof window.CustomRolls?._refreshTrackingChips === "function") {
+            window.CustomRolls._refreshTrackingChips();
+          }
         });
 
         // Generic Spell Attack Roll Handler
@@ -5673,6 +6157,51 @@ Click a numbered modifier badge to execute a roll.</div>
             localStorage.setItem(SPELL_SLOT_MODE_STORAGE_KEY, mode);
           } catch (_err) {}
           html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+        });
+
+        // Dual-cast Spell Resource Mode Radio Switcher (Charge vs Slot)
+        html.on("change", "input[name='spellCastResourceMode']", function () {
+          const mode = $(this).val();
+          const slotToggle = html.find("#deductSlotToggle");
+          const chargeToggle = html.find("#deductChargeToggle");
+          if (mode === "charge") {
+            slotToggle.prop("checked", false).prop("disabled", true);
+            slotToggle.closest("label").css({ opacity: "0.6", cursor: "not-allowed" });
+            chargeToggle.prop("checked", true);
+          } else {
+            slotToggle.prop("disabled", false).prop("checked", true);
+            slotToggle.closest("label").css({ opacity: "1", cursor: "pointer" });
+            chargeToggle.prop("checked", false);
+          }
+        });
+
+        // Dedicated uncheck/check handler for charge toggle to keep slot/charge mutually exclusive
+        html.on("change", "#deductChargeToggle", function () {
+          const isChecked = $(this).is(":checked");
+          const slotToggle = html.find("#deductSlotToggle");
+          const radioSlot = html.find("input[name='spellCastResourceMode'][value='slot']");
+          const radioCharge = html.find("input[name='spellCastResourceMode'][value='charge']");
+          if (!isChecked) {
+            slotToggle.prop("disabled", false).prop("checked", true);
+            slotToggle.closest("label").css({ opacity: "1", cursor: "pointer" });
+            if (radioSlot.length) radioSlot.prop("checked", true);
+          } else {
+            // When checking deduct charge, ensure slot deduction is unchecked and grayed out
+            slotToggle.prop("checked", false).prop("disabled", true);
+            slotToggle.closest("label").css({ opacity: "0.6", cursor: "not-allowed" });
+            if (radioCharge.length) radioCharge.prop("checked", true);
+          }
+        });
+
+        // Allow clicking slot toggle to switch mode to slot and uncheck/gray out charge
+        html.on("change", "#deductSlotToggle", function () {
+          const isChecked = $(this).is(":checked");
+          const chargeToggle = html.find("#deductChargeToggle");
+          const radioSlot = html.find("input[name='spellCastResourceMode'][value='slot']");
+          if (isChecked) {
+            chargeToggle.prop("checked", false);
+            if (radioSlot.length) radioSlot.prop("checked", true);
+          }
         });
 
         // Send Spell Description to Chat Handler
@@ -5966,8 +6495,23 @@ Click a numbered modifier badge to execute a roll.</div>
           const castLvl = Number(rawConfig.baseLevel) || 0;
           const { cfg: config } = getEffectiveSpellConfig(rawConfig, castLvl);
 
+          const srcInfo = getSpellItemSourceInfo(rawConfig);
           if (castLvl === 0) {
             config.skipSlotDeduction = true;
+          } else if (srcInfo && srcInfo.isPureItem) {
+            config.skipSlotDeduction = true;
+            if (srcInfo.hasItemUses && srcInfo.chargeCost > 0) {
+              if (srcInfo.curUses < srcInfo.chargeCost) {
+                const proceed = await Dialog.confirm({
+                  title: "Insufficient Charges Remaining",
+                  content: `<p><strong>${srcInfo.name}</strong> only has <strong>${srcInfo.curUses}</strong> charges remaining (requires ${srcInfo.chargeCost}). Cast anyway?</p>`
+                });
+                if (!proceed) return;
+              } else {
+                config.deductChargeItemId = srcInfo.itemId;
+                config.deductChargeCost = srcInfo.chargeCost;
+              }
+            }
           } else {
             const slotKey = `spell${castLvl}`;
             const currentSlotVal = Number(actor.system.spells?.[slotKey]?.value) || 0;
@@ -6004,6 +6548,14 @@ Click a numbered modifier badge to execute a roll.</div>
 
           config.targetIds = Array.from(game.user.targets).map(t => t.id);
           await globalThis.attackSocket.executeAsGM("runSpellAttackRoll", config, actor.id, game.user.id);
+
+          // Live real-time refresh of spell slots, inspector, and tracking stuff after cast
+          html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
+          html.find("#section-spell").html(renderSpellCards());
+          updateCardStyles();
+          if (typeof window.CustomRolls?._refreshTrackingChips === "function") {
+            window.CustomRolls._refreshTrackingChips();
+          }
         });
 
         // Initial setup for compact mode
@@ -6563,7 +7115,33 @@ Click a numbered modifier badge to execute a roll.</div>
           renderSideTabs();
         });
 
-        // --- Render Right-Side Action Tabs ---
+        // --- Render Right-Side Action Tabs & Dice Tray Flyout ---
+        let flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+        let flyoutRollMode = "norm"; // "norm" | "adv" | "dis"
+        let isDiceFlyoutOpen = false;
+
+        function getFlyoutFormula() {
+          const parts = [];
+          const diceOrder = ["d4", "d6", "d8", "d10", "d12", "d20", "d100"];
+          for (const d of diceOrder) {
+            const count = flyoutDiceCounts[d] || 0;
+            if (count > 0) {
+              if (d === "d20") {
+                if (flyoutRollMode === "adv") {
+                  parts.push(count === 1 ? "2d20kh" : `${count + 1}d20kh`);
+                } else if (flyoutRollMode === "dis") {
+                  parts.push(count === 1 ? "2d20kl" : `${count + 1}d20kl`);
+                } else {
+                  parts.push(`${count}d20`);
+                }
+              } else {
+                parts.push(`${count}${d}`);
+              }
+            }
+          }
+          return parts.length > 0 ? parts.join(" + ") : "";
+        }
+
         function renderSideTabs() {
           let sideTabs = dialogApp.find(".dice-stuff-side-tabs");
           if (sideTabs.length === 0) {
@@ -6582,6 +7160,22 @@ Click a numbered modifier badge to execute a roll.</div>
           }
           sideTabs.empty();
 
+          // 1. Dice Tray Trigger Tab (Placed above Slot 1)
+          const diceTabBtn = $(`
+            <button type="button" class="dice-stuff-side-tab-btn ${isDiceFlyoutOpen ? 'tab-assigned' : ''}" id="dice-stuff-flyout-trigger" title="Quick Dice Tray" style="margin-bottom: 2px; ${isDiceFlyoutOpen ? 'border-color: #2563eb; color: #2563eb;' : ''}">
+              <i class="fas fa-dice-d20"></i>
+            </button>
+          `);
+
+          diceTabBtn.on("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isDiceFlyoutOpen = !isDiceFlyoutOpen;
+            renderSideTabs();
+          });
+          sideTabs.append(diceTabBtn);
+
+          // 2. Action Slots 1 to 4
           const slots = [
             { num: 1, hotbar: 47 },
             { num: 2, hotbar: 48 },
@@ -6605,6 +7199,120 @@ Click a numbered modifier badge to execute a roll.</div>
             });
 
             sideTabs.append(tabBtn);
+          }
+
+          // 3. Render or Remove the Vertical Flyout Tray (Flying out to the right)
+          let flyoutTray = sideTabs.find(".dice-stuff-flyout-tray");
+          if (!isDiceFlyoutOpen) {
+            flyoutTray.remove();
+            return;
+          }
+
+          if (flyoutTray.length === 0) {
+            flyoutTray = $(`<div class="dice-stuff-flyout-tray"></div>`);
+            sideTabs.append(flyoutTray);
+          }
+          flyoutTray.empty();
+
+          // 1) Roll Button (At the very top)
+          const rollBtn = $(`
+            <button type="button" class="dice-stuff-flyout-roll-btn" title="Roll formula to chat">
+              Roll
+            </button>
+          `);
+          rollBtn.on("click", async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const formula = getFlyoutFormula();
+            if (!formula) return;
+
+            try {
+              const roll = new Roll(formula);
+              await roll.evaluate();
+              const speaker = ChatMessage.getSpeaker({ actor });
+              await roll.toMessage({ speaker });
+            } catch (err) {
+              console.error("Dice Stuff | Error rolling formula:", err);
+            }
+
+            // Reset after rolling
+            flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+            renderSideTabs();
+          });
+          flyoutTray.append(rollBtn);
+
+          // 2) Clear Button
+          const clearBtn = $(`
+            <button type="button" class="dice-stuff-flyout-clear-btn" title="Reset all dice counts">
+              Clear
+            </button>
+          `);
+          clearBtn.on("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+            renderSideTabs();
+          });
+          flyoutTray.append(clearBtn);
+
+          // 3) Mode Toggle Button: NORM -> ADV -> DIS -> NORM
+          const modeLabels = { norm: "NORM", adv: "ADV", dis: "DIS" };
+          const modeClasses = { norm: "", adv: "mode-adv", dis: "mode-dis" };
+          const modeBtn = $(`
+            <button type="button" class="dice-stuff-flyout-mode-btn ${modeClasses[flyoutRollMode]}" title="Click to cycle Advantage / Disadvantage / Normal">
+              ${modeLabels[flyoutRollMode]}
+            </button>
+          `);
+          modeBtn.on("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (flyoutRollMode === "norm") flyoutRollMode = "adv";
+            else if (flyoutRollMode === "adv") flyoutRollMode = "dis";
+            else flyoutRollMode = "norm";
+            renderSideTabs();
+          });
+          flyoutTray.append(modeBtn);
+
+          // 4) Dice Buttons (Vertical Stack with Dice Icons)
+          const diceDefs = [
+            { id: "d4", label: "d4", icon: "fas fa-dice-d4" },
+            { id: "d6", label: "d6", icon: "fas fa-dice-d6" },
+            { id: "d8", label: "d8", icon: "fas fa-dice-d8" },
+            { id: "d10", label: "d10", icon: "fas fa-dice-d10" },
+            { id: "d12", label: "d12", icon: "fas fa-dice-d12" },
+            { id: "d20", label: "d20", icon: "fas fa-dice-d20" },
+            { id: "d100", label: "d100", icon: "fas fa-dice-d10" }
+          ];
+
+          for (const d of diceDefs) {
+            const count = flyoutDiceCounts[d.id] || 0;
+            const badgeHtml = count > 0 ? `<span class="dice-stuff-flyout-badge">${count}</span>` : "";
+            const dieBtn = $(`
+              <button type="button" class="dice-stuff-flyout-die-btn" data-die="${d.id}" title="Left-click: +1 ${d.label} | Right-click: -1">
+                <i class="${d.icon}" style="font-size: 0.95em; margin-right: 2px;"></i><span style="font-size: 0.85em;">${d.label}</span>
+                ${badgeHtml}
+              </button>
+            `);
+
+            // Left-Click: Increment
+            dieBtn.on("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              flyoutDiceCounts[d.id] = (flyoutDiceCounts[d.id] || 0) + 1;
+              renderSideTabs();
+            });
+
+            // Right-Click: Decrement
+            dieBtn.on("contextmenu", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if ((flyoutDiceCounts[d.id] || 0) > 0) {
+                flyoutDiceCounts[d.id] -= 1;
+                renderSideTabs();
+              }
+            });
+
+            flyoutTray.append(dieBtn);
           }
         }
 

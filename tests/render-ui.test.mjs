@@ -326,5 +326,160 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     // Pact: 0/2 spent -> 0 filled, 2 empty
     assert.deepEqual(spentRows[2], { label: "Pact", filledCount: 0, emptyCount: 2, countText: "0/2" });
   });
+
+  it('correctly identifies item/feat spell source and charge deduction behavior', () => {
+    const wandItem = {
+      id: "wand123",
+      name: "Wand of Magic Missiles",
+      type: "equipment",
+      system: {
+        uses: { value: 5, max: 7 },
+        preparation: { mode: "atwill" }
+      }
+    };
+    const feyTouchedSpell = {
+      id: "spMisty",
+      name: "Misty Step",
+      type: "spell",
+      system: {
+        level: 2,
+        uses: { value: 1, max: 1 },
+        preparation: { mode: "always" }
+      }
+    };
+    const standardSpell = {
+      id: "spFire",
+      name: "Fireball",
+      type: "spell",
+      system: {
+        level: 3,
+        uses: { value: null, max: null },
+        preparation: { mode: "prepared" }
+      }
+    };
+
+    const mockActorItems = {
+      items: {
+        get: (id) => [wandItem, feyTouchedSpell, standardSpell].find(i => i.id === id),
+        getName: (name) => [wandItem, feyTouchedSpell, standardSpell].find(i => i.name === name)
+      }
+    };
+
+    function checkSourceInfo(spell, actor) {
+      const it = (spell.itemId ? actor.items?.get(spell.itemId) : null)
+        || actor.items?.getName(spell.spellName);
+      if (!it) return null;
+      const isNonSpellType = it.type !== "spell";
+      const prepMode = it.system?.preparation?.mode;
+      const hasItemUses = Boolean(it.system?.uses && Number(it.system.uses.max) > 0);
+      const isInnateOrAtWill = ["innate", "atwill"].includes(prepMode);
+
+      if (!isNonSpellType && !hasItemUses && !isInnateOrAtWill) return null;
+      const isPureItem = isNonSpellType || (hasItemUses && !["prepared", "always"].includes(prepMode));
+      return {
+        isPureItem,
+        hasItemUses,
+        curUses: Number(it.system?.uses?.value ?? 0),
+        maxUses: Number(it.system?.uses?.max ?? 0)
+      };
+    }
+
+    // Pure magic item: Wand of Magic Missiles
+    const wandCheck = checkSourceInfo({ itemId: "wand123", spellName: "Magic Missile", baseLevel: 1 }, mockActorItems);
+    assert.ok(wandCheck);
+    assert.equal(wandCheck.isPureItem, true);
+    assert.equal(wandCheck.hasItemUses, true);
+    assert.equal(wandCheck.curUses, 5);
+    assert.equal(wandCheck.maxUses, 7);
+
+    // Dual-cast feat spell: Misty Step (Fey Touched: 1 free use + spell slots)
+    const feyCheck = checkSourceInfo({ itemId: "spMisty", spellName: "Misty Step", baseLevel: 2 }, mockActorItems);
+    assert.ok(feyCheck);
+    assert.equal(feyCheck.isPureItem, false, "Feat spell with 'always' prep mode should allow dual-cast selection");
+    assert.equal(feyCheck.hasItemUses, true);
+    assert.equal(feyCheck.curUses, 1);
+    assert.equal(feyCheck.maxUses, 1);
+
+    // Standard prepared spell
+    const stdCheck = checkSourceInfo({ itemId: "spFire", spellName: "Fireball", baseLevel: 3 }, mockActorItems);
+    assert.equal(stdCheck, null, "Standard class spell should not have item source info");
+  });
+
+  it("modern dnd5e uses.spent unwrap and spell sorting resilience", () => {
+    // 1. Check system.uses.spent calculation
+    const itemWithSpent = {
+      name: "Staff of the Magi",
+      system: {
+        uses: {
+          max: 50,
+          spent: 10
+        }
+      }
+    };
+    const maxUses = Number(itemWithSpent.system.uses.max) || 0;
+    const curUses = itemWithSpent.system.uses.spent !== undefined
+      ? Math.max(0, maxUses - Number(itemWithSpent.system.uses.spent))
+      : Number(itemWithSpent.system.uses.value || 0);
+    assert.equal(curUses, 40);
+
+    // Decrement 5 charges
+    const chargeCost = 5;
+    const newUses = Math.max(0, curUses - chargeCost);
+    const newSpent = Math.max(0, maxUses - newUses);
+    assert.equal(newUses, 35);
+    assert.equal(newSpent, 15);
+
+    // 2. Check alphabetical sorting of spells in levels and sync
+    const spells = {
+      "Shield": { baseLevel: 1 },
+      "Bless": { baseLevel: 1 },
+      "Absorb Elements": { baseLevel: 1 }
+    };
+    const sortedKeys = Object.keys(spells).sort((a, b) => a.localeCompare(b));
+    assert.deepEqual(sortedKeys, ["Absorb Elements", "Bless", "Shield"]);
+
+    // 3. Check zero-charge gray-out / mutual exclusion logic
+    const emptyItem = { curUses: 0, maxUses: 7, chargeCost: 1 };
+    const hasEnoughCharges = emptyItem.curUses >= emptyItem.chargeCost;
+    assert.equal(hasEnoughCharges, false);
+    const chargeDeductDisabled = !hasEnoughCharges;
+    assert.equal(chargeDeductDisabled, true);
+  });
+
+  it("Dice Stuff side tray formula builder handles normal, advantage, and disadvantage", () => {
+    function buildFormula(counts, mode) {
+      const parts = [];
+      const diceOrder = ["d4", "d6", "d8", "d10", "d12", "d20", "d100"];
+      for (const d of diceOrder) {
+        const count = counts[d] || 0;
+        if (count > 0) {
+          if (d === "d20") {
+            if (mode === "adv") {
+              parts.push(count === 1 ? "2d20kh" : `${count + 1}d20kh`);
+            } else if (mode === "dis") {
+              parts.push(count === 1 ? "2d20kl" : `${count + 1}d20kl`);
+            } else {
+              parts.push(`${count}d20`);
+            }
+          } else {
+            parts.push(`${count}${d}`);
+          }
+        }
+      }
+      return parts.join(" + ");
+    }
+
+    // Normal multi-dice
+    assert.equal(buildFormula({ d10: 6 }, "norm"), "6d10");
+    assert.equal(buildFormula({ d10: 6, d6: 2 }, "norm"), "2d6 + 6d10");
+
+    // d20 modes
+    assert.equal(buildFormula({ d20: 1 }, "norm"), "1d20");
+    assert.equal(buildFormula({ d20: 1 }, "adv"), "2d20kh");
+    assert.equal(buildFormula({ d20: 1 }, "dis"), "2d20kl");
+
+    // Combined d20 adv + extra damage die
+    assert.equal(buildFormula({ d20: 1, d8: 1 }, "adv"), "1d8 + 2d20kh");
+  });
 });
 

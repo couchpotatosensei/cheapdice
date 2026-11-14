@@ -883,12 +883,39 @@ function registerSocketHandlers() {
       duration = "Instantaneous", concentration = false,
       addAbilityModToValue = false,
       castLevel = 0, skipSlotDeduction = false,
+      deductChargeItemId,
       extraAttackModifier, extraDamageModifier
     } = config;
 
     let slotTag = "";
     const slotLvl = Number(castLevel) || 0;
-    if (slotLvl > 0) {
+
+    // Handle charge/use deduction for items/feats
+    if (deductChargeItemId) {
+      const chargeCost = Math.max(1, Number(config.deductChargeCost) || 1);
+      const chargeItem = actor.items?.get(deductChargeItemId);
+      if (chargeItem && Number(chargeItem.system?.uses?.max) > 0) {
+        const maxUses = Number(chargeItem.system.uses.max) || 0;
+        const curUses = chargeItem.system.uses.spent !== undefined
+          ? Math.max(0, maxUses - Number(chargeItem.system.uses.spent))
+          : (Number(chargeItem.system.uses.value) || 0);
+        const newUses = Math.max(0, curUses - chargeCost);
+        const newSpent = Math.max(0, maxUses - newUses);
+        await chargeItem.update({
+          "system.uses.spent": newSpent,
+          "system.uses.value": newUses
+        });
+        slotTag = `${chargeItem.name}: (${newUses}/${maxUses} charges left)`;
+
+        // Keep trackingStuff flag synchronized in real-time
+        const trackers = actor.getFlag("world", "trackingStuff") || [];
+        const t = trackers.find(x => x.itemRefId === deductChargeItemId || x.id === `item_${deductChargeItemId}`);
+        if (t) {
+          t.value = newUses;
+          await actor.setFlag("world", "trackingStuff", trackers);
+        }
+      }
+    } else if (slotLvl > 0) {
       const slotKey = `system.spells.spell${slotLvl}.value`;
       const currentSlots = Number(actor.system.spells?.[`spell${slotLvl}`]?.value) || 0;
       const maxSlots = Number(actor.system.spells?.[`spell${slotLvl}`]?.max) || 0;
@@ -2677,6 +2704,53 @@ function registerSocketHandlers() {
 
     await actor.setFlag("world", category, data, { recursive: false });
     return true;
+  });
+
+  socket.register("updateActorTrackerValueAsGM", async (actorId, trackerId, type, itemRefId, resourceSlot, newVal, userId) => {
+    const actor = game.actors.get(actorId);
+    if (!actor) return false;
+
+    const callingUser = game.users.get(userId);
+    if (callingUser && !callingUser.isGM && !actor.testUserPermission(callingUser, "OWNER")) {
+      return false;
+    }
+
+    if (type === "item" && itemRefId) {
+      const item = actor.items.get(itemRefId);
+      if (item) {
+        const max = Number(item.system?.uses?.max || 0);
+        const newSpent = Math.max(0, max - newVal);
+        await item.update({
+          "system.uses.spent": newSpent,
+          "system.uses.value": newVal
+        });
+      }
+    } else if (type === "resource" && resourceSlot) {
+      await actor.update({ [`system.resources.${resourceSlot}.value`]: newVal });
+    }
+
+    const trackers = actor.getFlag("world", "trackingStuff") || [];
+    const t = trackers.find(x => x.id === trackerId);
+    if (t) {
+      t.value = newVal;
+      await actor.setFlag("world", "trackingStuff", trackers);
+    }
+    return true;
+  });
+
+  socket.register("rechargeActorTrackersAsGM", async (actorId, restType, userId) => {
+    const actor = game.actors.get(actorId);
+    if (!actor) return [];
+
+    const callingUser = game.users.get(userId);
+    if (callingUser && !callingUser.isGM && !actor.testUserPermission(callingUser, "OWNER")) {
+      return [];
+    }
+
+    if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
+      return await window.CustomRolls.rechargeActorTrackers(actor, restType);
+    }
+    return [];
   });
 
   socket.register("closeMusicForAll", async () => {
