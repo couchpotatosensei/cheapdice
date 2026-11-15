@@ -445,7 +445,7 @@ export function isSpellPrepared(item, actor) {
 export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
   if (!actor) return false;
 
-  const currentSpells = foundry.utils.deepClone(
+  let currentSpells = foundry.utils.deepClone(
     getProfileData(actor, "spellConfigs") ||
     actor.getFlag?.("world", "spellConfigs") || {}
   );

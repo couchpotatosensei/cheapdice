@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSpellConfigFromItem, isSpellPrepared } from '../modules/custom-rolls.js';
+import { buildSpellConfigFromItem, isSpellPrepared, syncSpellsWithSheet } from '../modules/custom-rolls.js';
 
 describe('UI Render Safety & Spell Parser Test Suite', () => {
   const mockActor = {
@@ -480,6 +480,79 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
 
     // Combined d20 adv + extra damage die
     assert.equal(buildFormula({ d20: 1, d8: 1 }, "adv"), "1d8 + 2d20kh");
+  });
+
+  it("syncSpellsWithSheet synchronizes spells without assignment error and sorts alphabetically", async () => {
+    let savedProfileSpells = null;
+    globalThis.foundry = {
+      utils: {
+        deepClone: (obj) => JSON.parse(JSON.stringify(obj || {}))
+      }
+    };
+    globalThis.game = {
+      user: { isGM: true },
+      settings: {
+        settings: new Map(),
+        get: () => ({}),
+        set: async () => true
+      }
+    };
+    globalThis.ui = {
+      notifications: {
+        info: () => {}
+      }
+    };
+
+    const mockSyncActor = {
+      id: "syncActor1",
+      name: "Sync Tester",
+      system: {
+        abilities: { int: { mod: 4 } },
+        attributes: { prof: 2, spellcasting: "int" }
+      },
+      itemTypes: {
+        class: [{ name: "Wizard" }],
+        feat: [],
+        spell: [
+          {
+            id: "spZ",
+            name: "Zephyr Strike",
+            type: "spell",
+            system: {
+              level: 1,
+              preparation: { mode: "always", prepared: true },
+              activation: { cost: 1, type: "bonus" },
+              damage: { parts: [] }
+            }
+          },
+          {
+            id: "spA",
+            name: "Acid Splash",
+            type: "spell",
+            system: {
+              level: 0,
+              preparation: { mode: "prepared", prepared: true },
+              activation: { cost: 1, type: "action" },
+              damage: { parts: [["1d6", "acid"]] }
+            }
+          }
+        ]
+      },
+      getFlag: (scope, key) => {
+        if (key === "spellConfigs") return savedProfileSpells;
+        return null;
+      },
+      setFlag: async (scope, key, val) => {
+        if (key === "spellConfigs") savedProfileSpells = val;
+      }
+    };
+
+    // Run sync without prompting (promptUser: false)
+    const result = await syncSpellsWithSheet(mockSyncActor, { promptUser: false });
+    assert.equal(result, true);
+    assert.ok(savedProfileSpells);
+    const keys = Object.keys(savedProfileSpells);
+    assert.deepEqual(keys, ["Acid Splash", "Zephyr Strike"]);
   });
 });
 
