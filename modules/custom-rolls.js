@@ -4451,43 +4451,47 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait & Vitals Card (Top Row) -->
-        <div style="display: flex; gap: 6px; align-items: stretch; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 4px 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 50px; min-width: 50px; max-width: 50px; height: 72px; border-radius: 5px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
-          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 2px; overflow: hidden;">
+        <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
+          <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px; overflow: hidden;">
             <!-- HP Tracker Row -->
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 2px;">
-              <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap;">
+            <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
+              <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-heart"></i> HP
               </span>
               <div style="display: flex; align-items: center; gap: 2px; min-width: 0;">
-                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Enter delta +/- or new total)" style="width: 32px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
-                <span style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap;">/ ${maxHp}</span>
-                ${tempHp > 0 ? `<span style="font-size: 0.68em; font-weight: 700; color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 2px; padding: 0 2px; white-space: nowrap;" title="Temp HP">+${tempHp}</span>` : ''}
+                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Enter delta +/- or new total)" style="width: 30px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
+                <span id="dice-stuff-hp-max-label" style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap;">/ ${maxHp}</span>
+                <span id="dice-stuff-hp-temp-badge" style="font-size: 0.68em; font-weight: 700; color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 2px; padding: 0 2px; white-space: nowrap; ${tempHp > 0 ? '' : 'display: none;'}" title="Temp HP">+${tempHp}</span>
               </div>
             </div>
 
             <!-- Hit Dice Tracker Row -->
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 2px;">
-              <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap;">
+            <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
+              <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-dice-d6"></i> HD
               </span>
-              <div style="display: flex; align-items: center; gap: 2px; min-width: 0;">
-                <span style="font-size: 0.74em; font-weight: 700; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
-                <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="width: 20px; height: 18px; font-size: 0.72em; padding: 0; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                  <i class="fas fa-dice-d6"></i>
+              <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
+                <span id="dice-stuff-hd-label" style="font-size: 0.74em; font-weight: 700; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
+                <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;">
+                  Roll Hit Die
                 </button>
               </div>
             </div>
 
-            <!-- Rest Triggers Row -->
-            <div style="display: flex; gap: 3px; margin-top: 1px;">
-              <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 1px; white-space: nowrap; overflow: hidden;">
+            <!-- Rest Triggers Row (Compacted to ~60% width) -->
+            <div style="display: flex; gap: 4px; max-width: 110px;">
+              <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
                 <i class="fas fa-mug-hot"></i> Short
               </button>
-              <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 1px; white-space: nowrap; overflow: hidden;">
+              <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
                 <i class="fas fa-moon"></i> Long
               </button>
             </div>
+          </div>
+        </div>
+          </div>
+        </div>
           </div>
         </div>
 
@@ -4579,10 +4583,18 @@ Click a numbered modifier badge to execute a roll.</div>
     </div>
   `;
 
+    let liveActorHookId = null;
+
     const dlg = new Dialog({
       title: `Dice Stuff: ${actor.name}`,
       content: content,
       buttons: {},
+      close: () => {
+        if (liveActorHookId !== null) {
+          Hooks.off("updateActor", liveActorHookId);
+          liveActorHookId = null;
+        }
+      },
       render: (html) => {
         html.closest(".dialog").find(".dialog-buttons").remove();
 
@@ -5779,10 +5791,12 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas fa-palette"></i> <span class="theme-label-text">${currentThemeObj.label}</span>
             </a>
           `);
+          themeBtnElem[0].onclick = () => {};
 
           themeBtnElem.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
 
             const cur = localStorage.getItem(THEME_STORAGE_KEY) || "default";
             new Dialog({
@@ -5829,10 +5843,12 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas fa-sync-alt"></i> <span class="refresh-label-text">Refresh</span>
             </a>
           `);
+          refreshBtnElem[0].onclick = () => {};
 
           refreshBtnElem.on("click", async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
 
             // Run spell synchronization check with confirmation dialog
             try {
@@ -5854,10 +5870,12 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas ${isInitiallyCompact ? 'fa-expand-alt' : 'fa-compress-alt'}"></i> <span class="collapse-label-text">${isInitiallyCompact ? 'Expand' : 'Compact'}</span>
             </a>
           `);
+          collapseBtnElem[0].onclick = () => {};
 
           collapseBtnElem.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
             toggleCompactMode();
           });
         }
@@ -5870,8 +5888,12 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas fa-crown" style="color: #d97706;"></i> <span class="gm-label-text">GM Tools</span>
             </a>
           `);
+          gmBtnElem[0].onclick = () => {};
+
           gmBtnElem.on("click", (ev) => {
             ev.preventDefault();
+            ev.stopPropagation();
+            ev.stopImmediatePropagation();
             new Dialog({
               title: `Dice Stuff: GM Tools (${actor.name})`,
               content: `
@@ -5931,6 +5953,15 @@ Click a numbered modifier badge to execute a roll.</div>
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
 
+        // Universal Enter Key Guard across ALL text/number inputs in Dice Stuff
+        html.on("keydown", "input[type='text'], input[type='number']", function (e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            $(this).trigger("change").trigger("blur");
+          }
+        });
+
         // Vitals Handlers: HP Quick-Update, Hit Dice Roll, Rest Triggers
         const hpInput = html.find("#dice-stuff-hp-input");
         const updateHpValue = async function (el) {
@@ -5951,17 +5982,60 @@ Click a numbered modifier badge to execute a roll.</div>
           await actor.update({ "system.attributes.hp.value": newVal });
         };
 
-        hpInput.on("keydown", function (e) {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            e.stopPropagation();
-            $(this).trigger("blur");
-          }
-        });
-
         hpInput.on("change blur", async function () {
           await updateHpValue(this);
         });
+
+        // Live Actor Updates Hook (HP, Max HP, Temp HP, Hit Dice)
+        if (liveActorHookId === null) {
+          liveActorHookId = Hooks.on("updateActor", (updatedActor, changes) => {
+            if (updatedActor.id !== actor.id) return;
+
+            // Live update HP, Max HP, and Temp HP
+            if (foundry.utils.hasProperty(changes, "system.attributes.hp")) {
+              const liveHp = updatedActor.system?.attributes?.hp || {};
+              const liveCur = Number(liveHp.value) ?? 0;
+              const liveMax = Number(liveHp.max) ?? 0;
+              const liveTemp = Number(liveHp.temp) ?? 0;
+
+              // Only update input if user is not currently actively typing inside it
+              if (!hpInput.is(":focus")) {
+                hpInput.val(liveCur);
+              }
+              html.find("#dice-stuff-hp-max-label").text(`/ ${liveMax}`);
+
+              const tempBadge = html.find("#dice-stuff-hp-temp-badge");
+              if (liveTemp > 0) {
+                tempBadge.text(`+${liveTemp}`).show();
+              } else {
+                tempBadge.hide();
+              }
+            }
+
+            // Live update Hit Dice
+            if (foundry.utils.hasProperty(changes, "system.attributes.hd") || foundry.utils.hasProperty(changes, "items")) {
+              let liveHdCur = 0;
+              let liveHdMax = 0;
+              let liveHdDenom = "";
+              if (updatedActor.system?.attributes?.hd && typeof updatedActor.system.attributes.hd.value === "number") {
+                liveHdCur = Number(updatedActor.system.attributes.hd.value) || 0;
+                liveHdMax = Number(updatedActor.system.attributes.hd.max) || 0;
+              } else if (updatedActor.itemTypes?.class && updatedActor.itemTypes.class.length > 0) {
+                updatedActor.itemTypes.class.forEach(c => {
+                  const levels = Number(c.system?.levels) || 0;
+                  const used = Number(c.system?.hitDiceUsed) || 0;
+                  liveHdCur += Math.max(0, levels - used);
+                  liveHdMax += levels;
+                  if (!liveHdDenom && c.system?.hitDice) liveHdDenom = c.system.hitDice;
+                });
+              }
+              if (!liveHdDenom && updatedActor.itemTypes?.class?.[0]?.system?.hitDice) {
+                liveHdDenom = updatedActor.itemTypes.class[0].system.hitDice;
+              }
+              html.find("#dice-stuff-hd-label").html(`${liveHdCur}/${liveHdMax}${liveHdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${liveHdDenom})</small>` : ''}`);
+            }
+          });
+        }
 
         // Hit Die Roll Handler
         html.find("#dice-stuff-roll-hd-btn").on("click", async (e) => {
@@ -5972,10 +6046,7 @@ Click a numbered modifier badge to execute a roll.</div>
               await actor.rollHitDie();
             } else {
               ui.notifications.warn("Native rollHitDie is not supported on this actor type.");
-              return;
             }
-            dlg.close();
-            await window.CustomRolls.openActionDialog(currentMode, actor);
           } catch (err) {
             console.error("Dice Stuff | Error rolling hit die:", err);
           }
@@ -5989,6 +6060,16 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.shortRest === "function") {
               const res = await actor.shortRest();
               if (res) {
+                // Trigger Tracking Stuff Short Rest recharge routines
+                const srBtn = html.find("#btn-recharge-sr");
+                if (srBtn.length > 0) {
+                  srBtn.trigger("click");
+                } else if (globalThis.attackSocket?.executeAsGM) {
+                  await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "sr", game.user.id);
+                } else if (typeof rechargeActorTrackers === "function") {
+                  await rechargeActorTrackers(actor, "sr");
+                }
+
                 dlg.close();
                 await window.CustomRolls.openActionDialog(currentMode, actor);
               }
@@ -6008,6 +6089,16 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.longRest === "function") {
               const res = await actor.longRest();
               if (res) {
+                // Trigger Tracking Stuff Long Rest recharge routines
+                const lrBtn = html.find("#btn-recharge-lr");
+                if (lrBtn.length > 0) {
+                  lrBtn.trigger("click");
+                } else if (globalThis.attackSocket?.executeAsGM) {
+                  await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id);
+                } else if (typeof rechargeActorTrackers === "function") {
+                  await rechargeActorTrackers(actor, "lr");
+                }
+
                 dlg.close();
                 await window.CustomRolls.openActionDialog(currentMode, actor);
               }
