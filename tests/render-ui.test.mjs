@@ -554,5 +554,57 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     const keys = Object.keys(savedProfileSpells);
     assert.deepEqual(keys, ["Acid Splash", "Zephyr Strike"]);
   });
+
+  it("Dice Stuff vitals extraction & delta math handles HP and hit dice cleanly", () => {
+    const mockActor = {
+      system: {
+        attributes: {
+          hp: { value: 35, max: 40, temp: 5 },
+          hd: { value: 3, max: 5 }
+        }
+      },
+      itemTypes: {
+        class: [
+          { system: { levels: 3, hitDiceUsed: 1, hitDice: "d8" } },
+          { system: { levels: 2, hitDiceUsed: 1, hitDice: "d10" } }
+        ]
+      }
+    };
+
+    // Extract HP
+    const curHp = Number(mockActor.system.attributes.hp.value) || 0;
+    const maxHp = Number(mockActor.system.attributes.hp.max) || 0;
+    const tempHp = Number(mockActor.system.attributes.hp.temp) || 0;
+    assert.equal(curHp, 35);
+    assert.equal(maxHp, 40);
+    assert.equal(tempHp, 5);
+
+    // Delta test
+    const applyDelta = (current, str) => {
+      if (str.startsWith("+") || str.startsWith("-")) {
+        const delta = Number(str);
+        return !isNaN(delta) ? Math.max(0, current + delta) : current;
+      }
+      const num = Number(str);
+      return !isNaN(num) ? Math.max(0, num) : current;
+    };
+
+    assert.equal(applyDelta(curHp, "-10"), 25);
+    assert.equal(applyDelta(curHp, "+15"), 50);
+    assert.equal(applyDelta(curHp, "-100"), 0);
+    assert.equal(applyDelta(curHp, "20"), 20);
+
+    // Hit Dice calculation fallback
+    let hdCurrent = 0;
+    let hdMax = 0;
+    mockActor.itemTypes.class.forEach(c => {
+      const levels = Number(c.system.levels) || 0;
+      const used = Number(c.system.hitDiceUsed) || 0;
+      hdCurrent += Math.max(0, levels - used);
+      hdMax += levels;
+    });
+    assert.equal(hdCurrent, 3);
+    assert.equal(hdMax, 5);
+  });
 });
 

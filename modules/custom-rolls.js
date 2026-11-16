@@ -3330,6 +3330,32 @@ Click a numbered modifier badge to execute a roll.</div>
     // Portrait for Persistent Sidebar
     const portraitSrc = token?.document?.texture?.src || actor.img || "icons/svg/mystery-man.svg";
 
+    // Vitals: HP and Hit Dice Extraction
+    const hpData = actor.system?.attributes?.hp || { value: 0, max: 0, temp: 0 };
+    const curHp = Number(hpData.value) || 0;
+    const maxHp = Number(hpData.max) || 0;
+    const tempHp = Number(hpData.temp) || 0;
+
+    // Hit Dice: System aggregate (dnd5e 3+/4+) or computed from class items
+    let hdCurrent = 0;
+    let hdMax = 0;
+    let hdDenom = "";
+    if (actor.system?.attributes?.hd && typeof actor.system.attributes.hd.value === "number") {
+      hdCurrent = Number(actor.system.attributes.hd.value) || 0;
+      hdMax = Number(actor.system.attributes.hd.max) || 0;
+    } else if (actor.itemTypes?.class && actor.itemTypes.class.length > 0) {
+      actor.itemTypes.class.forEach(c => {
+        const levels = Number(c.system?.levels) || 0;
+        const used = Number(c.system?.hitDiceUsed) || 0;
+        hdCurrent += Math.max(0, levels - used);
+        hdMax += levels;
+        if (!hdDenom && c.system?.hitDice) hdDenom = c.system.hitDice;
+      });
+    }
+    if (!hdDenom && actor.itemTypes?.class?.[0]?.system?.hitDice) {
+      hdDenom = actor.itemTypes.class[0].system.hitDice;
+    }
+
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
       if (!config) return { atkSign: "+0", dmgFormula: "1d6", dmgType: "SLASHING", tags: [], totalAtk: 0, dmgMod: 0, diceCount: 1, dieSize: "6" };
@@ -4424,22 +4450,60 @@ Click a numbered modifier badge to execute a roll.</div>
       <!-- COLUMN 1: LEFT SIDEBAR: Persistent (~275px) -->
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
-        <!-- Actor Portrait (Left) & Stacked Init/Conc (Right) -->
-        <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
-          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
-            <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
-              <span class="entry-label" style="font-size: 1.05em; font-weight: 700; color: #235d6e; white-space: nowrap;">Initiative</span>
-              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 52px; height: 20px; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-                ${d20Data.formattedInit}
+        <!-- Actor Portrait & Vitals Card (Top Row) -->
+        <div style="display: flex; gap: 8px; align-items: stretch; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
+          <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; height: 74px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px;">
+            <!-- HP Tracker Row -->
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+              <span style="font-size: 0.78em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 3px;">
+                <i class="fas fa-heart"></i> HP
+              </span>
+              <div style="display: flex; align-items: center; gap: 2px;">
+                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports +/- values e.g. -5, +10)" style="width: 38px; height: 20px; font-size: 0.82em; font-weight: 700; text-align: center; border-radius: 3px; border: 1px solid #d2d7df; background: #fff; padding: 0 2px;" />
+                <span style="font-size: 0.78em; color: #555; font-weight: 600;">/ ${maxHp}</span>
+                ${tempHp > 0 ? `<span style="font-size: 0.72em; font-weight: 700; color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 3px; padding: 1px 3px; margin-left: 2px;" title="Temp HP">+${tempHp}</span>` : ''}
+              </div>
+            </div>
+
+            <!-- Hit Dice Tracker Row -->
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+              <span style="font-size: 0.78em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 3px;">
+                <i class="fas fa-dice-d6"></i> HD
+              </span>
+              <div style="display: flex; align-items: center; gap: 3px;">
+                <span style="font-size: 0.78em; font-weight: 700; color: #2b3a4a;">${hdCurrent} / ${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
+                <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="width: 22px; height: 20px; font-size: 0.76em; padding: 0; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                  <i class="fas fa-dice-d6"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Rest Triggers Row -->
+            <div style="display: flex; gap: 4px; margin-top: 1px;">
+              <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 20px; font-size: 0.72em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0 2px;">
+                <i class="fas fa-mug-hot"></i> Short
+              </button>
+              <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 20px; font-size: 0.72em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0 2px;">
+                <i class="fas fa-moon"></i> Long
               </button>
             </div>
-            <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
-              <span class="entry-label" style="font-size: 1.05em; font-weight: 700; color: #a34848; white-space: nowrap;">Concentration</span>
-              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 34px; height: 20px; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-                ${d20Data.formattedConc}
-              </button>
-            </div>
+          </div>
+        </div>
+
+        <!-- Initiative & Concentration Side-by-Side (Second Row) -->
+        <div style="display: flex; gap: 6px; flex-shrink: 0;">
+          <div class="sheet-entry-row" data-key="init" data-type="init" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 4px; cursor: pointer;" title="Roll Initiative">
+            <span class="entry-label" style="font-size: 0.88em; font-weight: 700; color: #235d6e; white-space: nowrap;">Init</span>
+            <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; height: 20px; font-size: 0.78em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              ${d20Data.formattedInit}
+            </button>
+          </div>
+          <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 4px; cursor: pointer;" title="Roll Concentration">
+            <span class="entry-label" style="font-size: 0.88em; font-weight: 700; color: #a34848; white-space: nowrap;">Conc</span>
+            <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 32px; height: 20px; font-size: 0.78em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+              ${d20Data.formattedConc}
+            </button>
           </div>
         </div>
 
@@ -5866,6 +5930,82 @@ Click a numbered modifier badge to execute a roll.</div>
         // Initialize D20 event handlers and Tracking Stuff
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
+
+        // Vitals Handlers: HP Quick-Update, Hit Dice Roll, Rest Triggers
+        const hpInput = html.find("#dice-stuff-hp-input");
+        hpInput.on("change", async function () {
+          const rawVal = $(this).val().trim();
+          let currentVal = Number(actor.system?.attributes?.hp?.value) || 0;
+          const maxVal = Number(actor.system?.attributes?.hp?.max) || 0;
+          let newVal = currentVal;
+
+          if (rawVal.startsWith("+") || rawVal.startsWith("-")) {
+            const delta = Number(rawVal);
+            if (!isNaN(delta)) newVal = Math.max(0, currentVal + delta);
+          } else {
+            const num = Number(rawVal);
+            if (!isNaN(num)) newVal = Math.max(0, num);
+          }
+
+          $(this).val(newVal);
+          await actor.update({ "system.attributes.hp.value": newVal });
+        });
+
+        // Hit Die Roll Handler
+        html.find("#dice-stuff-roll-hd-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            if (typeof actor.rollHitDie === "function") {
+              await actor.rollHitDie();
+            } else {
+              ui.notifications.warn("Native rollHitDie is not supported on this actor type.");
+              return;
+            }
+            dlg.close();
+            await window.CustomRolls.openActionDialog(currentMode, actor);
+          } catch (err) {
+            console.error("Dice Stuff | Error rolling hit die:", err);
+          }
+        });
+
+        // Short Rest Handler
+        html.find("#dice-stuff-short-rest-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            if (typeof actor.shortRest === "function") {
+              const res = await actor.shortRest();
+              if (res) {
+                dlg.close();
+                await window.CustomRolls.openActionDialog(currentMode, actor);
+              }
+            } else {
+              ui.notifications.warn("Native short rest is not available for this actor.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error during short rest:", err);
+          }
+        });
+
+        // Long Rest Handler
+        html.find("#dice-stuff-long-rest-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            if (typeof actor.longRest === "function") {
+              const res = await actor.longRest();
+              if (res) {
+                dlg.close();
+                await window.CustomRolls.openActionDialog(currentMode, actor);
+              }
+            } else {
+              ui.notifications.warn("Native long rest is not available for this actor.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error during long rest:", err);
+          }
+        });
 
         // Persistent Weapon Roll Handler (Keeps dialog open)
         html.on("click", "#btn-roll-weapon-now", async () => {
