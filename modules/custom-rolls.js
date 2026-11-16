@@ -647,15 +647,6 @@ export function initCustomRolls() {
     mod.api.buildSpellConfigFromItem = buildSpellConfigFromItem;
   }
 
-  // Hook into D&D 5e rest completion to auto-recharge tracking stuff
-  Hooks.on("dnd5e.restCompleted", async (actor, data) => {
-    if (!actor || !actor.isOwner) return;
-    const restType = (data?.longRest || data?.restType === "long") ? "lr" : "sr";
-    if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
-      await window.CustomRolls.rechargeActorTrackers(actor, restType);
-    }
-  });
-
   // Support interactive click buttons on Spell Save DC cards (works across v12/v13/v14)
   const hookName = (foundry.utils.isNewerVersion?.(game.version, "13") || Number(game.release?.generation ?? 12) >= 13)
     ? "renderChatMessageHTML"
@@ -4294,7 +4285,7 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait & Vitals Card (Top Row) -->
-        <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
+        <div id="dice-stuff-vitals-card" style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
           <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
           <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px;">
             <!-- HP Tracker Row -->
@@ -4302,15 +4293,17 @@ Click a numbered modifier badge to execute a roll.</div>
               <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-heart"></i> HP
               </span>
-              <div style="display: flex; align-items: center; gap: 3px; min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 3px; min-width: 0; flex: 1;">
                 <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 46px; min-width: 46px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
                 <span id="dice-stuff-hp-max-label" style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap;">/ ${maxHp}</span>
                 <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; margin-left: 2px; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
                   ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
                 </button>
-                <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 18px; min-width: 18px; height: 18px; font-size: 0.68em; padding: 0; border-radius: 2px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                  <i class="fas fa-cog" style="margin: 0;"></i>
-                </button>
+                <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0;">
+                  <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 18px; min-width: 18px; height: 18px; font-size: 0.68em; padding: 0; border-radius: 2px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <i class="fas fa-cog" style="margin: 0;"></i>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -4327,8 +4320,8 @@ Click a numbered modifier badge to execute a roll.</div>
               </div>
             </div>
 
-            <!-- Rest Triggers Row (Matched to full row width) -->
-            <div style="display: flex; gap: 4px; width: 100%;">
+            <!-- Rest Triggers Row (Matched to Hit Die content width) -->
+            <div style="display: flex; gap: 4px; width: 152px;">
               <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
                 <i class="fas fa-mug-hot"></i> Short
               </button>
@@ -5208,6 +5201,139 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #desc-body-v2 {
               color: #f1f5f9 !important;
             }
+            /* Vitals Card in Glass Theme */
+            .app.dialog.cheapdice-theme-glass #dice-stuff-vitals-card {
+              background: rgba(255, 255, 255, 0.05) !important;
+              border-color: rgba(255, 255, 255, 0.12) !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-max-label {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-label {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-label small {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-thp-btn {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-config-btn {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-config-btn:hover {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-roll-hd-btn {
+              background: rgba(114, 137, 218, 0.2) !important;
+              border-color: #7289da !important;
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-roll-hd-btn:hover {
+              background: rgba(114, 137, 218, 0.35) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-short-rest-btn {
+              background: rgba(217, 119, 6, 0.18) !important;
+              border-color: #d97706 !important;
+              color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-short-rest-btn:hover {
+              background: rgba(217, 119, 6, 0.32) !important;
+              color: #fde68a !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-long-rest-btn {
+              background: rgba(67, 56, 202, 0.22) !important;
+              border-color: #6366f1 !important;
+              color: #a5b4fc !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-long-rest-btn:hover {
+              background: rgba(67, 56, 202, 0.38) !important;
+              color: #ffffff !important;
+            }
+
+            /* Slate Vitals Card */
+            .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card {
+              background: #1e293b !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-max-label,
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-label small {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-label {
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-thp-btn,
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-config-btn {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-config-btn:hover {
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-roll-hd-btn {
+              background: #0f172a !important;
+              border-color: #475569 !important;
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-short-rest-btn {
+              background: #271a0c !important;
+              border-color: #b45309 !important;
+              color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-long-rest-btn {
+              background: #1e1b4b !important;
+              border-color: #4338ca !important;
+              color: #a5b4fc !important;
+            }
+
+            /* Arcane Vitals Card */
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card {
+              background: #18152e !important;
+              border-color: #4a3e75 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-max-label,
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-label small {
+              color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-label {
+              color: #e0d8f7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-thp-btn,
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-config-btn {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
+              color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-config-btn:hover {
+              border-color: #a78bfa !important;
+              color: #a78bfa !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-roll-hd-btn {
+              background: #100d20 !important;
+              border-color: #4a3e75 !important;
+              color: #c4b5fd !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-short-rest-btn {
+              background: #2a1b0a !important;
+              border-color: #b45309 !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-long-rest-btn {
+              background: #17113a !important;
+              border-color: #6366f1 !important;
+              color: #c7d2fe !important;
+            }
+
             .app.dialog.cheapdice-theme-glass input,
             .app.dialog.cheapdice-theme-glass select,
             .app.dialog.cheapdice-theme-glass textarea {
