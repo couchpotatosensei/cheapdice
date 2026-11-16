@@ -3130,6 +3130,8 @@ Click a numbered modifier badge to execute a roll.</div>
     const maxHp = Number(hpData.effectiveMax ?? hpData.max) || 0;
     const tempHp = Number(hpData.temp) || 0;
     const curAc = actor.system?.attributes?.ac?.value ?? actor.system?.attributes?.ac ?? "--";
+    const hpPct = Math.min(100, Math.max(0, Math.round((curHp / (maxHp || 1)) * 100)));
+    const thpPct = Math.min(100, Math.round((tempHp / (maxHp || 1)) * 100));
 
     // Hit Dice: System aggregate (dnd5e 3+/4+) or computed from class items
     let hdCurrent = 0;
@@ -4246,65 +4248,79 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait & Vitals Card (Top Row) -->
-        <div id="dice-stuff-vitals-card" style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
-          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px;">
-            <!-- HP Tracker Row -->
-            <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px; margin: 1px 0;">
-              <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
-                <i class="fas fa-heart"></i> HP
-              </span>
-              <div style="display: flex; align-items: center; gap: 3px; min-width: 0; flex: 1;">
-                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 46px; min-width: 46px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px; flex-shrink: 0;" />
-                <span id="dice-stuff-hp-max-label" style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap; flex-shrink: 0;">/ ${maxHp}</span>
-                <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; margin-left: 2px; flex-shrink: 0; width: auto; max-width: fit-content; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
-                  ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
-                </button>
-                <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0;">
-                  <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 18px; min-width: 18px; max-width: 18px; height: 18px; font-size: 0.68em; padding: 0; border-radius: 2px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <div id="dice-stuff-vitals-card" style="display: flex; flex-direction: column; gap: 6px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
+          
+          <!-- Top Row: Portrait + HP Stats & Progress Bar + AC Shield Card -->
+          <div style="display: flex; gap: 8px; align-items: stretch; width: 100%;">
+            <!-- Full-Size Portrait (58x58px) -->
+            <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
+
+            <!-- HP Column with Visual Bar (Fills Center Space) -->
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 1px 0;">
+              <!-- HP Numbers & Action Buttons Row -->
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 3px;">
+                <div style="display: flex; align-items: center; gap: 3px; min-width: 0;">
+                  <span style="font-size: 0.85em; font-weight: 800; color: #b91c1c; display: flex; align-items: center; gap: 2px; flex-shrink: 0;">
+                    <i class="fas fa-heart"></i>
+                  </span>
+                  <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports 3 digits, absolute or deltas like -15, +10)" style="width: 46px; min-width: 46px; height: 22px; font-size: 0.88em; font-weight: 800; text-align: center; border-radius: 3px; border: 1px solid #cbd5e1; background: #fff; padding: 0 1px; flex-shrink: 0;" />
+                  <span id="dice-stuff-hp-max-label" style="font-size: 0.82em; color: #555; font-weight: 700; white-space: nowrap; flex-shrink: 0;">/ ${maxHp}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 3px; flex-shrink: 0;">
+                  <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 22px; font-size: 0.78em; font-weight: 700; padding: 0 5px; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; flex-shrink: 0; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
+                    ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
+                  </button>
+                  <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 22px; min-width: 22px; max-width: 22px; height: 22px; font-size: 0.78em; padding: 0; border-radius: 3px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
                     <i class="fas fa-cog" style="margin: 0;"></i>
                   </button>
                 </div>
               </div>
+
+              <!-- Visual HP Progress Bar -->
+              <div id="dice-stuff-hp-bar-track" style="width: 100%; height: 7px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: flex; position: relative; margin: 3px 0; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
+                <div id="dice-stuff-hp-bar-fill" style="width: ${hpPct}%; height: 100%; background: ${curHp <= 0 ? 'transparent' : (curHp <= maxHp * 0.25 ? '#ef4444' : (curHp <= maxHp * 0.5 ? '#f59e0b' : '#10b981'))}; transition: width 0.3s ease, background-color 0.3s ease;"></div>
+                <div id="dice-stuff-thp-bar-fill" style="width: ${thpPct}%; height: 100%; background: #38bdf8; opacity: 0.9; transition: width 0.3s ease;"></div>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.68em; font-weight: 700; color: #64748b; padding: 0 1px;">
+                <span id="dice-stuff-hp-pct-label">${hpPct}% HP</span>
+                <span id="dice-stuff-thp-status-label" style="color: #0284c7;">${tempHp > 0 ? `+${tempHp} THP` : ''}</span>
+              </div>
             </div>
 
-            <!-- Lower Vitals: HD/Rest Stack on Left, Armor Class Container on Right -->
-            <div style="display: flex; align-items: stretch; justify-content: space-between; gap: 6px; width: 100%;">
-              <!-- Hit Dice Tracker & Rest Triggers Column (Auto-Stacked to exact content width) -->
-              <div style="display: inline-flex; flex-direction: column; width: fit-content; gap: 3px;">
-                <!-- Hit Dice Row -->
-                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
-                  <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
-                    <i class="fas fa-dice-d6"></i> HD
-                  </span>
-                  <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
-                    <span id="dice-stuff-hd-label" style="font-size: 0.74em; font-weight: 700; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
-                    <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;">
-                      Roll Hit Die
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Rest Triggers Row (Locked to exact width of Hit Die content above) -->
-                <div style="display: flex; gap: 4px; width: 100%;">
-                  <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
-                    <i class="fas fa-mug-hot"></i> Short
-                  </button>
-                  <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
-                    <i class="fas fa-moon"></i> Long
-                  </button>
-                </div>
-              </div>
-
-              <!-- Dedicated Armor Class Slot (Spans Rows 2 & 3 alongside HD/Rest stack) -->
-              <div id="dice-stuff-armor-class-slot" style="flex: 1; min-width: 0; display: flex; align-items: stretch; justify-content: center;">
-                <button type="button" id="dice-stuff-ac-btn" title="Armor Class: ${curAc} (Click to open AC Configuration)" style="height: 100%; min-height: 38px; width: 100%; border: 1px solid #bcc5d3; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 2px 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                  <i class="fas fa-shield-halved" style="color: #4b5d88; font-size: 1.25em;"></i>
-                  <span style="font-size: 1.2em; font-weight: 800; color: #1e293b; line-height: 1;">${curAc}</span>
-                </button>
-              </div>
+            <!-- AC Shield Button (Right side, 48px wide x 58px high) -->
+            <div id="dice-stuff-armor-class-slot" style="width: 48px; min-width: 48px; display: flex; align-items: stretch; justify-content: center; flex-shrink: 0;">
+              <button type="button" id="dice-stuff-ac-btn" title="Armor Class: ${curAc} (Click to open AC Configuration)" style="height: 100%; min-height: 58px; width: 100%; border: 1px solid #bcc5d3; background: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 2px 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                <i class="fas fa-shield-halved" style="color: #4b5d88; font-size: 1.25em;"></i>
+                <span style="font-size: 1.15em; font-weight: 800; color: #1e293b; line-height: 1;">${curAc}</span>
+              </button>
             </div>
           </div>
+
+          <!-- Bottom Half: Full-Width HD & Rest Action Bar Underneath Portrait -->
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding-top: 4px; border-top: 1px solid #e2e8f0;">
+            <!-- Hit Dice Tracker Pill -->
+            <div id="dice-stuff-hd-pill" style="display: flex; align-items: center; gap: 5px; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 6px; height: 26px; flex-shrink: 0;">
+              <span style="font-size: 0.78em; font-weight: 800; color: #4b5d88; display: flex; align-items: center; gap: 3px; white-space: nowrap;">
+                <i class="fas fa-dice-d6"></i> HD
+              </span>
+              <span id="dice-stuff-hd-label" style="font-size: 0.82em; font-weight: 800; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
+              <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="height: 19px; font-size: 0.72em; font-weight: 800; padding: 0 5px; border: 1px solid #7289da; background: rgba(114, 137, 218, 0.1); color: #7289da; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;">
+                Roll
+              </button>
+            </div>
+
+            <!-- Rest Triggers -->
+            <div style="display: flex; gap: 4px; flex: 1; min-width: 0;">
+              <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 26px; font-size: 0.78em; font-weight: 800; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 4px; white-space: nowrap; overflow: hidden;">
+                <i class="fas fa-mug-hot"></i> Short
+              </button>
+              <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 26px; font-size: 0.78em; font-weight: 800; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 4px; white-space: nowrap; overflow: hidden;">
+                <i class="fas fa-moon"></i> Long
+              </button>
+            </div>
+          </div>
+
         </div>
 
         <!-- Initiative & Concentration Side-by-Side (Second Row) -->
@@ -5246,6 +5262,13 @@ Click a numbered modifier badge to execute a roll.</div>
               background: rgba(56, 189, 248, 0.25) !important;
               border-color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-bar-track {
+              background: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+            }
 
             /* Slate Vitals Card */
             .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card {
@@ -5297,6 +5320,13 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn:hover {
               border-color: #38bdf8 !important;
             }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-bar-track {
+              background: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-pill {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+            }
 
             /* Arcane Vitals Card */
             .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card {
@@ -5347,6 +5377,13 @@ Click a numbered modifier badge to execute a roll.</div>
             }
             .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn:hover {
               border-color: #a78bfa !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-bar-track {
+              background: #3b3060 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-pill {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
             }
 
             .app.dialog.cheapdice-theme-glass input,
@@ -6173,6 +6210,16 @@ Click a numbered modifier badge to execute a roll.</div>
                   .html(`<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`)
                   .css({ background: "#fff", color: "#64748b", border: "1px dashed #cbd5e1" });
               }
+
+              const liveHpPct = Math.min(100, Math.max(0, Math.round((liveCur / (liveMax || 1)) * 100)));
+              const liveThpPct = Math.min(100, Math.round((liveTemp / (liveMax || 1)) * 100));
+              html.find("#dice-stuff-hp-bar-fill").css({
+                width: `${liveHpPct}%`,
+                background: liveCur <= 0 ? "transparent" : (liveCur <= liveMax * 0.25 ? "#ef4444" : (liveCur <= liveMax * 0.5 ? "#f59e0b" : "#10b981"))
+              });
+              html.find("#dice-stuff-thp-bar-fill").css({ width: `${liveThpPct}%` });
+              html.find("#dice-stuff-hp-pct-label").text(`${liveHpPct}% HP`);
+              html.find("#dice-stuff-thp-status-label").text(liveTemp > 0 ? `+${liveTemp} THP` : "");
             }
 
             if (foundry.utils.hasProperty(changes, "system.attributes.hd") || foundry.utils.hasProperty(changes, "items")) {

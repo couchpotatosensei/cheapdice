@@ -667,7 +667,15 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     const acC = actorC.system?.attributes?.ac?.value ?? actorC.system?.attributes?.ac ?? "--";
     assert.equal(acC, "--");
 
-    // 4. Test button HTML generation
+    // 4. Test button HTML generation and progress bar percentage math
+    const maxHp = 142;
+    const curHp = 120;
+    const tempHp = 15;
+    const hpPct = Math.min(100, Math.max(0, Math.round((curHp / (maxHp || 1)) * 100)));
+    const thpPct = Math.min(100, Math.round((tempHp / (maxHp || 1)) * 100));
+    assert.equal(hpPct, 85);
+    assert.equal(thpPct, 11);
+
     const buttonHtml = `
       <div id="dice-stuff-armor-class-slot">
         <button type="button" id="dice-stuff-ac-btn" title="Armor Class: ${acA}">
@@ -675,9 +683,15 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
           <span>${acA}</span>
         </button>
       </div>
+      <div id="dice-stuff-hp-bar-track">
+        <div id="dice-stuff-hp-bar-fill" style="width: ${hpPct}%"></div>
+        <div id="dice-stuff-thp-bar-fill" style="width: ${thpPct}%"></div>
+      </div>
     `;
     assert.ok(buttonHtml.includes('id="dice-stuff-ac-btn"'));
     assert.ok(buttonHtml.includes('<span>18</span>'));
+    assert.ok(buttonHtml.includes('id="dice-stuff-hp-bar-track"'));
+    assert.ok(buttonHtml.includes('width: 85%'));
     assert.ok(buttonHtml.includes('fa-shield-halved'));
   });
 });
