@@ -371,39 +371,58 @@ function registerSocketHandlers() {
 
     async function _rollDamageDice() {
       if (damageDiceCount <= 0 || !cleanDieSize || maxDieValue <= 0) {
-        return { finalCombinedDieResult: 0, finalDieResults: [], allDieRolls: [], rerollSummary: [], savageAttackerSummary: null };
+        return { finalCombinedDieResult: 0, finalDieResults: [], allDieRolls: [], rerollSummary: [], savageAttackerSummary: null, floorSummary: null, piercerSummary: null };
       }
       const damageDieFormula = `1${cleanDieSize}`;
+
+      const hasFloor = (config.hasDamageFloor === true || String(config.hasDamageFloor) === "true") && Number(config.damageFloorValue) > 0;
+      const floorValue = hasFloor ? Number(config.damageFloorValue) : 0;
+      const floorLabel = (config.damageFloorLabel || "").trim() || "Damage Floor";
+
+      let floorAppliedCount = 0;
 
       async function _rollSinglePass() {
         const passRolls = [];
         const passResults = [];
         const passRerolls = [];
+        let passFloorCount = 0;
         for (let i = 0; i < damageDiceCount; i++) {
           let initialRoll = await new Roll(damageDieFormula).evaluate();
-          let initialResult = Number(initialRoll.total);
+          let currentResult = Number(initialRoll.total);
           passRolls.push(initialRoll);
 
-          if (gwfThreshold > 0 && initialResult <= gwfThreshold) {
+          if (gwfThreshold > 0 && currentResult <= gwfThreshold) {
             let reroll = await new Roll(damageDieFormula).evaluate();
             passRolls.push(reroll);
-            passResults.push(Number(reroll.total));
-            passRerolls.push({ original: initialResult, reroll: Number(reroll.total) });
-          } else {
-            passResults.push(initialResult);
+            passRerolls.push({ original: currentResult, reroll: Number(reroll.total) });
+            currentResult = Number(reroll.total);
           }
+
+          if (hasFloor && currentResult < floorValue) {
+            passFloorCount++;
+            currentResult = floorValue;
+          }
+
+          passResults.push(currentResult);
         }
         const total = passResults.reduce((a, b) => a + b, 0);
-        return { total, passResults, passRolls, passRerolls };
+        return { total, passResults, passRolls, passRerolls, passFloorCount };
       }
+
+      let finalCombinedDieResult = 0;
+      let finalDieResults = [];
+      let allDieRolls = [];
+      let rerollSummary = [];
+      let savageAttackerSummary = null;
 
       if (config.isSavageAttackerActive) {
         const pass1 = await _rollSinglePass();
         const pass2 = await _rollSinglePass();
-        const allDieRolls = [...pass1.passRolls, ...pass2.passRolls];
+        allDieRolls = [...pass1.passRolls, ...pass2.passRolls];
         const kept = pass2.total > pass1.total ? pass2 : pass1;
         const dropped = pass2.total > pass1.total ? pass1 : pass2;
-        const savageAttackerSummary = {
+        floorAppliedCount = kept.passFloorCount;
+        savageAttackerSummary = {
           roll1Total: pass1.total,
           roll2Total: pass2.total,
           roll1Dice: pass1.passResults,
@@ -412,22 +431,59 @@ function registerSocketHandlers() {
           keptDice: kept.passResults,
           droppedTotal: dropped.total
         };
-        return {
-          finalCombinedDieResult: kept.total,
-          finalDieResults: kept.passResults,
-          allDieRolls,
-          rerollSummary: kept.passRerolls,
-          savageAttackerSummary
+        finalCombinedDieResult = kept.total;
+        finalDieResults = [...kept.passResults];
+        rerollSummary = kept.passRerolls;
+      } else {
+        const pass = await _rollSinglePass();
+        allDieRolls = pass.passRolls;
+        floorAppliedCount = pass.passFloorCount;
+        finalCombinedDieResult = pass.total;
+        finalDieResults = [...pass.passResults];
+        rerollSummary = pass.passRerolls;
+      }
+
+      // Check Piercer Feat
+      let piercerSummary = null;
+      if (config.isPiercerActive && finalDieResults.length > 0) {
+        let minIndex = 0;
+        let minVal = finalDieResults[0];
+        for (let i = 1; i < finalDieResults.length; i++) {
+          if (finalDieResults[i] < minVal) {
+            minVal = finalDieResults[i];
+            minIndex = i;
+          }
+        }
+        let piercerRoll = await new Roll(damageDieFormula).evaluate();
+        allDieRolls.push(piercerRoll);
+        let piercerVal = Number(piercerRoll.total);
+        if (hasFloor && piercerVal < floorValue) {
+          piercerVal = floorValue;
+          floorAppliedCount++;
+        }
+        finalDieResults[minIndex] = piercerVal;
+        finalCombinedDieResult = finalDieResults.reduce((a, b) => a + b, 0);
+        piercerSummary = {
+          original: minVal,
+          reroll: piercerVal,
+          label: (config.piercerLabel || "").trim() || "Piercer"
         };
       }
 
-      const pass = await _rollSinglePass();
+      const floorSummary = floorAppliedCount > 0 ? {
+        count: floorAppliedCount,
+        value: floorValue,
+        label: floorLabel
+      } : null;
+
       return {
-        finalCombinedDieResult: pass.total,
-        finalDieResults: pass.passResults,
-        allDieRolls: pass.passRolls,
-        rerollSummary: pass.passRerolls,
-        savageAttackerSummary: null
+        finalCombinedDieResult,
+        finalDieResults,
+        allDieRolls,
+        rerollSummary,
+        savageAttackerSummary,
+        floorSummary,
+        piercerSummary
       };
     }
 
@@ -524,7 +580,7 @@ function registerSocketHandlers() {
     }
 
     const { attackRoll1, rollHtml1, rerollSummary1, attackRoll2, rollHtml2, rerollSummary2, extraRolls, isCritical } = await _rollAttackAndCheckCrit();
-    const { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary, savageAttackerSummary } = await _rollDamageDice();
+    const { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary, savageAttackerSummary, floorSummary, piercerSummary } = await _rollDamageDice();
     const activeComponents = (additionalDamageComponents || []).filter(c => c.isActive);
     const cleanExtraDmg = (extraDamageModifier || "").trim();
     if (cleanExtraDmg) {
@@ -655,10 +711,22 @@ function registerSocketHandlers() {
       savageAttackerBreakdownLine = `<li style="list-style-type: disc;">Savage Attacker: <strong>Kept ${kp}</strong> (Rolled ${r1}, ${r2})</li>`;
     }
 
+    let floorBreakdownLine = '';
+    if (floorSummary) {
+      floorBreakdownLine = `<li style="list-style-type: disc;">${floorSummary.label}: Minimum ${floorSummary.value} applied to ${floorSummary.count} ${floorSummary.count === 1 ? 'die' : 'dice'}</li>`;
+    }
+
+    let piercerBreakdownLine = '';
+    if (piercerSummary) {
+      piercerBreakdownLine = `<li style="list-style-type: disc;">${piercerSummary.label}: Rerolled ${piercerSummary.original} &rarr; <strong>${piercerSummary.reroll}</strong></li>`;
+    }
+
     let damageDiceSummary = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
     <li style="list-style-type: disc;">Ability Mod (${abilityScore.toUpperCase()}): <strong>${abilityModSign}${abilityMod}</strong></li>
     ${weaponDamageLine}
     ${savageAttackerBreakdownLine}
+    ${floorBreakdownLine}
+    ${piercerBreakdownLine}
     ${weaponModifier !== 0 ? `<li style="list-style-type: disc;">Weapon Modifier: <strong>${weaponModSign}${weaponModifier}</strong></li>` : ''}
     ${secDmgAbilBonus !== 0 ? `<li style="list-style-type: disc;">${secDmgAbilDisplayLabel}: <strong>${secDmgAbilSign}${secDmgAbilBonus}</strong></li>` : ''}
     ${damageModifier !== 0 ? `<li style="list-style-type: disc;">Other Damage Mod: <strong>${flatModSign}${damageModifier}</strong></li>` : ''}`;
@@ -788,6 +856,13 @@ function registerSocketHandlers() {
     if (isSuperAdv) perkBadges.push("Super Adv");
     if (isLucky) perkBadges.push("Lucky");
     if (gwfThreshold > 0) perkBadges.push(`GWF ≤${gwfThreshold}`);
+    if (config.hasDamageFloor && Number(config.damageFloorValue) > 0) {
+      const fLabel = (config.damageFloorLabel || "").trim() || "Min Die";
+      perkBadges.push(`${fLabel} ≤${config.damageFloorValue}`);
+    }
+    if (config.isPiercerActive) {
+      perkBadges.push((config.piercerLabel || "").trim() || "Piercer");
+    }
     if (config.isSavageAttackerActive) perkBadges.push("Savage Attacker");
     if (rawCritBonus !== "") perkBadges.push("Crit Bonus Dmg");
 
@@ -1866,7 +1941,7 @@ function registerSocketHandlers() {
     if (rollType === "init") {
       const dexMod = getNumericValue(actor.system.abilities?.dex?.mod, 0);
       dexScore = getNumericValue(actor.system.abilities?.dex?.value, 10);
-      const initBonus = getNumericValue(actor.system.attributes?.init?.bonus, 0);
+      const initBonus = getNumericValue(actor.system.attributes?.init?.roll?.bonus ?? actor.system.attributes?.init?.bonus, 0);
       const alertBonus = actor.items.some(i => i.name?.toLowerCase().includes("alert")) ? 5 : 0;
 
       baseMod = dexMod + initBonus + alertBonus;

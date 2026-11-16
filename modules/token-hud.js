@@ -89,13 +89,14 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     const extras = (rollConfig.additionalDamageComponents || []).filter(c => c && c.formula);
     const hasGWM = Boolean(rollConfig.hasGWM);
     const hasSavageAttacker = Boolean(rollConfig.hasSavageAttacker);
+    const hasPiercer = Boolean(rollConfig.hasPiercer);
     const isVersatile = Boolean(rollConfig.isVersatile);
     const hasExtraAbility = Boolean(rollConfig.hasExtraAttackAbility && rollConfig.extraAttackAbility);
     const hasExtraDamageAbility = Boolean(rollConfig.hasExtraDamageAbility && rollConfig.extraDamageAbility);
     const hasSaveRider = Boolean(rollConfig.hasSaveRider);
 
     // If extra damage components, GWM, Versatile, or extra ability are present, prompt a quick toggle dialog
-    if (extras.length > 0 || hasGWM || hasSavageAttacker || isVersatile || hasExtraAbility || hasExtraDamageAbility || hasSaveRider) {
+    if (extras.length > 0 || hasGWM || hasSavageAttacker || hasPiercer || isVersatile || hasExtraAbility || hasExtraDamageAbility || hasSaveRider) {
       let versatileHtml = "";
       if (isVersatile) {
         const vDie = rollConfig.versatileDie || "10";
@@ -123,6 +124,17 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
           <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #8c3b2d; padding: 4px 6px; background: rgba(140,59,45,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
             <span>Savage Attacker (Keep Highest)</span>
             <input type="checkbox" id="hud-prompt-savage-attacker" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let piercerHtml = "";
+      if (hasPiercer) {
+        const pLabel = rollConfig.piercerLabel || "Piercer";
+        piercerHtml = `
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #873e23; padding: 4px 6px; background: rgba(184,91,53,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+            <span>${pLabel} (Reroll Lowest Die)</span>
+            <input type="checkbox" id="hud-prompt-piercer" style="margin: 0;">
           </label>
         `;
       }
@@ -198,6 +210,7 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
           ${versatileHtml}
           ${gwmHtml}
           ${savageAttackerHtml}
+          ${piercerHtml}
           ${extraAbilityHtml}
           ${extraDamageAbilityHtml}
           ${saveRiderHtml}
@@ -228,6 +241,12 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
               if (hasSavageAttacker && html.find("#hud-prompt-savage-attacker").is(":checked")) {
                 rollConfig.isSavageAttackerActive = true;
                 rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [Savage Attacker]`;
+              }
+
+              if (hasPiercer && html.find("#hud-prompt-piercer").is(":checked")) {
+                rollConfig.isPiercerActive = true;
+                const pLabel = (rollConfig.piercerLabel || "Piercer").trim();
+                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [${pLabel}]`;
               }
 
               if (hasExtraAbility && html.find("#hud-prompt-extra-ability").is(":checked")) {

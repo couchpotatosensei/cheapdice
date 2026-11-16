@@ -1,6 +1,20 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSpellConfigFromItem, isSpellPrepared, syncSpellsWithSheet } from '../modules/custom-rolls.js';
+import { formatChatMessageWithMode, toggleChatMode, getActiveChatMode, setActiveChatMode } from '../modules/chat-controls.js';
+import {
+  appendDieToChatText,
+  removeDieFromChatText,
+  swapD20ModeInText,
+  getChatTextareaValue,
+  writeToChatTextarea,
+  setChatEditorView,
+  updateFlatModifierInChatText,
+  parseFormulaStateFromChatText,
+  getTrayDiceCounts,
+  resetTrayDiceCounts,
+  buildDiceTrayElement
+} from '../modules/dice-tray-copycat.js';
 
 describe('UI Render Safety & Spell Parser Test Suite', () => {
   const mockActor = {
@@ -446,8 +460,8 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(chargeDeductDisabled, true);
   });
 
-  it("Dice Stuff side tray formula builder handles normal, advantage, and disadvantage", () => {
-    function buildFormula(counts, mode) {
+  it("Dice Stuff side tray formula builder handles normal, advantage, disadvantage, and flat modifiers", () => {
+    function buildFormula(counts, mode, modifier = 0) {
       const parts = [];
       const diceOrder = ["d4", "d6", "d8", "d10", "d12", "d20", "d100"];
       for (const d of diceOrder) {
@@ -466,7 +480,15 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
           }
         }
       }
-      return parts.join(" + ");
+      let formula = parts.join(" + ");
+      if (modifier !== 0) {
+        if (formula) {
+          formula += modifier > 0 ? ` + ${modifier}` : ` - ${Math.abs(modifier)}`;
+        } else {
+          formula = `${modifier}`;
+        }
+      }
+      return formula;
     }
 
     // Normal multi-dice
@@ -480,6 +502,13 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
 
     // Combined d20 adv + extra damage die
     assert.equal(buildFormula({ d20: 1, d8: 1 }, "adv"), "1d8 + 2d20kh");
+
+    // Flat modifiers
+    assert.equal(buildFormula({ d20: 1 }, "norm", 5), "1d20 + 5");
+    assert.equal(buildFormula({ d20: 1 }, "adv", 3), "2d20kh + 3");
+    assert.equal(buildFormula({ d8: 2 }, "norm", -2), "2d8 - 2");
+    assert.equal(buildFormula({}, "norm", 4), "4");
+    assert.equal(buildFormula({}, "norm", 0), "");
   });
 
   it("syncSpellsWithSheet synchronizes spells without assignment error and sorts alphabetically", async () => {
@@ -762,6 +791,233 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hp-pct-label"));
     assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill > span:first-child"));
     assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill i"));
+  });
+
+  it("formatChatMessageWithMode formats messages correctly for IC and EM modes", () => {
+    // Basic text prefixing
+    assert.equal(formatChatMessageWithMode("Hello there!", "ic"), "/ic Hello there!");
+    assert.equal(formatChatMessageWithMode("smiles warmly.", "em"), "/em smiles warmly.");
+
+    // Does not prefix when mode is null or empty
+    assert.equal(formatChatMessageWithMode("Normal text", null), "Normal text");
+    assert.equal(formatChatMessageWithMode("Normal text", undefined), "Normal text");
+
+    // Preserves slash commands regardless of active mode
+    assert.equal(formatChatMessageWithMode("/r 1d20+4", "ic"), "/r 1d20+4");
+    assert.equal(formatChatMessageWithMode("/w GM secret", "em"), "/w GM secret");
+    assert.equal(formatChatMessageWithMode("/ic Already ic", "ic"), "/ic Already ic");
+    assert.equal(formatChatMessageWithMode("/em Already em", "em"), "/em Already em");
+    assert.equal(formatChatMessageWithMode("/ooc Out of character", "ic"), "/ooc Out of character");
+
+    // Whitespace resilience
+    assert.equal(formatChatMessageWithMode("   /roll 2d6   ", "ic"), "   /roll 2d6   ");
+    assert.equal(formatChatMessageWithMode("", "ic"), "");
+    assert.equal(formatChatMessageWithMode("   ", "ic"), "   ");
+    assert.equal(formatChatMessageWithMode(null, "ic"), null);
+  });
+
+  it("toggleChatMode handles mutually exclusive toggling and deselection cleanly", () => {
+    // Reset to null
+    setActiveChatMode(null);
+    assert.equal(getActiveChatMode(), null);
+
+    // Toggle IC on
+    assert.equal(toggleChatMode("ic"), "ic");
+    assert.equal(getActiveChatMode(), "ic");
+
+    // Toggle IC off (deselect)
+    assert.equal(toggleChatMode("ic"), null);
+    assert.equal(getActiveChatMode(), null);
+
+    // Toggle EM on
+    assert.equal(toggleChatMode("em"), "em");
+    assert.equal(getActiveChatMode(), "em");
+
+    // Switch from EM to IC directly
+    assert.equal(toggleChatMode("ic"), "ic");
+    assert.equal(getActiveChatMode(), "ic");
+
+    // Toggle IC off
+    assert.equal(toggleChatMode("ic"), null);
+    assert.equal(getActiveChatMode(), null);
+  });
+
+  it("appendDieToChatText accurately appends dice notation and respects operators", () => {
+    // Empty text
+    assert.equal(appendDieToChatText("", "d20", "norm"), "/r 1d20");
+    assert.equal(appendDieToChatText("", "d20", "adv"), "/r 2d20kh");
+    assert.equal(appendDieToChatText("", "d20", "dis"), "/r 2d20kl");
+    assert.equal(appendDieToChatText("", "d6", "norm"), "/r 1d6");
+
+    // Combines identical dice
+    assert.equal(appendDieToChatText("/r 1d4", "d4", "norm"), "/r 2d4");
+    assert.equal(appendDieToChatText("/r 2d4", "d4", "norm"), "/r 3d4");
+
+    // Existing /r command
+    assert.equal(appendDieToChatText("/r 1d20", "d6", "norm"), "/r 1d20 + 1d6");
+    assert.equal(appendDieToChatText("/r 1d20 + 1d6", "d8", "norm"), "/r 1d20 + 1d6 + 1d8");
+    assert.equal(appendDieToChatText("/r 1d20 + 1d6", "d6", "norm"), "/r 1d20 + 2d6");
+
+    // Existing arithmetic operator (+, -, *, /)
+    assert.equal(appendDieToChatText("/r 1d20 +", "d6", "norm"), "/r 1d20 + 1d6");
+    assert.equal(appendDieToChatText("/r 2d6 -", "d4", "norm"), "/r 2d6 - 1d4");
+
+    // Preserves other roll prefixes
+    assert.equal(appendDieToChatText("/gmroll 1d20", "d4", "norm"), "/gmroll 1d20 + 1d4");
+    assert.equal(appendDieToChatText("/blindroll 2d6", "d6", "norm"), "/blindroll 3d6");
+
+    // Text without /r
+    assert.equal(appendDieToChatText("1d20 + 5", "d4", "norm"), "/r 1d20 + 1d4 + 5");
+  });
+
+  it("removeDieFromChatText and swapD20ModeInText accurately update chat input", () => {
+    // removeDieFromChatText decrements counts
+    assert.equal(removeDieFromChatText("/r 3d4", "d4"), "/r 2d4");
+    assert.equal(removeDieFromChatText("/r 2d4", "d4"), "/r 1d4");
+    assert.equal(removeDieFromChatText("/r 1d4", "d4"), "");
+    assert.equal(removeDieFromChatText("/r 1d20 + 2d6", "d6"), "/r 1d20 + 1d6");
+    assert.equal(removeDieFromChatText("/r 1d20 + 1d6", "d6"), "/r 1d20");
+    assert.equal(removeDieFromChatText("/r 1d20", "d20"), "");
+    assert.equal(removeDieFromChatText("/r 2d20kh", "d20"), "");
+    assert.equal(removeDieFromChatText("/r 3d20kh", "d20"), "/r 2d20kh");
+
+    // swapD20ModeInText
+    assert.equal(swapD20ModeInText("/r 1d20 + 5", "adv"), "/r 2d20kh + 5");
+    assert.equal(swapD20ModeInText("/r 2d20kh + 5", "dis"), "/r 2d20kl + 5");
+    assert.equal(swapD20ModeInText("/r 2d20kl + 5", "norm"), "/r 1d20 + 5");
+  });
+
+  it("getChatTextareaValue strips ProseMirror HTML and writeToChatTextarea handles PM transaction cleanly", () => {
+    // 1. Mock ProseMirror captured view
+    let dispatchedTr = null;
+    let focused = false;
+    const mockView = {
+      state: {
+        doc: {
+          content: { size: 12 },
+          textContent: "/r 1d20 + 5"
+        },
+        schema: {},
+        tr: {
+          replaceWith: (from, to, content) => ({ from, to, content, isTr: true })
+        }
+      },
+      dispatch: (tr) => { dispatchedTr = tr; },
+      focus: () => { focused = true; }
+    };
+
+    setChatEditorView(mockView);
+    assert.equal(getChatTextareaValue(), "/r 1d20 + 5");
+
+    // Mock global parseString
+    globalThis.foundry = globalThis.foundry || {};
+    globalThis.foundry.prosemirror = globalThis.foundry.prosemirror || {};
+    globalThis.foundry.prosemirror.dom = {
+      parseString: (text) => ({ content: { text } })
+    };
+
+    writeToChatTextarea("/r 1d20 + 5 + 1d6");
+    assert.ok(dispatchedTr);
+    assert.equal(dispatchedTr.isTr, true);
+    assert.equal(dispatchedTr.content.text, "/r 1d20 + 5 + 1d6");
+    assert.equal(focused, true);
+
+    // Reset view
+    setChatEditorView(null);
+  });
+
+  it("updateFlatModifierInChatText and parseFormulaStateFromChatText accurately sync chat formulas", () => {
+    // Adding/updating flat modifier
+    assert.equal(updateFlatModifierInChatText("/r 1d20", 3), "/r 1d20 + 3");
+    assert.equal(updateFlatModifierInChatText("/r 1d20 + 3", 5), "/r 1d20 + 5");
+    assert.equal(updateFlatModifierInChatText("/r 1d20 + 5", 0), "/r 1d20");
+    assert.equal(updateFlatModifierInChatText("/r 1d20", -2), "/r 1d20 - 2");
+    assert.equal(updateFlatModifierInChatText("/r 1d20 - 2", 0), "/r 1d20");
+    assert.equal(updateFlatModifierInChatText("", 4), "/r 4");
+    assert.equal(updateFlatModifierInChatText("/r 4", 0), "");
+    assert.equal(updateFlatModifierInChatText("/r 2d20kh", 2), "/r 2d20kh + 2");
+
+    // Parsing formula state
+    const parsed = parseFormulaStateFromChatText("/r 2d20kh + 2d6 + 1d4 + 3");
+    assert.equal(parsed.rollMode, "adv");
+    assert.equal(parsed.counts.d20, 1);
+    assert.equal(parsed.counts.d6, 2);
+    assert.equal(parsed.counts.d4, 1);
+    assert.equal(parsed.modifier, 3);
+
+    const parsedDis = parseFormulaStateFromChatText("/r 2d20kl + 1d10 - 2");
+    assert.equal(parsedDis.rollMode, "dis");
+    assert.equal(parsedDis.counts.d20, 1);
+    assert.equal(parsedDis.counts.d10, 1);
+    assert.equal(parsedDis.modifier, -2);
+  });
+
+  it("tray badge counts can be manipulated and reset cleanly", () => {
+    const counts = getTrayDiceCounts();
+    counts.d100 = 2;
+    counts.d20 = 1;
+    assert.equal(getTrayDiceCounts().d100, 2);
+    assert.equal(getTrayDiceCounts().d20, 1);
+
+    resetTrayDiceCounts();
+    assert.equal(getTrayDiceCounts().d100, 0);
+    assert.equal(getTrayDiceCounts().d20, 0);
+  });
+
+  it("buildDiceTrayElement constructs row 2 controls in exact order: [norm] [flat mod] [clear] [roll]", () => {
+    class MockElement {
+      constructor(tag) {
+        this.tagName = tag.toUpperCase();
+        this.children = [];
+        this.className = "";
+        this.dataset = {};
+        this._innerHTML = "";
+      }
+      set innerHTML(val) {
+        this._innerHTML = val;
+        if (val.includes("gp-dt-mod-input")) {
+          const span = new MockElement("span");
+          span.className = "gp-dt-mod-label";
+          const input = new MockElement("input");
+          input.className = "gp-dt-mod-input";
+          this.children.push(span, input);
+        }
+      }
+      get innerHTML() { return this._innerHTML; }
+      appendChild(child) { this.children.push(child); return child; }
+      querySelector(selector) {
+        if (selector === ".gp-dt-mod-input") {
+          return this.children.find(c => c.className.includes("gp-dt-mod-input")) || new MockElement("input");
+        }
+        return null;
+      }
+      querySelectorAll() { return []; }
+      addEventListener() {}
+    }
+
+    const prevDoc = globalThis.document;
+    globalThis.document = {
+      createElement: (tag) => new MockElement(tag)
+    };
+
+    try {
+      const tray = buildDiceTrayElement();
+      assert.ok(tray);
+      assert.equal(tray.id, "gp-dice-tray-copycat");
+      assert.equal(tray.children.length, 2); // row 1: dice grid, row 2: controls row
+
+      const controlsRow = tray.children[1];
+      assert.equal(controlsRow.className, "gp-dt-controls-row");
+      assert.equal(controlsRow.children.length, 4);
+
+      // Verify exact order: [norm] [flat mod] [clear] [roll]
+      assert.ok(controlsRow.children[0].className.includes("gp-dt-mode-cycle-btn"), "child 0 is mode cycle button");
+      assert.ok(controlsRow.children[1].className.includes("gp-dt-mod-wrapper"), "child 1 is flat mod wrapper");
+      assert.ok(controlsRow.children[2].className.includes("gp-dt-clear-btn"), "child 2 is clear button");
+      assert.ok(controlsRow.children[3].className.includes("gp-dt-roll-btn"), "child 3 is roll button");
+    } finally {
+      globalThis.document = prevDoc;
+    }
   });
 });
 

@@ -25,6 +25,8 @@ export const SETTINGS = Object.freeze({
     ANIMATIONS: "featureAnimations",
     MACRO_GENERATOR: "enableMacroGenerator",
     CORE_SETTINGS_ENFORCER: "coreSettingsEnforcer",
-    APPLY_CUSTOM_KEYBINDINGS: "applyCustomKeybindings"
+    APPLY_CUSTOM_KEYBINDINGS: "applyCustomKeybindings",
+    CHAT_CONTROLS: "featureChatControls",
+    DICE_TRAY: "featureDiceTrayCopycat"
   })
 });

@@ -65,9 +65,13 @@ const SIZE_MAP = {
  * Initialize event listeners for attack button clicks in chat messages.
  */
 export function initStatCard() {
-  Hooks.on("renderChatMessage", (message, html) => {
+  const hookName = (foundry?.utils?.isNewerVersion?.(game.version, "13") || Number(game.release?.generation ?? 12) >= 13)
+    ? "renderChatMessageHTML"
+    : "renderChatMessage";
+
+  Hooks.on(hookName, (message, html) => {
     // Foundry v12/v14 HTMLElement or jQuery wrapper support
-    const root = html instanceof HTMLElement ? html : html[0];
+    const root = html instanceof HTMLElement ? html : (html?.[0] || html);
     if (!root) return;
 
     root.querySelectorAll(".gwa-attack-btn").forEach((btn) => {

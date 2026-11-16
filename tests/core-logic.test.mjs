@@ -361,4 +361,87 @@ describe('Cheap Dice Core Syntax & Super Advantage Logic', () => {
     const summaryLine = `<li style="list-style-type: disc;">Savage Attacker: <strong>Kept ${keptDisplay}</strong> (Rolled ${r1Display}, ${r2Display})</li>`;
     assert.equal(summaryLine, `<li style="list-style-type: disc;">Savage Attacker: <strong>Kept 11 [6+5]</strong> (Rolled 7 [3+4], 11 [6+5])</li>`);
   });
+
+  it("Damage Floor (GWF 2024 / Elemental Adept) lifts rolled dice below threshold and formats breakdown", () => {
+    // Case 1: GWF 2024 with floor 3 on 2d6 (rolls 1 and 5)
+    const rawRolls = [1, 5];
+    const floorValue = 3;
+    const floorLabel = "Great Weapon Fighting (2024)";
+
+    let floorCount = 0;
+    const finalDice = rawRolls.map(die => {
+      if (die < floorValue) {
+        floorCount++;
+        return floorValue;
+      }
+      return die;
+    });
+
+    const total = finalDice.reduce((a, b) => a + b, 0);
+    assert.deepEqual(finalDice, [3, 5]);
+    assert.equal(total, 8);
+    assert.equal(floorCount, 1);
+
+    const floorSummary = floorCount > 0 ? {
+      count: floorCount,
+      value: floorValue,
+      label: floorLabel
+    } : null;
+
+    const breakdownLine = `<li style="list-style-type: disc;">${floorSummary.label}: Minimum ${floorSummary.value} applied to ${floorSummary.count} ${floorSummary.count === 1 ? 'die' : 'dice'}</li>`;
+    assert.equal(breakdownLine, `<li style="list-style-type: disc;">Great Weapon Fighting (2024): Minimum 3 applied to 1 die</li>`);
+
+    // Case 2: Elemental Adept with floor 2 on 2d6 (rolls 1 and 1)
+    const rawAdept = [1, 1];
+    let adeptCount = 0;
+    const finalAdeptDice = rawAdept.map(die => {
+      if (die < 2) {
+        adeptCount++;
+        return 2;
+      }
+      return die;
+    });
+    assert.deepEqual(finalAdeptDice, [2, 2]);
+    assert.equal(adeptCount, 2);
+    const adeptLine = `<li style="list-style-type: disc;">Elemental Adept: Minimum 2 applied to ${adeptCount} dice</li>`;
+    assert.equal(adeptLine, `<li style="list-style-type: disc;">Elemental Adept: Minimum 2 applied to 2 dice</li>`);
+  });
+
+  it("Piercer Feat identifies lowest die, rerolls it, and respects damage floor", () => {
+    const initialDice = [2, 5];
+    let minIndex = 0;
+    let minVal = initialDice[0];
+    for (let i = 1; i < initialDice.length; i++) {
+      if (initialDice[i] < minVal) {
+        minVal = initialDice[i];
+        minIndex = i;
+      }
+    }
+
+    assert.equal(minIndex, 0);
+    assert.equal(minVal, 2);
+
+    // Simulate Piercer roll: 6
+    let piercerRollVal = 6;
+    initialDice[minIndex] = piercerRollVal;
+    const newTotal = initialDice.reduce((a, b) => a + b, 0);
+
+    assert.deepEqual(initialDice, [6, 5]);
+    assert.equal(newTotal, 11);
+
+    const piercerSummary = {
+      original: minVal,
+      reroll: piercerRollVal,
+      label: "Piercer"
+    };
+
+    const breakdownLine = `<li style="list-style-type: disc;">${piercerSummary.label}: Rerolled ${piercerSummary.original} &rarr; <strong>${piercerSummary.reroll}</strong></li>`;
+    assert.equal(breakdownLine, `<li style="list-style-type: disc;">Piercer: Rerolled 2 &rarr; <strong>6</strong></li>`);
+
+    // Test with Damage Floor interaction: if Piercer rolls 1 with floor 3, it lifts to 3
+    let floorPiercerVal = 1;
+    const floor = 3;
+    if (floorPiercerVal < floor) floorPiercerVal = floor;
+    assert.equal(floorPiercerVal, 3);
+  });
 });

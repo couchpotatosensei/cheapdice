@@ -1,5 +1,14 @@
 import { MODULE_ID, SETTINGS } from "../src/constants.js";
 import { getButtonInfo, runHudButtonSlot } from "./token-hud.js";
+import {
+  getChatTextareaValue,
+  writeToChatTextarea,
+  appendDieToChatText,
+  removeDieFromChatText,
+  swapD20ModeInText,
+  updateFlatModifierInChatText,
+  parseFormulaStateFromChatText
+} from "./dice-tray-copycat.js";
 
 // Helper: Resolve Module Socket
 export function getSocket() {
@@ -878,7 +887,7 @@ export function initCustomRolls() {
 
     const dexMod = getNumericValue(actor.system.abilities?.dex?.mod, 0);
     const dexScore = getNumericValue(actor.system.abilities?.dex?.value, 10);
-    const initBonus = getNumericValue(actor.system.attributes?.init?.bonus, 0);
+    const initBonus = getNumericValue(actor.system.attributes?.init?.roll?.bonus ?? actor.system.attributes?.init?.bonus, 0);
     const alertBonus = actor.items.some(i => i.name?.toLowerCase().includes("alert")) ? 5 : 0;
     const totalInitMod = dexMod + initBonus + alertBonus;
 
@@ -1329,7 +1338,7 @@ export function initCustomRolls() {
 
     const dexMod = getNumericValue(actor.system.abilities?.dex?.mod, 0);
     const dexScore = getNumericValue(actor.system.abilities?.dex?.value, 10);
-    const initBonus = getNumericValue(actor.system.attributes?.init?.bonus, 0);
+    const initBonus = getNumericValue(actor.system.attributes?.init?.roll?.bonus ?? actor.system.attributes?.init?.bonus, 0);
     const alertBonus = actor.items.some(i => i.name?.toLowerCase().includes("alert")) ? 5 : 0;
     const totalInitMod = dexMod + initBonus + alertBonus;
 
@@ -1819,6 +1828,19 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
       }
 
+      let piercerHtml = "";
+      if (config.hasPiercer) {
+        const pLabel = config.piercerLabel || "Piercer";
+        piercerHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #873e23; cursor: pointer; padding: 2px 4px; background: rgba(184, 91, 53, 0.08); border-radius: 3px;">
+            <span>${pLabel} (Reroll Lowest Die)</span>
+            <input type="checkbox" id="piercer-toggle">
+          </label>
+        </div>
+      `;
+      }
+
       let extraAbilityHtml = "";
       if (config.hasExtraAttackAbility && config.extraAttackAbility) {
         const abil = config.extraAttackAbility;
@@ -1915,6 +1937,7 @@ Click a numbered modifier badge to execute a roll.</div>
       ${saveRiderHtml}
       ${gwmHtml}
       ${savageAttackerHtml}
+      ${piercerHtml}
       ${extrasHtml}
     `;
     }
@@ -1964,6 +1987,12 @@ Click a numbered modifier badge to execute a roll.</div>
             if (config.hasSavageAttacker && html.find("#savage-attacker-toggle").is(":checked")) {
               config.isSavageAttackerActive = true;
               config.chatCardTitle = `${config.chatCardTitle || choice} [Savage Attacker]`;
+            }
+
+            if (config.hasPiercer && html.find("#piercer-toggle").is(":checked")) {
+              config.isPiercerActive = true;
+              const pLabel = (config.piercerLabel || "Piercer").trim();
+              config.chatCardTitle = `${config.chatCardTitle || choice} [${pLabel}]`;
             }
 
             if (config.hasExtraAttackAbility && config.extraAttackAbility && html.find("#extra-ability-atk-toggle").is(":checked")) {
@@ -3938,6 +3967,17 @@ Click a numbered modifier badge to execute a roll.</div>
         `;
       }
 
+      let piercerHtml = "";
+      if (config?.hasPiercer) {
+        const pLabel = config.piercerLabel || "Piercer";
+        piercerHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #873e23; cursor: pointer; padding: 3px 6px; background: rgba(184, 91, 53, 0.08); border-radius: 3px; border: 1px solid rgba(184, 91, 53, 0.25);">
+            <span>${pLabel} (Reroll Lowest Die)</span>
+            <input type="checkbox" id="piercer-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
       let versatileHtml = "";
       if (config?.isVersatile) {
         const vDie = config.versatileDie || "10";
@@ -4095,11 +4135,12 @@ Click a numbered modifier badge to execute a roll.</div>
         </div>
 
         <!-- Optional Damage & GWM / Versatile / Secondary Ability / Save Rider Card -->
-        ${(gwmHtml || savageAttackerHtml || versatileHtml || extraAbilityHtml || extraDamageAbilityHtml || saveRiderHtml || extrasHtml) ? `
+        ${(gwmHtml || savageAttackerHtml || piercerHtml || versatileHtml || extraAbilityHtml || extraDamageAbilityHtml || saveRiderHtml || extrasHtml) ? `
           <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
             ${versatileHtml}
             ${gwmHtml}
             ${savageAttackerHtml}
+            ${piercerHtml}
             ${extraAbilityHtml}
             ${extraDamageAbilityHtml}
             ${saveRiderHtml}
@@ -5843,6 +5884,50 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #f87171;
               color: #dc2626;
             }
+            .app.dialog .dice-stuff-flyout-mod-wrapper {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 46px;
+              height: 22px;
+              background: #fff;
+              border: 1px solid #b0b8c4;
+              border-radius: 4px;
+              padding: 0 2px;
+              box-sizing: border-box;
+              position: relative;
+            }
+            .app.dialog .dice-stuff-flyout-mod-label {
+              font-size: 0.75em;
+              font-weight: 800;
+              color: #64748b;
+              margin-right: 1px;
+              user-select: none;
+            }
+            .app.dialog .dice-stuff-flyout-mod-input {
+              width: 100%;
+              height: 100%;
+              border: none !important;
+              background: transparent !important;
+              text-align: center;
+              font-size: 0.8em;
+              font-weight: 700;
+              color: #1e293b;
+              padding: 0 !important;
+              margin: 0 !important;
+              box-shadow: none !important;
+              outline: none !important;
+              -moz-appearance: textfield;
+            }
+            .app.dialog .dice-stuff-flyout-mod-input::-webkit-outer-spin-button,
+            .app.dialog .dice-stuff-flyout-mod-input::-webkit-inner-spin-button {
+              -webkit-appearance: none;
+              margin: 0;
+            }
+            .app.dialog .dice-stuff-flyout-mod-wrapper:focus-within {
+              border-color: #2563eb;
+              background: #ffffff;
+            }
 
             /* Tactical Glass Flyout */
             .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-tray {
@@ -5867,6 +5952,16 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: rgba(255, 255, 255, 0.15) !important;
               color: #94a3b8 !important;
             }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-mod-wrapper {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-mod-input {
+              color: #e0e7ff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-mod-label {
+              color: #94a3b8 !important;
+            }
 
             /* Slate Flyout */
             .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-tray {
@@ -5886,6 +5981,16 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-clear-btn {
               background: #0f172a !important;
               border-color: #334155 !important;
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-mod-wrapper {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-mod-input {
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-mod-label {
               color: #94a3b8 !important;
             }
 
@@ -5908,6 +6013,16 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #100d20 !important;
               border-color: #3b3060 !important;
               color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-mod-wrapper {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-mod-input {
+              color: #e0d8f7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-mod-label {
+              color: #a78bfa !important;
             }
 
             /* Spell Filter Bar Themes */
@@ -6508,6 +6623,12 @@ Click a numbered modifier badge to execute a roll.</div>
           if (config.hasSavageAttacker && html.find("#savage-attacker-toggle").is(":checked")) {
             config.isSavageAttackerActive = true;
             config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [Savage Attacker]`;
+          }
+
+          if (config.hasPiercer && html.find("#piercer-toggle").is(":checked")) {
+            config.isPiercerActive = true;
+            const pLabel = (config.piercerLabel || "Piercer").trim();
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [${pLabel}]`;
           }
 
           if (config.hasExtraAttackAbility && config.extraAttackAbility && html.find("#extra-ability-atk-toggle").is(":checked")) {
@@ -7791,7 +7912,14 @@ Click a numbered modifier badge to execute a roll.</div>
         // --- Render Right-Side Action Tabs & Dice Tray Flyout ---
         let flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
         let flyoutRollMode = "norm"; // "norm" | "adv" | "dis"
+        let flyoutModifier = 0;
         let isDiceFlyoutOpen = false;
+
+        const onResetHook = Hooks.on("gpDiceResetAll", () => {
+          flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+          flyoutModifier = 0;
+          renderSideTabs();
+        });
 
         function getFlyoutFormula() {
           const parts = [];
@@ -7812,7 +7940,15 @@ Click a numbered modifier badge to execute a roll.</div>
               }
             }
           }
-          return parts.length > 0 ? parts.join(" + ") : "";
+          let formula = parts.join(" + ");
+          if (flyoutModifier !== 0) {
+            if (formula) {
+              formula += flyoutModifier > 0 ? ` + ${flyoutModifier}` : ` - ${Math.abs(flyoutModifier)}`;
+            } else {
+              formula = `${flyoutModifier}`;
+            }
+          }
+          return formula;
         }
 
         function renderSideTabs() {
@@ -7896,27 +8032,35 @@ Click a numbered modifier badge to execute a roll.</div>
           rollBtn.on("click", async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const formula = getFlyoutFormula();
-            if (!formula) return;
+            const formula = getChatTextareaValue() || getFlyoutFormula();
+            if (!formula || !formula.trim()) return;
 
-            try {
-              const roll = new Roll(formula);
-              await roll.evaluate();
-              const speaker = ChatMessage.getSpeaker({ actor });
-              await roll.toMessage({ speaker });
-            } catch (err) {
-              console.error("Dice Stuff | Error rolling formula:", err);
+            writeToChatTextarea("");
+            if (typeof ui !== "undefined" && ui.chat?.processMessage) {
+              await ui.chat.processMessage(formula).catch((err) => {
+                console.error("Dice Stuff | Error rolling formula:", err);
+              });
+            } else {
+              try {
+                const roll = new Roll(formula.replace(/^\/r(?:oll)?\s*/i, ""));
+                await roll.evaluate();
+                const speaker = ChatMessage.getSpeaker({ actor });
+                await roll.toMessage({ speaker });
+              } catch (err) {
+                console.error("Dice Stuff | Error rolling formula:", err);
+              }
             }
 
-            // Reset after rolling
             flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+            flyoutModifier = 0;
+            Hooks.callAll("gpDiceResetAll");
             renderSideTabs();
           });
           flyoutTray.append(rollBtn);
 
           // 2) Clear Button
           const clearBtn = $(`
-            <button type="button" class="dice-stuff-flyout-clear-btn" title="Reset all dice counts">
+            <button type="button" class="dice-stuff-flyout-clear-btn" title="Reset all dice counts and modifier">
               Clear
             </button>
           `);
@@ -7924,6 +8068,9 @@ Click a numbered modifier badge to execute a roll.</div>
             e.preventDefault();
             e.stopPropagation();
             flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+            flyoutModifier = 0;
+            writeToChatTextarea("");
+            Hooks.callAll("gpDiceResetAll");
             renderSideTabs();
           });
           flyoutTray.append(clearBtn);
@@ -7939,14 +8086,59 @@ Click a numbered modifier badge to execute a roll.</div>
           modeBtn.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (flyoutRollMode === "norm") flyoutRollMode = "adv";
-            else if (flyoutRollMode === "adv") flyoutRollMode = "dis";
-            else flyoutRollMode = "norm";
+            let newMode = "norm";
+            if (flyoutRollMode === "norm") newMode = "adv";
+            else if (flyoutRollMode === "adv") newMode = "dis";
+            else newMode = "norm";
+
+            const current = getChatTextareaValue();
+            if (current) {
+              const swapped = swapD20ModeInText(current, newMode);
+              writeToChatTextarea(swapped);
+            }
             renderSideTabs();
           });
           flyoutTray.append(modeBtn);
 
-          // 4) Dice Buttons (Vertical Stack with Dice Icons)
+          // 4) Flat Modifier Control (Direct edit + scroll)
+          const modWrapper = $(`
+            <div class="dice-stuff-flyout-mod-wrapper" title="Flat Modifier (type or scroll)">
+              <span class="dice-stuff-flyout-mod-label">±</span>
+              <input type="number" class="dice-stuff-flyout-mod-input" placeholder="0" value="${flyoutModifier !== 0 ? flyoutModifier : ''}" />
+            </div>
+          `);
+          const modInput = modWrapper.find(".dice-stuff-flyout-mod-input");
+
+          modInput.on("input change", (e) => {
+            const val = parseInt(e.target.value, 10);
+            const newMod = isNaN(val) ? 0 : val;
+            const current = getChatTextareaValue();
+            const updated = updateFlatModifierInChatText(current, newMod);
+            writeToChatTextarea(updated);
+            renderSideTabs();
+          });
+
+          modInput.on("wheel", (e) => {
+            e.preventDefault();
+            const delta = e.originalEvent.deltaY < 0 ? 1 : -1;
+            const current = getChatTextareaValue();
+            const parsedCurrent = parseFormulaStateFromChatText(current);
+            const newMod = parsedCurrent.modifier + delta;
+            const updated = updateFlatModifierInChatText(current, newMod);
+            writeToChatTextarea(updated);
+            renderSideTabs();
+          });
+
+          modInput.on("keydown", (e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              rollBtn.trigger("click");
+            }
+          });
+          flyoutTray.append(modWrapper);
+
+          // 5) Dice Buttons (Vertical Stack with Dice Icons)
           const diceDefs = [
             { id: "d4", label: "d4", icon: "fas fa-dice-d4" },
             { id: "d6", label: "d6", icon: "fas fa-dice-d6" },
@@ -7972,6 +8164,9 @@ Click a numbered modifier badge to execute a roll.</div>
               e.preventDefault();
               e.stopPropagation();
               flyoutDiceCounts[d.id] = (flyoutDiceCounts[d.id] || 0) + 1;
+              const current = getChatTextareaValue();
+              const updated = appendDieToChatText(current, d.id, flyoutRollMode);
+              writeToChatTextarea(updated);
               renderSideTabs();
             });
 
@@ -7981,8 +8176,11 @@ Click a numbered modifier badge to execute a roll.</div>
               e.stopPropagation();
               if ((flyoutDiceCounts[d.id] || 0) > 0) {
                 flyoutDiceCounts[d.id] -= 1;
-                renderSideTabs();
               }
+              const current = getChatTextareaValue();
+              const updated = removeDieFromChatText(current, d.id);
+              writeToChatTextarea(updated);
+              renderSideTabs();
             });
 
             flyoutTray.append(dieBtn);
@@ -7996,7 +8194,11 @@ Click a numbered modifier badge to execute a roll.</div>
       height: "auto",
       resizable: true,
       ...(dialogOptions?.top !== undefined ? { top: dialogOptions.top } : {}),
-      ...(dialogOptions?.left !== undefined ? { left: dialogOptions.left } : {})
+      ...(dialogOptions?.left !== undefined ? { left: dialogOptions.left } : {}),
+      close: (html) => {
+        if (typeof onResetHook === "number") Hooks.off("gpDiceResetAll", onResetHook);
+        if (typeof dialogOptions?.close === "function") dialogOptions.close(html);
+      }
     }).render(true);
   };
 

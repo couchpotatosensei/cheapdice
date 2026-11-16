@@ -1277,6 +1277,27 @@ export function initActionEditors() {
                   <input type="text" name="saveRiderEffect" placeholder="Failure Effect (e.g. Knocked Prone, Poisoned 1 min)" style="width: 100%; height: 26px; font-size: 0.85em;"/>
                 </div>
               </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(43, 116, 137, 0.04); border: 1px solid #b8d9e2; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #1e5868; font-weight: bold;">
+                  <span>Enable Damage Die Floor (e.g. GWF 2024, Elemental Adept)</span>
+                  <input type="checkbox" name="hasDamageFloor"/>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                  <select name="damageFloorValue" style="flex: 1; height: 26px; font-size: 0.85em;" title="Minimum Die Result">
+                    <option value="3" selected>Min 3 (GWF 2024: 1 & 2 &rarr; 3)</option>
+                    <option value="2">Min 2 (Elemental Adept: 1 &rarr; 2)</option>
+                    <option value="4">Min 4</option>
+                  </select>
+                  <input type="text" name="damageFloorLabel" placeholder="Floor Name (e.g. GWF 2024, Elemental Adept)" style="flex: 2; height: 26px; font-size: 0.85em;"/>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(184, 91, 53, 0.04); border: 1px solid #e2c2b5; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #873e23; font-weight: bold;">
+                  <span>Allow Piercer (Reroll 1 Lowest Die)</span>
+                  <input type="checkbox" name="hasPiercer"/>
+                </label>
+                <input type="text" name="piercerLabel" placeholder="Feat label (defaults to Piercer)" style="width: 100%; height: 26px; font-size: 0.85em;"/>
+              </div>
             </div>
           </div>
         </div>
@@ -1338,6 +1359,11 @@ export function initActionEditors() {
               const saveRiderDamageType = getVal("saveRiderDamageType") || "lightning";
               const saveRiderSaveSuccess = getVal("saveRiderSaveSuccess") || "half";
               const saveRiderEffect = getVal("saveRiderEffect")?.trim() || "";
+              const hasDamageFloor = getCheck("hasDamageFloor");
+              const damageFloorValue = parseInt(getVal("damageFloorValue")) || 3;
+              const damageFloorLabel = getVal("damageFloorLabel")?.trim() || "";
+              const hasPiercer = getCheck("hasPiercer");
+              const piercerLabel = getVal("piercerLabel")?.trim() || "";
 
               const components = [];
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
@@ -1366,6 +1392,7 @@ export function initActionEditors() {
                 hasExtraDamageAbility, extraDamageAbility, extraDamageAbilityLabel,
                 hasSaveRider, saveRiderLabel, saveRiderAbility, saveRiderDcType, saveRiderDcFixed,
                 saveRiderDcAbility, saveRiderDamageFormula, saveRiderDamageType, saveRiderSaveSuccess, saveRiderEffect,
+                hasDamageFloor, damageFloorValue, damageFloorLabel, hasPiercer, piercerLabel,
                 addedBy: "gm", gmModified: true,
                 additionalDamageComponents: components
               };
@@ -2274,6 +2301,7 @@ export function initActionEditors() {
               const extras = rawConfig.additionalDamageComponents || [];
               const hasGWM = Boolean(rawConfig.hasGWM);
               const hasSavageAttacker = Boolean(rawConfig.hasSavageAttacker);
+              const hasPiercer = Boolean(rawConfig.hasPiercer);
               const hasExtraAttackAbility = Boolean(rawConfig.hasExtraAttackAbility && rawConfig.extraAttackAbility);
               const hasExtraDamageAbility = Boolean(rawConfig.hasExtraDamageAbility && rawConfig.extraDamageAbility);
               const hasSaveRider = Boolean(rawConfig.hasSaveRider);
@@ -2310,6 +2338,17 @@ export function initActionEditors() {
                 <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; font-weight: bold; color: #8c3b2d; padding: 3px 6px; background: rgba(140,59,45,0.08); border-radius: 3px; cursor: pointer; margin-top: 6px;">
                   <span>Savage Attacker (Keep Highest)</span>
                   <input type="checkbox" id="qm-savage-attacker-toggle" style="margin: 0;">
+                </label>
+              `;
+              }
+
+              let piercerToggleHtml = "";
+              if (hasPiercer) {
+                const pLabel = rawConfig.piercerLabel || "Piercer";
+                piercerToggleHtml = `
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; font-weight: bold; color: #873e23; padding: 3px 6px; background: rgba(184,91,53,0.08); border-radius: 3px; cursor: pointer; margin-top: 6px;">
+                  <span>${escapeHTML(pLabel)} (Reroll Lowest Die)</span>
+                  <input type="checkbox" id="qm-piercer-toggle" style="margin: 0;">
                 </label>
               `;
               }
@@ -2372,6 +2411,7 @@ export function initActionEditors() {
                 ${saveRiderToggleHtml}
                 ${gwmToggleHtml}
                 ${savageAttackerToggleHtml}
+                ${piercerToggleHtml}
                 ${extrasCheckboxesHtml}
               </div>
             `;
@@ -2402,6 +2442,12 @@ export function initActionEditors() {
                       if (hasSavageAttacker && promptModal.find("#qm-savage-attacker-toggle").is(":checked")) {
                         targetData.isSavageAttackerActive = true;
                         targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [Savage Attacker]`;
+                      }
+
+                      if (hasPiercer && promptModal.find("#qm-piercer-toggle").is(":checked")) {
+                        targetData.isPiercerActive = true;
+                        const pLabel = targetData.piercerLabel || "Piercer";
+                        targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [${pLabel}]`;
                       }
 
                       if (hasExtraAttackAbility && promptModal.find("#qm-extra-ability-toggle").is(":checked")) {
@@ -2863,6 +2909,27 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                   <input type="text" name="saveRiderEffect" value="${item.saveRiderEffect || ''}" placeholder="Failure Effect (e.g. Knocked Prone, Poisoned 1 min)" style="width: 100%; height: 26px; font-size: 0.85em;"/>
                 </div>
               </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(43, 116, 137, 0.04); border: 1px solid #b8d9e2; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #1e5868; font-weight: bold;">
+                  <span>Enable Damage Die Floor (e.g. GWF 2024, Elemental Adept)</span>
+                  <input type="checkbox" name="hasDamageFloor" ${item.hasDamageFloor ? 'checked' : ''}/>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                  <select name="damageFloorValue" style="flex: 1; height: 26px; font-size: 0.85em;" title="Minimum Die Result">
+                    <option value="3" ${(!item.damageFloorValue || Number(item.damageFloorValue) === 3) ? 'selected' : ''}>Min 3 (GWF 2024: 1 & 2 &rarr; 3)</option>
+                    <option value="2" ${Number(item.damageFloorValue) === 2 ? 'selected' : ''}>Min 2 (Elemental Adept: 1 &rarr; 2)</option>
+                    <option value="4" ${Number(item.damageFloorValue) === 4 ? 'selected' : ''}>Min 4</option>
+                  </select>
+                  <input type="text" name="damageFloorLabel" value="${item.damageFloorLabel || ''}" placeholder="Floor Name (e.g. GWF 2024, Elemental Adept)" style="flex: 2; height: 26px; font-size: 0.85em;"/>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(184, 91, 53, 0.04); border: 1px solid #e2c2b5; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #873e23; font-weight: bold;">
+                  <span>Allow Piercer (Reroll 1 Lowest Die)</span>
+                  <input type="checkbox" name="hasPiercer" ${item.hasPiercer ? 'checked' : ''}/>
+                </label>
+                <input type="text" name="piercerLabel" value="${item.piercerLabel || ''}" placeholder="Feat label (defaults to Piercer)" style="width: 100%; height: 26px; font-size: 0.85em;"/>
+              </div>
             </div>
           </div>
         </div>
@@ -2916,6 +2983,11 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               const saveRiderDamageType = getVal("saveRiderDamageType") || "lightning";
               const saveRiderSaveSuccess = getVal("saveRiderSaveSuccess") || "half";
               const saveRiderEffect = getVal("saveRiderEffect")?.trim() || "";
+              const hasDamageFloor = getCheck("hasDamageFloor");
+              const damageFloorValue = parseInt(getVal("damageFloorValue")) || 3;
+              const damageFloorLabel = getVal("damageFloorLabel")?.trim() || "";
+              const hasPiercer = getCheck("hasPiercer");
+              const piercerLabel = getVal("piercerLabel")?.trim() || "";
 
               const components = [];
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
@@ -2945,6 +3017,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                 hasExtraDamageAbility, extraDamageAbility, extraDamageAbilityLabel,
                 hasSaveRider, saveRiderLabel, saveRiderAbility, saveRiderDcType, saveRiderDcFixed,
                 saveRiderDcAbility, saveRiderDamageFormula, saveRiderDamageType, saveRiderSaveSuccess, saveRiderEffect,
+                hasDamageFloor, damageFloorValue, damageFloorLabel, hasPiercer, piercerLabel,
                 addedBy: "gm", gmModified: true,
                 additionalDamageComponents: components
               };
