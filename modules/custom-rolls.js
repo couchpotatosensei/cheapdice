@@ -2361,9 +2361,9 @@ Click a numbered modifier badge to execute a roll.</div>
     const trackers = actor.getFlag("world", "trackingStuff") || [];
     let trackersModified = false;
 
-    // Process ONLY custom-created trackers (ignores any sheet items or sheet resources)
+    // Process custom counters (ignores any sheet items)
     for (const t of trackers) {
-      if (t.type !== "custom") continue;
+      if (t.type === "item") continue;
 
       const reset = String(t.resetOn || "lr").toLowerCase();
       let shouldRecharge = false;
@@ -2740,47 +2740,7 @@ Click a numbered modifier badge to execute a roll.</div>
             }
           }
 
-          const syncResources = async () => {
-            const slots = ["primary", "secondary", "tertiary"];
-            const prevSlots = new Set(trackers.filter(t => t.type === "resource" && t.resourceSlot).map(t => t.resourceSlot));
-            const nonItemTrackers = trackers.filter(t => t.type !== "item");
-            const updateData = {};
-            const newOccupiedSlots = new Set();
-
-            for (let i = 0; i < slots.length; i++) {
-              const slot = slots[i];
-              const cand = nonItemTrackers[i];
-              if (cand) {
-                cand.type = "resource";
-                cand.resourceSlot = slot;
-                newOccupiedSlots.add(slot);
-                updateData[`system.resources.${slot}.label`] = cand.label || "";
-                updateData[`system.resources.${slot}.value`] = Number(cand.value) || 0;
-                updateData[`system.resources.${slot}.max`] = Number(cand.max) || 1;
-                updateData[`system.resources.${slot}.sr`] = (cand.resetOn || "").startsWith("sr");
-                updateData[`system.resources.${slot}.lr`] = (cand.resetOn || "").startsWith("lr");
-              }
-            }
-
-            for (const prevSlot of prevSlots) {
-              if (!newOccupiedSlots.has(prevSlot)) {
-                updateData[`system.resources.${prevSlot}.label`] = "";
-                updateData[`system.resources.${prevSlot}.value`] = 0;
-                updateData[`system.resources.${prevSlot}.max`] = 0;
-                updateData[`system.resources.${prevSlot}.sr`] = false;
-                updateData[`system.resources.${prevSlot}.lr`] = false;
-              }
-            }
-
-            for (let i = slots.length; i < nonItemTrackers.length; i++) {
-              nonItemTrackers[i].type = "custom";
-              nonItemTrackers[i].resourceSlot = null;
-            }
-
-            if (Object.keys(updateData).length > 0) {
-              await actor.update(updateData);
-            }
-          };
+          const syncResources = async () => {};
 
           function renderActiveTrackersList() {
             if (!trackers || trackers.length === 0) {
@@ -4294,40 +4254,43 @@ Click a numbered modifier badge to execute a roll.</div>
                 <i class="fas fa-heart"></i> HP
               </span>
               <div style="display: flex; align-items: center; gap: 3px; min-width: 0; flex: 1;">
-                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 46px; min-width: 46px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
-                <span id="dice-stuff-hp-max-label" style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap;">/ ${maxHp}</span>
-                <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; margin-left: 2px; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
+                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 46px; min-width: 46px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px; flex-shrink: 0;" />
+                <span id="dice-stuff-hp-max-label" style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap; flex-shrink: 0;">/ ${maxHp}</span>
+                <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; margin-left: 2px; flex-shrink: 0; width: auto; max-width: fit-content; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
                   ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
                 </button>
                 <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0;">
-                  <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 18px; min-width: 18px; height: 18px; font-size: 0.68em; padding: 0; border-radius: 2px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                  <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 18px; min-width: 18px; max-width: 18px; height: 18px; font-size: 0.68em; padding: 0; border-radius: 2px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
                     <i class="fas fa-cog" style="margin: 0;"></i>
                   </button>
                 </div>
               </div>
             </div>
 
-            <!-- Hit Dice Tracker Row -->
-            <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
-              <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
-                <i class="fas fa-dice-d6"></i> HD
-              </span>
-              <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
-                <span id="dice-stuff-hd-label" style="font-size: 0.74em; font-weight: 700; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
-                <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;">
-                  Roll Hit Die
+            <!-- Hit Dice Tracker & Rest Triggers Column (Auto-Stacked to exact content width) -->
+            <div style="display: inline-flex; flex-direction: column; width: fit-content; gap: 3px;">
+              <!-- Hit Dice Row -->
+              <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
+                <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
+                  <i class="fas fa-dice-d6"></i> HD
+                </span>
+                <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
+                  <span id="dice-stuff-hd-label" style="font-size: 0.74em; font-weight: 700; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
+                  <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;">
+                    Roll Hit Die
+                  </button>
+                </div>
+              </div>
+
+              <!-- Rest Triggers Row (Locked to exact width of Hit Die content above) -->
+              <div style="display: flex; gap: 4px; width: 100%;">
+                <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
+                  <i class="fas fa-mug-hot"></i> Short
+                </button>
+                <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
+                  <i class="fas fa-moon"></i> Long
                 </button>
               </div>
-            </div>
-
-            <!-- Rest Triggers Row (Matched to Hit Die content width) -->
-            <div style="display: flex; gap: 4px; width: 152px;">
-              <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
-                <i class="fas fa-mug-hot"></i> Short
-              </button>
-              <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
-                <i class="fas fa-moon"></i> Long
-              </button>
             </div>
           </div>
         </div>
