@@ -4459,10 +4459,12 @@ Click a numbered modifier badge to execute a roll.</div>
               <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-heart"></i> HP
               </span>
-              <div style="display: flex; align-items: center; gap: 2px; min-width: 0;">
-                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Enter delta +/- or new total)" style="width: 30px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
+              <div style="display: flex; align-items: center; gap: 3px; min-width: 0;">
+                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 30px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
                 <span id="dice-stuff-hp-max-label" style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap;">/ ${maxHp}</span>
-                <span id="dice-stuff-hp-temp-badge" style="font-size: 0.68em; font-weight: 700; color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 2px; padding: 0 2px; white-space: nowrap; ${tempHp > 0 ? '' : 'display: none;'}" title="Temp HP">+${tempHp}</span>
+                <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; margin-left: 2px; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
+                  ${tempHp > 0 ? `<i class="fas fa-shield-halved" style="font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
+                </button>
               </div>
             </div>
 
@@ -4580,6 +4582,7 @@ Click a numbered modifier badge to execute a roll.</div>
   `;
 
     let liveActorHookId = null;
+    let liveItemHookId = null;
 
     const dlg = new Dialog({
       title: `Dice Stuff: ${actor.name}`,
@@ -4589,6 +4592,10 @@ Click a numbered modifier badge to execute a roll.</div>
         if (liveActorHookId !== null) {
           Hooks.off("updateActor", liveActorHookId);
           liveActorHookId = null;
+        }
+        if (liveItemHookId !== null) {
+          Hooks.off("updateItem", liveItemHookId);
+          liveItemHookId = null;
         }
       },
       render: (html) => {
@@ -5960,26 +5967,92 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Vitals Handlers: HP Quick-Update, Hit Dice Roll, Rest Triggers
         const hpInput = html.find("#dice-stuff-hp-input");
+        const thpBtn = html.find("#dice-stuff-thp-btn");
+
         const updateHpValue = async function (el) {
           const rawVal = $(el).val().trim();
           let currentVal = Number(actor.system?.attributes?.hp?.value) || 0;
           const maxVal = Number(actor.system?.attributes?.hp?.max) || 0;
-          let newVal = currentVal;
+          let currentTemp = Number(actor.system?.attributes?.hp?.temp) || 0;
 
-          if (rawVal.startsWith("+") || rawVal.startsWith("-")) {
-            const delta = Number(rawVal);
-            if (!isNaN(delta)) newVal = Math.max(0, currentVal + delta);
+          const actorUpdates = {};
+
+          if (rawVal.startsWith("-")) {
+            // Damage: Deplete Temp HP first, then regular HP
+            let dmg = Math.abs(Number(rawVal));
+            if (!isNaN(dmg)) {
+              if (currentTemp > 0) {
+                const absorbed = Math.min(currentTemp, dmg);
+                currentTemp -= absorbed;
+                dmg -= absorbed;
+                actorUpdates["system.attributes.hp.temp"] = currentTemp;
+              }
+              if (dmg > 0) {
+                currentVal = Math.max(0, currentVal - dmg);
+                actorUpdates["system.attributes.hp.value"] = currentVal;
+              }
+            }
+          } else if (rawVal.startsWith("+")) {
+            // Healing: Restores regular HP up to max
+            const heal = Number(rawVal);
+            if (!isNaN(heal)) {
+              currentVal = Math.min(maxVal, Math.max(0, currentVal + heal));
+              actorUpdates["system.attributes.hp.value"] = currentVal;
+            }
           } else {
+            // Absolute direct value
             const num = Number(rawVal);
-            if (!isNaN(num)) newVal = Math.max(0, num);
+            if (!isNaN(num)) {
+              currentVal = Math.max(0, num);
+              actorUpdates["system.attributes.hp.value"] = currentVal;
+            }
           }
 
-          $(el).val(newVal);
-          await actor.update({ "system.attributes.hp.value": newVal });
+          $(el).val(currentVal);
+          if (Object.keys(actorUpdates).length > 0) {
+            await actor.update(actorUpdates);
+          }
         };
 
         hpInput.on("change blur", async function () {
           await updateHpValue(this);
+        });
+
+        // Clickable [+THP] / [🛡️ THP] Pill Handler
+        thpBtn.on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const currentTemp = Number(actor.system?.attributes?.hp?.temp) || 0;
+          new Dialog({
+            title: `Temporary HP: ${actor.name}`,
+            content: `
+              <div style="padding: 6px 4px; display: flex; flex-direction: column; gap: 6px;">
+                <label style="font-weight: 700; font-size: 0.85em; color: #0284c7;">
+                  <i class="fas fa-shield-halved"></i> Enter Temporary HP (or 0 to clear):
+                </label>
+                <input type="number" id="thp-prompt-input" value="${currentTemp > 0 ? currentTemp : ''}" placeholder="0" min="0" autofocus style="width: 100%; height: 28px; text-align: center; font-size: 1.1em; font-weight: 700; border-radius: 4px; border: 1px solid #7dd3fc;" />
+              </div>
+            `,
+            buttons: {
+              save: {
+                icon: '<i class="fas fa-check"></i>',
+                label: "Set THP",
+                callback: async (dHtml) => {
+                  const inputVal = dHtml.find("#thp-prompt-input").val().trim();
+                  const newThp = Math.max(0, Number(inputVal) || 0);
+                  await actor.update({ "system.attributes.hp.temp": newThp });
+                }
+              },
+              clear: {
+                icon: '<i class="fas fa-trash"></i>',
+                label: "Clear",
+                callback: async () => {
+                  await actor.update({ "system.attributes.hp.temp": 0 });
+                }
+              }
+            },
+            default: "save"
+          }, { width: 260 }).render(true);
         });
 
         // Live Actor Updates Hook (HP, Max HP, Temp HP, Hit Dice)
@@ -6000,24 +6073,28 @@ Click a numbered modifier badge to execute a roll.</div>
               }
               html.find("#dice-stuff-hp-max-label").text(`/ ${liveMax}`);
 
-              const tempBadge = html.find("#dice-stuff-hp-temp-badge");
+              const thpBtnElem = html.find("#dice-stuff-thp-btn");
               if (liveTemp > 0) {
-                tempBadge.text(`+${liveTemp}`).show();
+                thpBtnElem
+                  .html(`<i class="fas fa-shield-halved" style="font-size: 0.85em;"></i> ${liveTemp}`)
+                  .css({ background: "#e0f2fe", color: "#0284c7", border: "1px solid #7dd3fc" });
               } else {
-                tempBadge.hide();
+                thpBtnElem
+                  .html(`<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`)
+                  .css({ background: "#fff", color: "#64748b", border: "1px dashed #cbd5e1" });
               }
             }
 
             // Live update Hit Dice
-            if (foundry.utils.hasProperty(changes, "system.attributes.hd") || foundry.utils.hasProperty(changes, "items")) {
+            function updateLiveHitDice(targetActor) {
               let liveHdCur = 0;
               let liveHdMax = 0;
               let liveHdDenom = "";
-              if (updatedActor.system?.attributes?.hd && typeof updatedActor.system.attributes.hd.value === "number") {
-                liveHdCur = Number(updatedActor.system.attributes.hd.value) || 0;
-                liveHdMax = Number(updatedActor.system.attributes.hd.max) || 0;
-              } else if (updatedActor.itemTypes?.class && updatedActor.itemTypes.class.length > 0) {
-                updatedActor.itemTypes.class.forEach(c => {
+              if (targetActor.system?.attributes?.hd && typeof targetActor.system.attributes.hd.value === "number") {
+                liveHdCur = Number(targetActor.system.attributes.hd.value) || 0;
+                liveHdMax = Number(targetActor.system.attributes.hd.max) || 0;
+              } else if (targetActor.itemTypes?.class && targetActor.itemTypes.class.length > 0) {
+                targetActor.itemTypes.class.forEach(c => {
                   const levels = Number(c.system?.levels) || 0;
                   const used = Number(c.system?.hitDiceUsed) || 0;
                   liveHdCur += Math.max(0, levels - used);
@@ -6025,8 +6102,41 @@ Click a numbered modifier badge to execute a roll.</div>
                   if (!liveHdDenom && c.system?.hitDice) liveHdDenom = c.system.hitDice;
                 });
               }
-              if (!liveHdDenom && updatedActor.itemTypes?.class?.[0]?.system?.hitDice) {
-                liveHdDenom = updatedActor.itemTypes.class[0].system.hitDice;
+              if (!liveHdDenom && targetActor.itemTypes?.class?.[0]?.system?.hitDice) {
+                liveHdDenom = targetActor.itemTypes.class[0].system.hitDice;
+              }
+              html.find("#dice-stuff-hd-label").html(`${liveHdCur}/${liveHdMax}${liveHdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${liveHdDenom})</small>` : ''}`);
+            }
+
+            if (foundry.utils.hasProperty(changes, "system.attributes.hd") || foundry.utils.hasProperty(changes, "items")) {
+              updateLiveHitDice(updatedActor);
+            }
+          });
+        }
+
+        // Live update on embedded item updates (e.g. rolling Hit Die updates class item hitDiceUsed)
+        if (liveItemHookId === null) {
+          liveItemHookId = Hooks.on("updateItem", (item, changes) => {
+            if (item.parent?.id !== actor.id) return;
+            if (item.type === "class" && (foundry.utils.hasProperty(changes, "system.hitDiceUsed") || foundry.utils.hasProperty(changes, "system.levels"))) {
+              const liveActor = item.parent || actor;
+              let liveHdCur = 0;
+              let liveHdMax = 0;
+              let liveHdDenom = "";
+              if (liveActor.system?.attributes?.hd && typeof liveActor.system.attributes.hd.value === "number") {
+                liveHdCur = Number(liveActor.system.attributes.hd.value) || 0;
+                liveHdMax = Number(liveActor.system.attributes.hd.max) || 0;
+              } else if (liveActor.itemTypes?.class && liveActor.itemTypes.class.length > 0) {
+                liveActor.itemTypes.class.forEach(c => {
+                  const levels = Number(c.system?.levels) || 0;
+                  const used = Number(c.system?.hitDiceUsed) || 0;
+                  liveHdCur += Math.max(0, levels - used);
+                  liveHdMax += levels;
+                  if (!liveHdDenom && c.system?.hitDice) liveHdDenom = c.system.hitDice;
+                });
+              }
+              if (!liveHdDenom && liveActor.itemTypes?.class?.[0]?.system?.hitDice) {
+                liveHdDenom = liveActor.itemTypes.class[0].system.hitDice;
               }
               html.find("#dice-stuff-hd-label").html(`${liveHdCur}/${liveHdMax}${liveHdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${liveHdDenom})</small>` : ''}`);
             }
@@ -6056,14 +6166,26 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.shortRest === "function") {
               const res = await actor.shortRest();
               if (res) {
-                // Trigger Tracking Stuff Short Rest recharge routines
-                const srBtn = html.find("#btn-recharge-sr");
-                if (srBtn.length > 0) {
-                  srBtn.trigger("click");
-                } else if (globalThis.attackSocket?.executeAsGM) {
-                  await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "sr", game.user.id);
+                // Execute Tracking Stuff Short Rest recharge routines
+                let lines = [];
+                if (globalThis.attackSocket?.executeAsGM) {
+                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "sr", game.user.id);
                 } else if (typeof rechargeActorTrackers === "function") {
-                  await rechargeActorTrackers(actor, "sr");
+                  lines = await rechargeActorTrackers(actor, "sr");
+                }
+                if (lines && lines.length > 0) {
+                  await ChatMessage.create({
+                    user: game.user.id,
+                    speaker: ChatMessage.getSpeaker({ actor }),
+                    content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #2b7489; background: #eef7fa; border-radius: 4px; color: #1a2d36;">
+                      <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #1e5a6a;">
+                        <i class="fas fa-rotate"></i> ${actor.name}: Short Rest Recharge Completed
+                      </div>
+                      <div style="margin-top: 4px;">
+                        ${lines.join("<br>")}
+                      </div>
+                    </div>`
+                  });
                 }
 
                 dlg.close();
@@ -6085,14 +6207,26 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.longRest === "function") {
               const res = await actor.longRest();
               if (res) {
-                // Trigger Tracking Stuff Long Rest recharge routines
-                const lrBtn = html.find("#btn-recharge-lr");
-                if (lrBtn.length > 0) {
-                  lrBtn.trigger("click");
-                } else if (globalThis.attackSocket?.executeAsGM) {
-                  await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id);
+                // Execute Tracking Stuff Long Rest recharge routines
+                let lines = [];
+                if (globalThis.attackSocket?.executeAsGM) {
+                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id);
                 } else if (typeof rechargeActorTrackers === "function") {
-                  await rechargeActorTrackers(actor, "lr");
+                  lines = await rechargeActorTrackers(actor, "lr");
+                }
+                if (lines && lines.length > 0) {
+                  await ChatMessage.create({
+                    user: game.user.id,
+                    speaker: ChatMessage.getSpeaker({ actor }),
+                    content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #388e3c; background: #f1f8f2; border-radius: 4px; color: #1d331f;">
+                      <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #256029;">
+                        <i class="fas fa-rotate"></i> ${actor.name}: Long Rest Recharge Completed
+                      </div>
+                      <div style="margin-top: 4px;">
+                        ${lines.join("<br>")}
+                      </div>
+                    </div>`
+                  });
                 }
 
                 dlg.close();

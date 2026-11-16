@@ -594,6 +594,34 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(applyDelta(curHp, "-100"), 0);
     assert.equal(applyDelta(curHp, "20"), 20);
 
+    // Smart damage / healing delta with THP absorption test
+    const applySmartDelta = (curHp, curTemp, maxHp, inputStr) => {
+      let hp = curHp;
+      let temp = curTemp;
+      if (inputStr.startsWith("-")) {
+        let dmg = Math.abs(Number(inputStr));
+        if (temp > 0) {
+          const absorbed = Math.min(temp, dmg);
+          temp -= absorbed;
+          dmg -= absorbed;
+        }
+        if (dmg > 0) {
+          hp = Math.max(0, hp - dmg);
+        }
+      } else if (inputStr.startsWith("+")) {
+        const heal = Number(inputStr);
+        hp = Math.min(maxHp, Math.max(0, hp + heal));
+      }
+      return { hp, temp };
+    };
+
+    // 100 HP, 10 THP takes 20 damage -> 90 HP, 0 THP
+    assert.deepEqual(applySmartDelta(100, 10, 100, "-20"), { hp: 90, temp: 0 });
+    // 100 HP, 10 THP takes 5 damage -> 100 HP, 5 THP
+    assert.deepEqual(applySmartDelta(100, 10, 100, "-5"), { hp: 100, temp: 5 });
+    // 80 HP, 5 THP heals +15 -> 95 HP, 5 THP (healing doesn't touch temp)
+    assert.deepEqual(applySmartDelta(80, 5, 100, "+15"), { hp: 95, temp: 5 });
+
     // Hit Dice calculation fallback
     let hdCurrent = 0;
     let hdMax = 0;
