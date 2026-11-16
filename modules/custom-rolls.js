@@ -2379,7 +2379,8 @@ Click a numbered modifier badge to execute a roll.</div>
 
     // 1. Process active Trackers configured in trackingStuff
     for (const t of trackers) {
-      if (onlyCustom && t.type !== "custom") continue;
+      // If onlyCustom is set, skip any trackers that are directly attached to sheet Items
+      if (onlyCustom && t.type === "item") continue;
 
       const reset = String(t.resetOn || "lr").toLowerCase();
       let shouldRecharge = false;
@@ -2925,45 +2926,8 @@ Click a numbered modifier badge to execute a roll.</div>
           }
 
           const syncResources = async () => {
-            const slots = ["primary", "secondary", "tertiary"];
-            const prevSlots = new Set(trackers.filter(t => t.type === "resource" && t.resourceSlot).map(t => t.resourceSlot));
-            const nonItemTrackers = trackers.filter(t => t.type !== "item");
-            const updateData = {};
-            const newOccupiedSlots = new Set();
-
-            for (let i = 0; i < slots.length; i++) {
-              const slot = slots[i];
-              const cand = nonItemTrackers[i];
-              if (cand) {
-                cand.type = "resource";
-                cand.resourceSlot = slot;
-                newOccupiedSlots.add(slot);
-                updateData[`system.resources.${slot}.label`] = cand.label || "";
-                updateData[`system.resources.${slot}.value`] = Number(cand.value) || 0;
-                updateData[`system.resources.${slot}.max`] = Number(cand.max) || 1;
-                updateData[`system.resources.${slot}.sr`] = (cand.resetOn || "").startsWith("sr");
-                updateData[`system.resources.${slot}.lr`] = (cand.resetOn || "").startsWith("lr");
-              }
-            }
-
-            for (const prevSlot of prevSlots) {
-              if (!newOccupiedSlots.has(prevSlot)) {
-                updateData[`system.resources.${prevSlot}.label`] = "";
-                updateData[`system.resources.${prevSlot}.value`] = 0;
-                updateData[`system.resources.${prevSlot}.max`] = 0;
-                updateData[`system.resources.${prevSlot}.sr`] = false;
-                updateData[`system.resources.${prevSlot}.lr`] = false;
-              }
-            }
-
-            for (let i = slots.length; i < nonItemTrackers.length; i++) {
-              nonItemTrackers[i].type = "custom";
-              nonItemTrackers[i].resourceSlot = null;
-            }
-
-            if (Object.keys(updateData).length > 0) {
-              await actor.update(updateData);
-            }
+            // Tracking Stuff counters remain independent in flags.world.trackingStuff
+            // and do not overwrite or force dnd5e system.resources primary/secondary/tertiary.
           };
 
           function renderActiveTrackersList() {
@@ -4469,12 +4433,12 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait & Vitals Card (Top Row) -->
-        <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
+        <div id="dice-stuff-vitals-card" style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
           <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
           <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px;">
             <!-- HP Tracker Row -->
             <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px; margin: 1px 0;">
-              <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
+              <span id="dice-stuff-hp-header-label" style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-heart"></i> HP
               </span>
               <div style="display: flex; align-items: center; gap: 3px; min-width: 0;">
@@ -4488,7 +4452,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
             <!-- Hit Dice Tracker Row -->
             <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
-              <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
+              <span id="dice-stuff-hd-header-label" style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-dice-d6"></i> HD
               </span>
               <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
@@ -4734,6 +4698,7 @@ Click a numbered modifier badge to execute a roll.</div>
               border-right-color: #273142 !important;
             }
             .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper,
+            .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card,
             .app.dialog.cheapdice-theme-slate .custom-weapon-card,
             .app.dialog.cheapdice-theme-slate .custom-spell-card,
             .app.dialog.cheapdice-theme-slate .standard-weapon-card,
@@ -4741,6 +4706,37 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #1b212f !important;
               border-color: #2e3b52 !important;
               color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card span,
+            .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card div {
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-header-label {
+              color: #f87171 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-max-label {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-header-label {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-label {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-roll-hd-btn {
+              background: #252f42 !important;
+              color: #38bdf8 !important;
+              border-color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-short-rest-btn {
+              background: rgba(217, 119, 6, 0.22) !important;
+              color: #fbbf24 !important;
+              border-color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-long-rest-btn {
+              background: rgba(99, 102, 241, 0.25) !important;
+              color: #c7d2fe !important;
+              border-color: #818cf8 !important;
             }
             .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper span[style*="Tracking Stuff"],
             .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper div[style*="Tracking Stuff"],
@@ -4979,6 +4975,7 @@ Click a numbered modifier badge to execute a roll.</div>
               border-right-color: #2e2624 !important;
             }
             .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper,
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card,
             .app.dialog.cheapdice-theme-arcane .custom-weapon-card,
             .app.dialog.cheapdice-theme-arcane .custom-spell-card,
             .app.dialog.cheapdice-theme-arcane .standard-weapon-card,
@@ -4986,6 +4983,37 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #1c1a21 !important;
               border-color: #38312e !important;
               color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card span,
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card div {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-header-label {
+              color: #f87171 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-max-label {
+              color: #d1d5db !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-header-label {
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-label {
+              color: #fef3c7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-roll-hd-btn {
+              background: #252026 !important;
+              color: #fbbf24 !important;
+              border-color: #d97706 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-short-rest-btn {
+              background: rgba(217, 119, 6, 0.22) !important;
+              color: #fbbf24 !important;
+              border-color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-long-rest-btn {
+              background: rgba(139, 92, 246, 0.25) !important;
+              color: #ddd6fe !important;
+              border-color: #a78bfa !important;
             }
             .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper span[style*="Tracking Stuff"],
             .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper div[style*="Tracking Stuff"] {
@@ -5238,6 +5266,7 @@ Click a numbered modifier badge to execute a roll.</div>
               border-right-color: rgba(255, 255, 255, 0.12) !important;
             }
             .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper,
+            .app.dialog.cheapdice-theme-glass #dice-stuff-vitals-card,
             .app.dialog.cheapdice-theme-glass .custom-weapon-card,
             .app.dialog.cheapdice-theme-glass .custom-spell-card,
             .app.dialog.cheapdice-theme-glass .standard-weapon-card,
@@ -5245,6 +5274,37 @@ Click a numbered modifier badge to execute a roll.</div>
               background: rgba(255, 255, 255, 0.05) !important;
               border-color: rgba(255, 255, 255, 0.12) !important;
               color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-vitals-card span,
+            .app.dialog.cheapdice-theme-glass #dice-stuff-vitals-card div {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-header-label {
+              color: #f87171 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-max-label {
+              color: #cbd5e1 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-header-label {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-label {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-roll-hd-btn {
+              background: rgba(56, 189, 248, 0.15) !important;
+              color: #38bdf8 !important;
+              border-color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-short-rest-btn {
+              background: rgba(217, 119, 6, 0.22) !important;
+              color: #fbbf24 !important;
+              border-color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-long-rest-btn {
+              background: rgba(99, 102, 241, 0.25) !important;
+              color: #c7d2fe !important;
+              border-color: #818cf8 !important;
             }
             .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper span[style*="Tracking Stuff"],
             .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper div[style*="Tracking Stuff"] {
