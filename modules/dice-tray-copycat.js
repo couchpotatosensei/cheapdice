@@ -545,11 +545,15 @@ function injectTrayStyles() {
   const style = document.createElement("style");
   style.id = "gp-dice-tray-styles";
   style.textContent = `
-    #chat {
+    #chat.active,
+    .chat-popout #chat {
       display: flex !important;
       flex-direction: column !important;
       height: 100% !important;
       overflow: hidden !important;
+    }
+    #sidebar:not(.collapsed) #chat:not(.active) {
+      display: none !important;
     }
     #chat #chat-log {
       flex: 1 1 0 !important;
