@@ -2360,11 +2360,13 @@ Click a numbered modifier badge to execute a roll.</div>
   // =========================================================================
   // TRACKING STUFF: RECHARGE & RESOURCE ENGINE
   // =========================================================================
-  async function rechargeActorTrackers(actor, restType = "lr", preRestSnapshot = null) {
+  async function rechargeActorTrackers(actor, restType = "lr", options = {}) {
     if (!actor) return [];
     const isLR = restType === "lr";
     const isSR = restType === "sr";
     const isDawn = restType === "dawn";
+    const onlyCustom = Boolean(options?.onlyCustom);
+    const preRestSnapshot = options?.preRestSnapshot || null;
 
     const updates = {};
     const itemUpdates = [];
@@ -2375,8 +2377,10 @@ Click a numbered modifier badge to execute a roll.</div>
     const handledItemIds = new Set();
     const handledResourceSlots = new Set();
 
-    // 1. Process all active Trackers configured in trackingStuff
+    // 1. Process active Trackers configured in trackingStuff
     for (const t of trackers) {
+      if (onlyCustom && t.type !== "custom") continue;
+
       const reset = String(t.resetOn || "lr").toLowerCase();
       let shouldRecharge = false;
       const isReset1 = reset.includes("reset_1");
@@ -2514,70 +2518,72 @@ Click a numbered modifier badge to execute a roll.</div>
       }
     }
 
-    // 2. Also check any actor items not explicitly in trackers
-    for (const item of actor.items) {
-      if (handledItemIds.has(item.id)) continue;
-      const uses = item.system.uses;
-      if (uses && typeof uses.max === "number" && uses.max > 0) {
-        const per = String(uses.per || "").toLowerCase();
-        let shouldRecharge = false;
-        if (isLR) {
-          shouldRecharge = (per === "lr" || per === "sr" || per === "day" || per === "dawn" || per === "charges");
-        } else if (isSR) {
-          shouldRecharge = (per === "sr");
-        } else if (isDawn) {
-          shouldRecharge = (per === "day" || per === "dawn" || per === "charges");
-        }
-        const max = Number(uses.max) || 0;
-        let cur = uses.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses.value ?? 0);
-        if (preRestSnapshot?.items?.[item.id] !== undefined) {
-          cur = preRestSnapshot.items[item.id];
-        }
-        if (shouldRecharge && cur < max) {
-          let formula = "";
-          if (uses.recovery && Array.isArray(uses.recovery)) {
-            const formRec = uses.recovery.find(r => r.formula);
-            if (formRec) formula = formRec.formula;
+    // 2. Actor items and sheet resources are handled ONLY when not restricted to custom counters
+    if (!onlyCustom) {
+      for (const item of actor.items) {
+        if (handledItemIds.has(item.id)) continue;
+        const uses = item.system.uses;
+        if (uses && typeof uses.max === "number" && uses.max > 0) {
+          const per = String(uses.per || "").toLowerCase();
+          let shouldRecharge = false;
+          if (isLR) {
+            shouldRecharge = (per === "lr" || per === "sr" || per === "day" || per === "dawn" || per === "charges");
+          } else if (isSR) {
+            shouldRecharge = (per === "sr");
+          } else if (isDawn) {
+            shouldRecharge = (per === "day" || per === "dawn" || per === "charges");
           }
-          if (!formula && item.system.description?.value) {
-            const m = item.system.description.value.match(/regains?\s+(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+expended\s+charges/i);
-            if (m) formula = m[1].trim();
+          const max = Number(uses.max) || 0;
+          let cur = uses.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses.value ?? 0);
+          if (preRestSnapshot?.items?.[item.id] !== undefined) {
+            cur = preRestSnapshot.items[item.id];
           }
-          if (formula) {
-            try {
-              const roll = new Roll(formula);
-              await roll.evaluate();
-              const newVal = Math.min(max, cur + roll.total);
+          if (shouldRecharge && cur < max) {
+            let formula = "";
+            if (uses.recovery && Array.isArray(uses.recovery)) {
+              const formRec = uses.recovery.find(r => r.formula);
+              if (formRec) formula = formRec.formula;
+            }
+            if (!formula && item.system.description?.value) {
+              const m = item.system.description.value.match(/regains?\s+(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+expended\s+charges/i);
+              if (m) formula = m[1].trim();
+            }
+            if (formula) {
+              try {
+                const roll = new Roll(formula);
+                await roll.evaluate();
+                const newVal = Math.min(max, cur + roll.total);
+                itemUpdates.push({
+                  _id: item.id,
+                  "system.uses.spent": Math.max(0, max - newVal),
+                  "system.uses.value": newVal
+                });
+                rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+              } catch (err) {}
+            } else {
               itemUpdates.push({
                 _id: item.id,
-                "system.uses.spent": Math.max(0, max - newVal),
-                "system.uses.value": newVal
+                "system.uses.spent": 0,
+                "system.uses.value": max
               });
-              rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-            } catch (err) {}
-          } else {
-            itemUpdates.push({
-              _id: item.id,
-              "system.uses.spent": 0,
-              "system.uses.value": max
-            });
-            rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
+              rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
+            }
           }
         }
       }
-    }
 
-    // 3. Class resources not explicitly in trackers
-    for (const slot of ["primary", "secondary", "tertiary"]) {
-      if (handledResourceSlots.has(slot)) continue;
-      const res = actor.system.resources?.[slot];
-      if (res && res.label && typeof res.max === "number" && res.max > 0) {
-        let shouldReset = false;
-        if (isLR) shouldReset = (res.lr || res.sr || (!res.lr && !res.sr));
-        else if (isSR) shouldReset = Boolean(res.sr);
-        if (shouldReset && res.value < res.max) {
-          updates[`system.resources.${slot}.value`] = res.max;
-          rechargeChatLines.push(`• <strong>${res.label}</strong>: Reset to ${res.max}/${res.max}`);
+      // 3. Class resources not explicitly in trackers
+      for (const slot of ["primary", "secondary", "tertiary"]) {
+        if (handledResourceSlots.has(slot)) continue;
+        const res = actor.system.resources?.[slot];
+        if (res && res.label && typeof res.max === "number" && res.max > 0) {
+          let shouldReset = false;
+          if (isLR) shouldReset = (res.lr || res.sr || (!res.lr && !res.sr));
+          else if (isSR) shouldReset = Boolean(res.sr);
+          if (shouldReset && res.value < res.max) {
+            updates[`system.resources.${slot}.value`] = res.max;
+            rechargeChatLines.push(`• <strong>${res.label}</strong>: Reset to ${res.max}/${res.max}`);
+          }
         }
       }
     }
@@ -5968,20 +5974,6 @@ Click a numbered modifier badge to execute a roll.</div>
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
 
-        // Universal Enter Key Guard across ALL text/number inputs in Dice Stuff
-        html.on("keydown", "input[type='text'], input[type='number']", function (e) {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            e.stopPropagation();
-            if (this.id === "dice-stuff-hp-input") {
-              applyHpInput(this);
-            } else {
-              $(this).trigger("change");
-            }
-            $(this).blur();
-          }
-        });
-
         // Vitals Handlers: HP Quick-Update, Hit Dice Roll, Rest Triggers
         const hpInput = html.find("#dice-stuff-hp-input");
         const thpBtn = html.find("#dice-stuff-thp-btn");
@@ -6030,6 +6022,25 @@ Click a numbered modifier badge to execute a roll.</div>
             await actor.update(actorUpdates);
           }
         };
+
+        // Single-click auto-select all text for effortless delta typing (matching Token HUD)
+        hpInput.on("focus click", function () {
+          this.select();
+        });
+
+        // Universal Enter Key Guard across ALL text/number inputs in Dice Stuff
+        html.on("keydown", "input[type='text'], input[type='number']", function (e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.id === "dice-stuff-hp-input") {
+              applyHpInput(this);
+            } else {
+              $(this).trigger("change");
+            }
+            $(this).blur();
+          }
+        });
 
         hpInput.on("change", function () {
           applyHpInput(this);
@@ -6167,12 +6178,13 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.shortRest === "function") {
               const res = await actor.shortRest();
               if (res) {
-                // Execute Tracking Stuff Short Rest recharge routines
+                // Execute Tracking Stuff Short Rest recharge routines ONLY for custom counters
+                // (Native dnd5e already handles items and short rest resources)
                 let lines = [];
                 if (globalThis.attackSocket?.executeAsGM) {
-                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "sr", game.user.id);
+                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "sr", game.user.id, { onlyCustom: true });
                 } else if (typeof rechargeActorTrackers === "function") {
-                  lines = await rechargeActorTrackers(actor, "sr");
+                  lines = await rechargeActorTrackers(actor, "sr", { onlyCustom: true });
                 }
                 if (lines && lines.length > 0) {
                   await ChatMessage.create({
@@ -6180,7 +6192,7 @@ Click a numbered modifier badge to execute a roll.</div>
                     speaker: ChatMessage.getSpeaker({ actor }),
                     content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #2b7489; background: #eef7fa; border-radius: 4px; color: #1a2d36;">
                       <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #1e5a6a;">
-                        <i class="fas fa-rotate"></i> ${actor.name}: Short Rest Recharge Completed
+                        <i class="fas fa-rotate"></i> ${actor.name}: Tracking Stuff Custom Counters Recharged
                       </div>
                       <div style="margin-top: 4px;">
                         ${lines.join("<br>")}
@@ -6206,34 +6218,15 @@ Click a numbered modifier badge to execute a roll.</div>
           e.stopPropagation();
           try {
             if (typeof actor.longRest === "function") {
-              // Capture pre-rest snapshot of items, resources, and custom trackers
-              const preRestSnapshot = {
-                items: {},
-                resources: {},
-                trackers: {}
-              };
-              for (const it of actor.items) {
-                if (it.system?.uses) {
-                  const m = Number(it.system.uses.max) || 0;
-                  preRestSnapshot.items[it.id] = it.system.uses.spent !== undefined ? Math.max(0, m - Number(it.system.uses.spent)) : Number(it.system.uses.value ?? 0);
-                }
-              }
-              for (const slot of ["primary", "secondary", "tertiary"]) {
-                preRestSnapshot.resources[slot] = Number(actor.system?.resources?.[slot]?.value ?? 0);
-              }
-              const currentTrackers = actor.getFlag("world", "trackingStuff") || [];
-              for (const t of currentTrackers) {
-                preRestSnapshot.trackers[t.id] = Number(t.value ?? 0);
-              }
-
               const res = await actor.longRest();
               if (res) {
-                // Execute Tracking Stuff Long Rest recharge routines with pre-rest snapshot
+                // Execute Tracking Stuff Long Rest recharge routines ONLY for custom counters
+                // (Native dnd5e already handles items and primary/secondary/tertiary resources)
                 let lines = [];
                 if (globalThis.attackSocket?.executeAsGM) {
-                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id, preRestSnapshot);
+                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id, { onlyCustom: true });
                 } else if (typeof rechargeActorTrackers === "function") {
-                  lines = await rechargeActorTrackers(actor, "lr", preRestSnapshot);
+                  lines = await rechargeActorTrackers(actor, "lr", { onlyCustom: true });
                 }
                 if (lines && lines.length > 0) {
                   await ChatMessage.create({
@@ -6241,7 +6234,7 @@ Click a numbered modifier badge to execute a roll.</div>
                     speaker: ChatMessage.getSpeaker({ actor }),
                     content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #388e3c; background: #f1f8f2; border-radius: 4px; color: #1d331f;">
                       <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #256029;">
-                        <i class="fas fa-rotate"></i> ${actor.name}: Long Rest Recharge Completed
+                        <i class="fas fa-rotate"></i> ${actor.name}: Tracking Stuff Custom Counters Recharged
                       </div>
                       <div style="margin-top: 4px;">
                         ${lines.join("<br>")}
