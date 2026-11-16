@@ -1807,6 +1807,73 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
       }
 
+      let savageAttackerHtml = "";
+      if (config.hasSavageAttacker) {
+        savageAttackerHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #8c3b2d; cursor: pointer; padding: 2px 4px; background: rgba(140, 59, 45, 0.08); border-radius: 3px;">
+            <span>Savage Attacker (Keep Highest)</span>
+            <input type="checkbox" id="savage-attacker-toggle">
+          </label>
+        </div>
+      `;
+      }
+
+      let extraAbilityHtml = "";
+      if (config.hasExtraAttackAbility && config.extraAttackAbility) {
+        const abil = config.extraAttackAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = config.extraAttackAbilityLabel || "Secondary Atk Bonus";
+        extraAbilityHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #4b5d88; cursor: pointer; padding: 2px 4px; background: rgba(75, 93, 136, 0.08); border-radius: 3px;">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="extra-ability-atk-toggle">
+          </label>
+        </div>
+      `;
+      }
+
+      let extraDamageAbilityHtml = "";
+      if (config.hasExtraDamageAbility && config.extraDamageAbility) {
+        const abil = config.extraDamageAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = config.extraDamageAbilityLabel || "Secondary Dmg Bonus";
+        extraDamageAbilityHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #82442d; cursor: pointer; padding: 2px 4px; background: rgba(130, 68, 45, 0.08); border-radius: 3px;">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="extra-ability-dmg-toggle">
+          </label>
+        </div>
+      `;
+      }
+
+      let saveRiderHtml = "";
+      if (config.hasSaveRider) {
+        let computedDC = 10;
+        if (config.saveRiderDcType === "ability") {
+          const dcAbil = config.saveRiderDcAbility || "str";
+          const dcAbilMod = Number(actor.system?.abilities?.[dcAbil]?.mod) || 0;
+          const pb = Number(actor.system?.attributes?.prof) || 2;
+          computedDC = 8 + pb + dcAbilMod;
+        } else {
+          computedDC = Number(config.saveRiderDcFixed) || 13;
+        }
+        const saveAbil = (config.saveRiderAbility || "con").toUpperCase();
+        const riderLabel = config.saveRiderLabel || "Save Rider";
+        saveRiderHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #502772; cursor: pointer; padding: 2px 4px; background: rgba(107, 63, 148, 0.08); border-radius: 3px;">
+            <span>${riderLabel} (DC ${computedDC} ${saveAbil})</span>
+            <input type="checkbox" id="save-rider-toggle">
+          </label>
+        </div>
+      `;
+      }
+
       const extras = config.additionalDamageComponents || [];
       let extrasHtml = "";
       if (extras.length > 0) {
@@ -1843,7 +1910,11 @@ Click a numbered modifier badge to execute a roll.</div>
       <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-bottom: 6px;">
         ${tagsHtml}
       </div>
+      ${extraAbilityHtml}
+      ${extraDamageAbilityHtml}
+      ${saveRiderHtml}
       ${gwmHtml}
+      ${savageAttackerHtml}
       ${extrasHtml}
     `;
     }
@@ -1888,6 +1959,39 @@ Click a numbered modifier badge to execute a roll.</div>
               config.attackCircumstanceModifier = (Number(config.attackCircumstanceModifier) || 0) - 5;
               config.damageModifier = (Number(config.damageModifier) || 0) + 10;
               config.chatCardTitle = `${config.chatCardTitle || choice} [GWM/SS -5/+10]`;
+            }
+
+            if (config.hasSavageAttacker && html.find("#savage-attacker-toggle").is(":checked")) {
+              config.isSavageAttackerActive = true;
+              config.chatCardTitle = `${config.chatCardTitle || choice} [Savage Attacker]`;
+            }
+
+            if (config.hasExtraAttackAbility && config.extraAttackAbility && html.find("#extra-ability-atk-toggle").is(":checked")) {
+              const abil = config.extraAttackAbility;
+              const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+              config.secondaryAbilityMod = abilMod;
+              config.secondaryAbilityKey = abil;
+              config.secondaryAbilityLabel = config.extraAttackAbilityLabel;
+              const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+              const tag = config.extraAttackAbilityLabel || `${sign} ${abil.toUpperCase()}`;
+              config.chatCardTitle = `${config.chatCardTitle || choice} [${tag}]`;
+            }
+
+            if (config.hasExtraDamageAbility && config.extraDamageAbility && html.find("#extra-ability-dmg-toggle").is(":checked")) {
+              const abil = config.extraDamageAbility;
+              const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+              config.secondaryDamageAbilityMod = abilMod;
+              config.secondaryDamageAbilityKey = abil;
+              config.secondaryDamageAbilityLabel = config.extraDamageAbilityLabel;
+              const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+              const tag = config.extraDamageAbilityLabel || `${sign} ${abil.toUpperCase()} Dmg`;
+              config.chatCardTitle = `${config.chatCardTitle || choice} [${tag}]`;
+            }
+
+            if (config.hasSaveRider && html.find("#save-rider-toggle").is(":checked")) {
+              config.isSaveRiderActive = true;
+              const tag = config.saveRiderLabel || "Save";
+              config.chatCardTitle = `${config.chatCardTitle || choice} [${tag}]`;
             }
 
             if (config.additionalDamageComponents) {
@@ -3079,7 +3183,7 @@ Click a numbered modifier badge to execute a roll.</div>
   }
 
   // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
-  window.CustomRolls.openActionDialog = async function (initialMode = "d20", explicitActor = null) {
+  window.CustomRolls.openActionDialog = async function (initialMode = "d20", explicitActor = null, dialogOptions = {}) {
     if (!getSetting("featureCustomRolls")) return;
 
     let token = null;
@@ -3824,6 +3928,16 @@ Click a numbered modifier badge to execute a roll.</div>
         `;
       }
 
+      let savageAttackerHtml = "";
+      if (config?.hasSavageAttacker) {
+        savageAttackerHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #8c3b2d; cursor: pointer; padding: 3px 6px; background: rgba(140, 59, 45, 0.08); border-radius: 3px; border: 1px solid rgba(140, 59, 45, 0.25);">
+            <span>Savage Attacker (Keep Highest)</span>
+            <input type="checkbox" id="savage-attacker-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
       let versatileHtml = "";
       if (config?.isVersatile) {
         const vDie = config.versatileDie || "10";
@@ -3831,6 +3945,55 @@ Click a numbered modifier badge to execute a roll.</div>
           <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #2b7489; cursor: pointer; padding: 3px 6px; background: rgba(43, 116, 137, 0.08); border-radius: 3px; border: 1px solid rgba(43, 116, 137, 0.25);">
             <span>Two-Handed / Versatile (d${vDie})</span>
             <input type="checkbox" id="versatile-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let extraAbilityHtml = "";
+      if (config?.hasExtraAttackAbility && config?.extraAttackAbility) {
+        const abil = config.extraAttackAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = config.extraAttackAbilityLabel || "Secondary Atk Bonus";
+        extraAbilityHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #4b5d88; cursor: pointer; padding: 3px 6px; background: rgba(75, 93, 136, 0.08); border-radius: 3px; border: 1px solid rgba(75, 93, 136, 0.25);">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="extra-ability-atk-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let extraDamageAbilityHtml = "";
+      if (config?.hasExtraDamageAbility && config?.extraDamageAbility) {
+        const abil = config.extraDamageAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = config.extraDamageAbilityLabel || "Secondary Dmg Bonus";
+        extraDamageAbilityHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #82442d; cursor: pointer; padding: 3px 6px; background: rgba(130, 68, 45, 0.08); border-radius: 3px; border: 1px solid rgba(130, 68, 45, 0.25);">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="extra-ability-dmg-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let saveRiderHtml = "";
+      if (config?.hasSaveRider) {
+        let computedDC = 10;
+        if (config.saveRiderDcType === "ability") {
+          const dcAbil = config.saveRiderDcAbility || "str";
+          const dcAbilMod = Number(actor.system?.abilities?.[dcAbil]?.mod) || 0;
+          const pb = Number(actor.system?.attributes?.prof) || 2;
+          computedDC = 8 + pb + dcAbilMod;
+        } else {
+          computedDC = Number(config.saveRiderDcFixed) || 13;
+        }
+        const saveAbil = (config.saveRiderAbility || "con").toUpperCase();
+        const riderLabel = config.saveRiderLabel || "Save Rider";
+        saveRiderHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #502772; cursor: pointer; padding: 3px 6px; background: rgba(107, 63, 148, 0.08); border-radius: 3px; border: 1px solid rgba(107, 63, 148, 0.25);">
+            <span>${riderLabel} (DC ${computedDC} ${saveAbil})</span>
+            <input type="checkbox" id="save-rider-toggle" style="margin: 0;">
           </label>
         `;
       }
@@ -3931,11 +4094,15 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
         </div>
 
-        <!-- Optional Damage & GWM / Versatile Card -->
-        ${(gwmHtml || versatileHtml || extrasHtml) ? `
+        <!-- Optional Damage & GWM / Versatile / Secondary Ability / Save Rider Card -->
+        ${(gwmHtml || savageAttackerHtml || versatileHtml || extraAbilityHtml || extraDamageAbilityHtml || saveRiderHtml || extrasHtml) ? `
           <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
             ${versatileHtml}
             ${gwmHtml}
+            ${savageAttackerHtml}
+            ${extraAbilityHtml}
+            ${extraDamageAbilityHtml}
+            ${saveRiderHtml}
             ${extrasHtml}
           </div>
         ` : ''}
@@ -4259,17 +4426,14 @@ Click a numbered modifier badge to execute a roll.</div>
             <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 1px 0;">
               <!-- HP Numbers & Action Buttons Row -->
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 3px;">
-                <div style="display: flex; align-items: center; gap: 3px; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
                   <span style="font-size: 0.85em; font-weight: 800; color: #b91c1c; display: flex; align-items: center; gap: 2px; flex-shrink: 0;">
                     <i class="fas fa-heart"></i>
                   </span>
-                  <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports 3 digits, absolute or deltas like -15, +10)" style="width: 46px; min-width: 46px; height: 22px; font-size: 0.88em; font-weight: 800; text-align: center; border-radius: 3px; border: 1px solid #cbd5e1; background: #fff; padding: 0 1px; flex-shrink: 0;" />
+                  <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports 3 digits, absolute or deltas like -15, +10)" style="width: 38px; min-width: 38px; height: 22px; font-size: 0.88em; font-weight: 800; text-align: center; border-radius: 3px; border: 1px solid #cbd5e1; background: #fff; padding: 0 1px; flex-shrink: 0;" />
                   <span id="dice-stuff-hp-max-label" style="font-size: 0.82em; color: #555; font-weight: 700; white-space: nowrap; flex-shrink: 0;">/ ${maxHp}</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 3px; flex-shrink: 0;">
-                  <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 22px; font-size: 0.78em; font-weight: 700; padding: 0 5px; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; flex-shrink: 0; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
-                    ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
-                  </button>
                   <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 22px; min-width: 22px; max-width: 22px; height: 22px; font-size: 0.78em; padding: 0; border-radius: 3px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
                     <i class="fas fa-cog" style="margin: 0;"></i>
                   </button>
@@ -4282,9 +4446,11 @@ Click a numbered modifier badge to execute a roll.</div>
                 <div id="dice-stuff-thp-bar-fill" style="width: ${thpPct}%; height: 100%; background: #38bdf8; opacity: 0.9; transition: width 0.3s ease;"></div>
               </div>
 
-              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.68em; font-weight: 700; color: #64748b; padding: 0 1px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700; color: #64748b; padding: 0 1px; min-height: 18px;">
                 <span id="dice-stuff-hp-pct-label">${hpPct}% HP</span>
-                <span id="dice-stuff-thp-status-label" style="color: #0284c7;">${tempHp > 0 ? `+${tempHp} THP` : ''}</span>
+                <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="min-width: 36px !important; width: auto !important; max-width: 48px !important; height: 18px; font-size: 11px; font-weight: 700; padding: 0 4px !important; margin: 0 !important; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 3px; white-space: nowrap; flex-shrink: 0; line-height: 16px; box-sizing: border-box; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
+                  ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 11px;"></i><span style="font-size: 12px; font-weight: 800;">${tempHp}</span>` : `<i class="fas fa-plus" style="font-size: 10px;"></i>THP`}
+                </button>
               </div>
             </div>
 
@@ -4982,7 +5148,7 @@ Click a numbered modifier badge to execute a roll.</div>
             /* 3. TACTICAL GLASS THEME                                   */
             /* ========================================================= */
             .app.dialog.cheapdice-theme-glass {
-              background: rgba(15, 23, 42, 0.72) !important;
+              background: rgba(15, 23, 42, 0.5) !important;
               backdrop-filter: blur(16px) !important;
               -webkit-backdrop-filter: blur(16px) !important;
               border: 1px solid rgba(255, 255, 255, 0.18) !important;
@@ -5198,7 +5364,16 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: rgba(255, 255, 255, 0.12) !important;
             }
             .app.dialog.cheapdice-theme-glass #dice-stuff-hp-max-label {
-              color: #94a3b8 !important;
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-pct-label {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill > span:first-child {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill i {
+              color: #38bdf8 !important;
             }
             .app.dialog.cheapdice-theme-glass #dice-stuff-hd-label {
               color: #ffffff !important;
@@ -5884,8 +6059,12 @@ Click a numbered modifier badge to execute a roll.</div>
               console.error("[Dice Stuff] Error during spell synchronization:", err);
             }
 
+            const currentPos = {
+              top: dlg.position?.top,
+              left: dlg.position?.left
+            };
             dlg.close();
-            await window.CustomRolls.openActionDialog(currentMode, actor);
+            await window.CustomRolls.openActionDialog(currentMode, actor, currentPos);
           });
         }
 
@@ -5954,17 +6133,17 @@ Click a numbered modifier badge to execute a roll.</div>
         }
 
         // Ordered Header Button Injection:
-        // Left-to-right order: [GM Tools] [Compact/Expand] [Theme] [Refresh] [Close]
+        // Left-to-right order: [GM Tools] [Theme] [Refresh] [Compact/Expand] [Close]
         // Inserted backwards before .close:
-        // 1. refreshBtn before close
-        // 2. themeBtn before refreshBtn
-        // 3. collapseBtn before themeBtn
-        // 4. gmBtn before collapseBtn
+        // 1. collapseBtn before close
+        // 2. refreshBtn before collapseBtn
+        // 3. themeBtn before refreshBtn
+        // 4. gmBtn before themeBtn
         const closeBtnElem = header.find(".close");
-        if (refreshBtnElem) closeBtnElem.before(refreshBtnElem);
-        if (themeBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : closeBtnElem).before(themeBtnElem);
-        if (collapseBtnElem) (header.find(".dice-stuff-theme-btn").length ? header.find(".dice-stuff-theme-btn") : closeBtnElem).before(collapseBtnElem);
-        if (gmBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem).before(gmBtnElem);
+        if (collapseBtnElem) closeBtnElem.before(collapseBtnElem);
+        if (refreshBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem).before(refreshBtnElem);
+        if (themeBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem)).before(themeBtnElem);
+        if (gmBtnElem) (header.find(".dice-stuff-theme-btn").length ? header.find(".dice-stuff-theme-btn") : (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem))).before(gmBtnElem);
 
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
@@ -6203,11 +6382,11 @@ Click a numbered modifier badge to execute a roll.</div>
               const thpBtnElem = html.find("#dice-stuff-thp-btn");
               if (liveTemp > 0) {
                 thpBtnElem
-                  .html(`<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${liveTemp}`)
+                  .html(`<i class="fas fa-heart" style="color: #0284c7; font-size: 11px;"></i><span style="font-size: 12px; font-weight: 800;">${liveTemp}</span>`)
                   .css({ background: "#e0f2fe", color: "#0284c7", border: "1px solid #7dd3fc" });
               } else {
                 thpBtnElem
-                  .html(`<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`)
+                  .html(`<i class="fas fa-plus" style="font-size: 10px;"></i>THP`)
                   .css({ background: "#fff", color: "#64748b", border: "1px dashed #cbd5e1" });
               }
 
@@ -6276,8 +6455,12 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.shortRest === "function") {
               const res = await actor.shortRest();
               if (res) {
+                const currentPos = {
+                  top: dlg.position?.top,
+                  left: dlg.position?.left
+                };
                 dlg.close();
-                await window.CustomRolls.openActionDialog(currentMode, actor);
+                await window.CustomRolls.openActionDialog(currentMode, actor, currentPos);
               }
             } else {
               ui.notifications.warn("Native short rest is not available for this actor.");
@@ -6295,8 +6478,12 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.longRest === "function") {
               const res = await actor.longRest();
               if (res) {
+                const currentPos = {
+                  top: dlg.position?.top,
+                  left: dlg.position?.left
+                };
                 dlg.close();
-                await window.CustomRolls.openActionDialog(currentMode, actor);
+                await window.CustomRolls.openActionDialog(currentMode, actor, currentPos);
               }
             } else {
               ui.notifications.warn("Native long rest is not available for this actor.");
@@ -6316,6 +6503,39 @@ Click a numbered modifier badge to execute a roll.</div>
             config.attackCircumstanceModifier = (Number(config.attackCircumstanceModifier) || 0) - 5;
             config.damageModifier = (Number(config.damageModifier) || 0) + 10;
             config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [GWM/SS -5/+10]`;
+          }
+
+          if (config.hasSavageAttacker && html.find("#savage-attacker-toggle").is(":checked")) {
+            config.isSavageAttackerActive = true;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [Savage Attacker]`;
+          }
+
+          if (config.hasExtraAttackAbility && config.extraAttackAbility && html.find("#extra-ability-atk-toggle").is(":checked")) {
+            const abil = config.extraAttackAbility;
+            const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+            config.secondaryAbilityMod = abilMod;
+            config.secondaryAbilityKey = abil;
+            config.secondaryAbilityLabel = config.extraAttackAbilityLabel;
+            const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+            const tag = config.extraAttackAbilityLabel || `${sign} ${abil.toUpperCase()}`;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [${tag}]`;
+          }
+
+          if (config.hasExtraDamageAbility && config.extraDamageAbility && html.find("#extra-ability-dmg-toggle").is(":checked")) {
+            const abil = config.extraDamageAbility;
+            const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+            config.secondaryDamageAbilityMod = abilMod;
+            config.secondaryDamageAbilityKey = abil;
+            config.secondaryDamageAbilityLabel = config.extraDamageAbilityLabel;
+            const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+            const tag = config.extraDamageAbilityLabel || `${sign} ${abil.toUpperCase()} Dmg`;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [${tag}]`;
+          }
+
+          if (config.hasSaveRider && html.find("#save-rider-toggle").is(":checked")) {
+            config.isSaveRiderActive = true;
+            const tag = config.saveRiderLabel || "Save";
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [${tag}]`;
           }
 
           if (config.isVersatile && html.find("#versatile-toggle").is(":checked")) {
@@ -7029,6 +7249,20 @@ Click a numbered modifier badge to execute a roll.</div>
             dmgMod += 10;
           }
 
+          // Check Secondary Ability Atk toggle
+          const isExtraAbility = html.find("#extra-ability-atk-toggle").is(":checked");
+          if (config.hasExtraAttackAbility && config.extraAttackAbility && isExtraAbility) {
+            const abilMod = Number(actor.system?.abilities?.[config.extraAttackAbility]?.mod) || 0;
+            atkMod += abilMod;
+          }
+
+          // Check Secondary Ability Damage toggle
+          const isExtraDmgAbility = html.find("#extra-ability-dmg-toggle").is(":checked");
+          if (config.hasExtraDamageAbility && config.extraDamageAbility && isExtraDmgAbility) {
+            const abilMod = Number(actor.system?.abilities?.[config.extraDamageAbility]?.mod) || 0;
+            dmgMod += abilMod;
+          }
+
           // Check Versatile toggle
           let baseDieSize = d.dieSize;
           const isVersatileChecked = html.find("#versatile-toggle").is(":checked");
@@ -7092,7 +7326,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Live formula updates on keystroke and checkbox changes
         html.on("input", "#weapon-extra-atk, #weapon-extra-dmg", updateWeaponOverviewTotals);
-        html.on("change", "#gwm-toggle, #versatile-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
+        html.on("change", "#gwm-toggle, #versatile-toggle, #extra-ability-atk-toggle, #extra-ability-dmg-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
 
         html.on("click", ".weapon-card", function () {
           selectedWeaponKey = $(this).data("key");
@@ -7760,7 +7994,9 @@ Click a numbered modifier badge to execute a roll.</div>
     }, {
       width: isInitiallyCompact ? 310 : 980,
       height: "auto",
-      resizable: true
+      resizable: true,
+      ...(dialogOptions?.top !== undefined ? { top: dialogOptions.top } : {}),
+      ...(dialogOptions?.left !== undefined ? { left: dialogOptions.left } : {})
     }).render(true);
   };
 

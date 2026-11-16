@@ -197,7 +197,9 @@ function registerSocketHandlers() {
       weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
       HAS_HALFLING_LUCKY, HALFLING_LUCKY_REROLL_THRESHOLD, GWF_REROLL_THRESHOLD,
       superAdv, additionalDamageComponents, chatCardTitle,
-      extraAttackModifier, extraDamageModifier
+      extraAttackModifier, extraDamageModifier,
+      secondaryAbilityMod, secondaryAbilityKey, secondaryAbilityLabel,
+      secondaryDamageAbilityMod, secondaryDamageAbilityKey, secondaryDamageAbilityLabel
     } = config;
 
     const isProficient = config.isProficient !== undefined ? (String(config.isProficient) === "true" || config.isProficient === true) : true;
@@ -213,7 +215,8 @@ function registerSocketHandlers() {
 
     const abilityMod = actor.system.abilities[abilityScore]?.mod || 0;
     const prof = isProficient ? (actor.system.attributes.prof || 0) : 0;
-    const totalAttackModifier = abilityMod + prof + weaponModifier + attackCircumstanceModifier;
+    const secAbilBonus = Number(secondaryAbilityMod) || 0;
+    const totalAttackModifier = abilityMod + prof + weaponModifier + attackCircumstanceModifier + secAbilBonus;
     const actorName = actor.name;
     const speaker = ChatMessage.getSpeaker({ actor });
 
@@ -368,29 +371,64 @@ function registerSocketHandlers() {
 
     async function _rollDamageDice() {
       if (damageDiceCount <= 0 || !cleanDieSize || maxDieValue <= 0) {
-        return { finalCombinedDieResult: 0, finalDieResults: [], allDieRolls: [], rerollSummary: [] };
+        return { finalCombinedDieResult: 0, finalDieResults: [], allDieRolls: [], rerollSummary: [], savageAttackerSummary: null };
       }
       const damageDieFormula = `1${cleanDieSize}`;
-      const allDieRolls = [];
-      const finalDieResults = [];
-      const rerollSummary = [];
 
-      for (let i = 0; i < damageDiceCount; i++) {
-        let initialRoll = await new Roll(damageDieFormula).evaluate();
-        let initialResult = Number(initialRoll.total);
-        allDieRolls.push(initialRoll);
+      async function _rollSinglePass() {
+        const passRolls = [];
+        const passResults = [];
+        const passRerolls = [];
+        for (let i = 0; i < damageDiceCount; i++) {
+          let initialRoll = await new Roll(damageDieFormula).evaluate();
+          let initialResult = Number(initialRoll.total);
+          passRolls.push(initialRoll);
 
-        if (gwfThreshold > 0 && initialResult <= gwfThreshold) {
-          let reroll = await new Roll(damageDieFormula).evaluate();
-          allDieRolls.push(reroll);
-          finalDieResults.push(Number(reroll.total));
-          rerollSummary.push({ original: initialResult, reroll: Number(reroll.total) });
-        } else {
-          finalDieResults.push(initialResult);
+          if (gwfThreshold > 0 && initialResult <= gwfThreshold) {
+            let reroll = await new Roll(damageDieFormula).evaluate();
+            passRolls.push(reroll);
+            passResults.push(Number(reroll.total));
+            passRerolls.push({ original: initialResult, reroll: Number(reroll.total) });
+          } else {
+            passResults.push(initialResult);
+          }
         }
+        const total = passResults.reduce((a, b) => a + b, 0);
+        return { total, passResults, passRolls, passRerolls };
       }
-      const finalCombinedDieResult = finalDieResults.reduce((a, b) => a + b, 0);
-      return { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary };
+
+      if (config.isSavageAttackerActive) {
+        const pass1 = await _rollSinglePass();
+        const pass2 = await _rollSinglePass();
+        const allDieRolls = [...pass1.passRolls, ...pass2.passRolls];
+        const kept = pass2.total > pass1.total ? pass2 : pass1;
+        const dropped = pass2.total > pass1.total ? pass1 : pass2;
+        const savageAttackerSummary = {
+          roll1Total: pass1.total,
+          roll2Total: pass2.total,
+          roll1Dice: pass1.passResults,
+          roll2Dice: pass2.passResults,
+          keptTotal: kept.total,
+          keptDice: kept.passResults,
+          droppedTotal: dropped.total
+        };
+        return {
+          finalCombinedDieResult: kept.total,
+          finalDieResults: kept.passResults,
+          allDieRolls,
+          rerollSummary: kept.passRerolls,
+          savageAttackerSummary
+        };
+      }
+
+      const pass = await _rollSinglePass();
+      return {
+        finalCombinedDieResult: pass.total,
+        finalDieResults: pass.passResults,
+        allDieRolls: pass.passRolls,
+        rerollSummary: pass.passRerolls,
+        savageAttackerSummary: null
+      };
     }
 
     async function _rollAdditionalDamage(selectedDamageComponents, isCritical) {
@@ -431,8 +469,25 @@ function registerSocketHandlers() {
       return { additionalDamageTotal, critOnlyDamageTotal, additionalDamageResults: results, allAdditionalDamageRolls };
     }
 
-    function _generateDamageDetailsHTML(flavorText, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary, finalDieResults = []) {
+    function _generateDamageDetailsHTML(flavorText, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary, finalDieResults = [], savageAttackerSummary = null) {
       let html = `<p style="text-align: center; font-weight: bold; margin: 5px 0;">${flavorText}</p>`;
+      if (savageAttackerSummary) {
+        const r1Display = (savageAttackerSummary.roll1Dice && savageAttackerSummary.roll1Dice.length > 1)
+          ? `${savageAttackerSummary.roll1Total} [${savageAttackerSummary.roll1Dice.join('+')}]`
+          : savageAttackerSummary.roll1Total;
+        const r2Display = (savageAttackerSummary.roll2Dice && savageAttackerSummary.roll2Dice.length > 1)
+          ? `${savageAttackerSummary.roll2Total} [${savageAttackerSummary.roll2Dice.join('+')}]`
+          : savageAttackerSummary.roll2Total;
+        const keptDisplay = (savageAttackerSummary.keptDice && savageAttackerSummary.keptDice.length > 1)
+          ? `${savageAttackerSummary.keptTotal} [${savageAttackerSummary.keptDice.join('+')}]`
+          : savageAttackerSummary.keptTotal;
+
+        html += `
+        <div style="padding: 4px 6px; margin: 4px 0; border: 1px solid #8c3b2d; border-radius: 4px; background-color: rgba(140, 59, 45, 0.08); font-size: 0.85em; text-align: center;">
+          <span style="font-weight: 700; color: #8c3b2d;">Savage Attacker:</span>
+          <span>Rolled <strong>${r1Display}</strong> vs <strong>${r2Display}</strong> &rarr; <strong style="color: #18520b;">Kept ${keptDisplay}</strong></span>
+        </div>`;
+      }
       if (rerollSummary.length > 0) {
         html += `<div style="padding: 5px; margin: 5px 0; border: 1px solid #7289DA; border-radius: 4px; background-color: #e6eaff; font-size: 0.85em;">
                 <p style="margin: 0 0 5px; font-weight: 600; color: #7289DA;">Rerolls:</p>
@@ -469,7 +524,7 @@ function registerSocketHandlers() {
     }
 
     const { attackRoll1, rollHtml1, rerollSummary1, attackRoll2, rollHtml2, rerollSummary2, extraRolls, isCritical } = await _rollAttackAndCheckCrit();
-    const { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary } = await _rollDamageDice();
+    const { finalCombinedDieResult, finalDieResults, allDieRolls, rerollSummary, savageAttackerSummary } = await _rollDamageDice();
     const activeComponents = (additionalDamageComponents || []).filter(c => c.isActive);
     const cleanExtraDmg = (extraDamageModifier || "").trim();
     if (cleanExtraDmg) {
@@ -502,7 +557,8 @@ function registerSocketHandlers() {
     const extraCritLabel = (config.extraCriticalLabel || "Extra Crit").trim();
     const extraCritType = (config.extraCriticalType || damageType).trim();
 
-    const damageBonus = abilityMod + weaponModifier;
+    const secDmgAbilBonus = Number(secondaryDamageAbilityMod) || 0;
+    const damageBonus = abilityMod + weaponModifier + secDmgAbilBonus;
     const flatBonus = damageModifier;
     const maximizedWeaponDice = damageDiceCount * maxDieValue;
     const totalMaxDiceCrit = maximizedWeaponDice + critAdditionalDamageComponent;
@@ -513,7 +569,7 @@ function registerSocketHandlers() {
     const finalRolls = [attackRoll1, ...extraRolls, ...allDieRolls, ...allAdditionalDamageRolls];
     const baseDamageFormulaSummary = damageDiceCount > 0 && cleanDieSize ? `${damageDiceCount}${cleanDieSize}` : "Flat Dmg";
     const baseDamageFlavor = `${damageType.charAt(0).toUpperCase() + damageType.slice(1)} Damage (${baseDamageFormulaSummary})`;
-    const normalDamageHTML = _generateDamageDetailsHTML(baseDamageFlavor, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary, finalDieResults);
+    const normalDamageHTML = _generateDamageDetailsHTML(baseDamageFlavor, damageBonus, flatBonus, finalCombinedDieResult, rerollSummary, finalDieResults, savageAttackerSummary);
 
     let additionalDamageSectionHTML = '';
     let critAdditionalDiceList = '';
@@ -581,10 +637,30 @@ function registerSocketHandlers() {
       ? `<li style="list-style-type: disc;">Weapon Damage: <strong>${damageDiceCount}${cleanDieSize} (${baseDamageTypeDisplay})</strong></li>`
       : `<li style="list-style-type: disc;">Base Damage: <strong>Flat (${baseDamageTypeDisplay})</strong></li>`;
 
+    const secDmgAbilSign = secDmgAbilBonus >= 0 ? '+' : '';
+    const secDmgAbilKeyUpper = (secondaryDamageAbilityKey || "").toUpperCase();
+    const secDmgAbilDisplayLabel = secondaryDamageAbilityLabel ? `${secondaryDamageAbilityLabel} (${secDmgAbilKeyUpper})` : `Secondary Ability (${secDmgAbilKeyUpper})`;
+
+    let savageAttackerBreakdownLine = '';
+    if (savageAttackerSummary) {
+      const r1 = (savageAttackerSummary.roll1Dice && savageAttackerSummary.roll1Dice.length > 1)
+        ? `${savageAttackerSummary.roll1Total} [${savageAttackerSummary.roll1Dice.join('+')}]`
+        : savageAttackerSummary.roll1Total;
+      const r2 = (savageAttackerSummary.roll2Dice && savageAttackerSummary.roll2Dice.length > 1)
+        ? `${savageAttackerSummary.roll2Total} [${savageAttackerSummary.roll2Dice.join('+')}]`
+        : savageAttackerSummary.roll2Total;
+      const kp = (savageAttackerSummary.keptDice && savageAttackerSummary.keptDice.length > 1)
+        ? `${savageAttackerSummary.keptTotal} [${savageAttackerSummary.keptDice.join('+')}]`
+        : savageAttackerSummary.keptTotal;
+      savageAttackerBreakdownLine = `<li style="list-style-type: disc;">Savage Attacker: <strong>Kept ${kp}</strong> (Rolled ${r1}, ${r2})</li>`;
+    }
+
     let damageDiceSummary = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
     <li style="list-style-type: disc;">Ability Mod (${abilityScore.toUpperCase()}): <strong>${abilityModSign}${abilityMod}</strong></li>
     ${weaponDamageLine}
+    ${savageAttackerBreakdownLine}
     ${weaponModifier !== 0 ? `<li style="list-style-type: disc;">Weapon Modifier: <strong>${weaponModSign}${weaponModifier}</strong></li>` : ''}
+    ${secDmgAbilBonus !== 0 ? `<li style="list-style-type: disc;">${secDmgAbilDisplayLabel}: <strong>${secDmgAbilSign}${secDmgAbilBonus}</strong></li>` : ''}
     ${damageModifier !== 0 ? `<li style="list-style-type: disc;">Other Damage Mod: <strong>${flatModSign}${damageModifier}</strong></li>` : ''}`;
     additionalDamageResults.forEach(c => {
       if (c.onlyCrit) return;
@@ -596,10 +672,14 @@ function registerSocketHandlers() {
     const attackCircumstanceModSign = attackCircumstanceModifier >= 0 ? '+' : '';
     const weaponModifierAttackSign = weaponModifier >= 0 ? '+' : '';
     const abilityModAttackSign = abilityMod >= 0 ? '+' : '';
+    const secAbilSign = secAbilBonus >= 0 ? '+' : '';
+    const secAbilKeyUpper = (secondaryAbilityKey || "").toUpperCase();
+    const secAbilDisplayLabel = secondaryAbilityLabel ? `${secondaryAbilityLabel} (${secAbilKeyUpper})` : `Secondary Ability (${secAbilKeyUpper})`;
     const attackModifiersList = `<ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
     <li style="list-style-type: disc;">Ability Mod (${abilityScore.toUpperCase()}): <strong>${abilityModAttackSign}${abilityMod}</strong></li>
     <li style="list-style-type: disc;">Proficiency Bonus (PB): <strong>+${prof}</strong></li>
     ${weaponModifier !== 0 ? `<li style="list-style-type: disc;">Weapon Modifier: <strong>${weaponModifierAttackSign}${weaponModifier}</strong></li>` : ''}
+    ${secAbilBonus !== 0 ? `<li style="list-style-type: disc;">${secAbilDisplayLabel}: <strong>${secAbilSign}${secAbilBonus}</strong></li>` : ''}
     ${attackCircumstanceModifier !== 0 ? `<li style="list-style-type: disc;">Other Mod: <strong>${attackCircumstanceModSign}${attackCircumstanceModifier}</strong></li>` : ''}
   </ul>`;
 
@@ -708,6 +788,7 @@ function registerSocketHandlers() {
     if (isSuperAdv) perkBadges.push("Super Adv");
     if (isLucky) perkBadges.push("Lucky");
     if (gwfThreshold > 0) perkBadges.push(`GWF ≤${gwfThreshold}`);
+    if (config.isSavageAttackerActive) perkBadges.push("Savage Attacker");
     if (rawCritBonus !== "") perkBadges.push("Crit Bonus Dmg");
 
     const allBadgesHtml = [
@@ -718,6 +799,52 @@ function registerSocketHandlers() {
     const tagsBlock = allBadgesHtml
       ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 5px;">${allBadgesHtml}</div>`
       : "";
+
+    let saveRiderHTML = "";
+    if (config.hasSaveRider && config.isSaveRiderActive) {
+      let saveDC = 10;
+      if (config.saveRiderDcType === "ability") {
+        const dcAbil = config.saveRiderDcAbility || "str";
+        const dcAbilMod = Number(actor.system?.abilities?.[dcAbil]?.mod) || 0;
+        const pb = Number(actor.system?.attributes?.prof) || 2;
+        saveDC = 8 + pb + dcAbilMod;
+      } else {
+        saveDC = Number(config.saveRiderDcFixed) || 13;
+      }
+
+      const saveAbilUpper = (config.saveRiderAbility || "con").toUpperCase();
+      const riderLabel = config.saveRiderLabel || "Saving Throw";
+      const safeText = (s) => (typeof foundry !== "undefined" && foundry.utils?.escapeHTML) ? foundry.utils.escapeHTML(s) : String(s || "").replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+      let riderDamageHtml = "";
+      if (config.saveRiderDamageFormula && config.saveRiderDamageFormula.trim() !== "") {
+        try {
+          const riderRoll = await new Roll(config.saveRiderDamageFormula.trim()).evaluate();
+          finalRolls.push(riderRoll);
+          const riderTotal = riderRoll.total;
+          const riderType = (config.saveRiderDamageType || "").trim();
+          const riderTypeDisp = riderType ? ` ${riderType.toUpperCase() === 'BPS' ? 'BPS' : (riderType.charAt(0).toUpperCase() + riderType.slice(1))}` : "";
+          const successText = config.saveRiderSaveSuccess === "none" ? "No dmg on save" : "Half dmg on save";
+          riderDamageHtml = `<div style="font-size: 0.9em; margin-top: 3px;"><strong>Damage:</strong> <span style="font-size: 1.1em; font-weight: bold; color: #18520b;">${riderTotal}</span>${riderTypeDisp} <small style="color: #666;">(${config.saveRiderDamageFormula}, ${successText})</small></div>`;
+        } catch (e) {
+          console.warn("[CustomRolls] Could not evaluate save rider damage formula:", e);
+        }
+      }
+
+      const effectHtml = config.saveRiderEffect && config.saveRiderEffect.trim() !== ""
+        ? `<div style="font-size: 0.88em; color: #555; margin-top: 3px;"><strong>On Failure:</strong> <em>${safeText(config.saveRiderEffect.trim())}</em></div>`
+        : "";
+
+      saveRiderHTML = `
+      <div style="margin: 6px 0; padding: 6px 8px; background: rgba(107, 63, 148, 0.08); border: 1px solid rgba(107, 63, 148, 0.3); border-radius: 4px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <span style="font-weight: 700; font-size: 0.95em; color: #502772;"><i class="fas fa-shield-alt"></i> ${safeText(riderLabel)}</span>
+          <span style="font-weight: 800; font-size: 0.95em; color: #502772; background: rgba(107, 63, 148, 0.15); padding: 1px 6px; border-radius: 3px;">DC ${saveDC} ${saveAbilUpper}</span>
+        </div>
+        ${riderDamageHtml}
+        ${effectHtml}
+      </div>`;
+    }
 
     const chatContent = `
     <p style="margin: 0 0 4px 0;"><strong>${actorName}: ${chatCardTitle}</strong></p>
@@ -738,6 +865,7 @@ function registerSocketHandlers() {
     <hr style="margin: 5px 0 5px; border-top: 2px solid #343a40;">
     ${normalDamageHTML}
     ${finalSummaryHTML}
+    ${saveRiderHTML}
     ${contentSummary}`;
 
     await ChatMessage.create({

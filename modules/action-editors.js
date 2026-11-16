@@ -1182,6 +1182,10 @@ export function initActionEditors() {
                 <span>Allow GWM / Sharpshooter (-5 / +10)</span>
                 <input type="checkbox" name="hasGWM"/>
               </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #8c3b2d; font-weight: bold;">
+                <span>Allow Savage Attacker (Roll damage twice, keep highest)</span>
+                <input type="checkbox" name="hasSavageAttacker"/>
+              </label>
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                 <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer; color: #2b7489; font-weight: bold;">
                   <input type="checkbox" name="isVersatile"/>
@@ -1190,6 +1194,87 @@ export function initActionEditors() {
                 <div style="display: flex; align-items: center; gap: 4px;">
                   <span style="font-size: 0.75em; color: #555;">2H Die: d</span>
                   <input type="text" name="versatileDie" value="10" style="width: 36px; height: 22px; font-size: 0.8em; text-align: center;"/>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(0,0,0,0.02); border: 1px solid #e0e0e0; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #4b5d88; font-weight: bold;">
+                  <span>Add Secondary Ability to Attack</span>
+                  <input type="checkbox" name="hasExtraAttackAbility"/>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                  <select name="extraAttackAbility" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    <option value="">-- None --</option>
+                    <option value="str">STR</option>
+                    <option value="dex">DEX</option>
+                    <option value="con">CON</option>
+                    <option value="int">INT</option>
+                    <option value="wis">WIS</option>
+                    <option value="cha">CHA</option>
+                  </select>
+                  <input type="text" name="extraAttackAbilityLabel" placeholder="Feature label (e.g. Sacred Weapon)" style="flex: 2; height: 26px; font-size: 0.85em;"/>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(0,0,0,0.02); border: 1px solid #e0e0e0; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #82442d; font-weight: bold;">
+                  <span>Add Secondary Ability to Damage</span>
+                  <input type="checkbox" name="hasExtraDamageAbility"/>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                  <select name="extraDamageAbility" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    <option value="">-- None --</option>
+                    <option value="str">STR</option>
+                    <option value="dex">DEX</option>
+                    <option value="con">CON</option>
+                    <option value="int">INT</option>
+                    <option value="wis">WIS</option>
+                    <option value="cha">CHA</option>
+                  </select>
+                  <input type="text" name="extraDamageAbilityLabel" placeholder="Feature label (e.g. Aura of Hate)" style="flex: 2; height: 26px; font-size: 0.85em;"/>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(107, 63, 148, 0.04); border: 1px solid #d4c5e2; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #502772; font-weight: bold;">
+                  <span>Saving Throw Rider (e.g. Maneuvers, Poison, Slaying)</span>
+                  <input type="checkbox" name="hasSaveRider"/>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                  <input type="text" name="saveRiderLabel" placeholder="Rider Name (e.g. Trip Attack, Javelin of Lightning)" style="flex: 2; height: 26px; font-size: 0.85em;"/>
+                  <select name="saveRiderAbility" style="flex: 1; height: 26px; font-size: 0.85em;" title="Target Saving Throw Ability">
+                    <option value="str">STR Save</option>
+                    <option value="dex">DEX Save</option>
+                    <option value="con" selected>CON Save</option>
+                    <option value="int">INT Save</option>
+                    <option value="wis">WIS Save</option>
+                    <option value="cha">CHA Save</option>
+                  </select>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <select name="saveRiderDcType" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    <option value="fixed" selected>Fixed DC</option>
+                    <option value="ability">8 + PB + Ability</option>
+                  </select>
+                  <input type="number" name="saveRiderDcFixed" value="13" placeholder="DC (e.g. 13)" style="flex: 1; height: 26px; font-size: 0.85em;"/>
+                  <select name="saveRiderDcAbility" style="flex: 1; height: 26px; font-size: 0.85em;" title="DC Calculation Ability">
+                    <option value="str" selected>STR DC</option>
+                    <option value="dex">DEX DC</option>
+                    <option value="con">CON DC</option>
+                    <option value="int">INT DC</option>
+                    <option value="wis">WIS DC</option>
+                    <option value="cha">CHA DC</option>
+                  </select>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <input type="text" name="saveRiderDamageFormula" placeholder="Rider Dmg (e.g. 4d6)" style="flex: 1; height: 26px; font-size: 0.85em;"/>
+                  <select name="saveRiderDamageType" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    ${generateDamageTypeOptions("lightning")}
+                  </select>
+                  <select name="saveRiderSaveSuccess" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    <option value="half" selected>Half on Save</option>
+                    <option value="none">No Dmg on Save</option>
+                  </select>
+                </div>
+                <div>
+                  <input type="text" name="saveRiderEffect" placeholder="Failure Effect (e.g. Knocked Prone, Poisoned 1 min)" style="width: 100%; height: 26px; font-size: 0.85em;"/>
                 </div>
               </div>
             </div>
@@ -1234,8 +1319,25 @@ export function initActionEditors() {
               const HALFLING_LUCKY_REROLL_THRESHOLD = parseInt(getVal("HALFLING_LUCKY_REROLL_THRESHOLD")) || 0;
               const superAdv = getCheck("superAdv");
               const hasGWM = getCheck("hasGWM");
+              const hasSavageAttacker = getCheck("hasSavageAttacker");
               const isVersatile = getCheck("isVersatile");
               const versatileDie = getVal("versatileDie")?.replace(/^d/i, "").trim() || "10";
+              const hasExtraAttackAbility = getCheck("hasExtraAttackAbility");
+              const extraAttackAbility = getVal("extraAttackAbility") || "";
+              const extraAttackAbilityLabel = getVal("extraAttackAbilityLabel")?.trim() || "";
+              const hasExtraDamageAbility = getCheck("hasExtraDamageAbility");
+              const extraDamageAbility = getVal("extraDamageAbility") || "";
+              const extraDamageAbilityLabel = getVal("extraDamageAbilityLabel")?.trim() || "";
+              const hasSaveRider = getCheck("hasSaveRider");
+              const saveRiderLabel = getVal("saveRiderLabel")?.trim() || "";
+              const saveRiderAbility = getVal("saveRiderAbility") || "con";
+              const saveRiderDcType = getVal("saveRiderDcType") || "fixed";
+              const saveRiderDcFixed = parseInt(getVal("saveRiderDcFixed")) || 13;
+              const saveRiderDcAbility = getVal("saveRiderDcAbility") || "str";
+              const saveRiderDamageFormula = getVal("saveRiderDamageFormula")?.trim() || "";
+              const saveRiderDamageType = getVal("saveRiderDamageType") || "lightning";
+              const saveRiderSaveSuccess = getVal("saveRiderSaveSuccess") || "half";
+              const saveRiderEffect = getVal("saveRiderEffect")?.trim() || "";
 
               const components = [];
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
@@ -1258,8 +1360,12 @@ export function initActionEditors() {
                 macroName, chatCardTitle, abilityScore, isProficient, damageDiceCount, damageDieSize, damageType,
                 weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
                 extraCriticalBonus, GWF_REROLL_THRESHOLD, HAS_HALFLING_LUCKY,
-                HALFLING_LUCKY_REROLL_THRESHOLD, superAdv, hasGWM,
+                HALFLING_LUCKY_REROLL_THRESHOLD, superAdv, hasGWM, hasSavageAttacker,
                 isVersatile, versatileDie,
+                hasExtraAttackAbility, extraAttackAbility, extraAttackAbilityLabel,
+                hasExtraDamageAbility, extraDamageAbility, extraDamageAbilityLabel,
+                hasSaveRider, saveRiderLabel, saveRiderAbility, saveRiderDcType, saveRiderDcFixed,
+                saveRiderDcAbility, saveRiderDamageFormula, saveRiderDamageType, saveRiderSaveSuccess, saveRiderEffect,
                 addedBy: "gm", gmModified: true,
                 additionalDamageComponents: components
               };
@@ -2167,6 +2273,10 @@ export function initActionEditors() {
 
               const extras = rawConfig.additionalDamageComponents || [];
               const hasGWM = Boolean(rawConfig.hasGWM);
+              const hasSavageAttacker = Boolean(rawConfig.hasSavageAttacker);
+              const hasExtraAttackAbility = Boolean(rawConfig.hasExtraAttackAbility && rawConfig.extraAttackAbility);
+              const hasExtraDamageAbility = Boolean(rawConfig.hasExtraDamageAbility && rawConfig.extraDamageAbility);
+              const hasSaveRider = Boolean(rawConfig.hasSaveRider);
 
               // Build checkboxes for extra damage sources
               let extrasCheckboxesHtml = "";
@@ -2194,11 +2304,74 @@ export function initActionEditors() {
               `;
               }
 
+              let savageAttackerToggleHtml = "";
+              if (hasSavageAttacker) {
+                savageAttackerToggleHtml = `
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; font-weight: bold; color: #8c3b2d; padding: 3px 6px; background: rgba(140,59,45,0.08); border-radius: 3px; cursor: pointer; margin-top: 6px;">
+                  <span>Savage Attacker (Keep Highest)</span>
+                  <input type="checkbox" id="qm-savage-attacker-toggle" style="margin: 0;">
+                </label>
+              `;
+              }
+
+              let extraAbilityToggleHtml = "";
+              if (hasExtraAttackAbility) {
+                const abil = rawConfig.extraAttackAbility;
+                const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+                const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+                const lbl = rawConfig.extraAttackAbilityLabel || "Secondary Atk Bonus";
+                extraAbilityToggleHtml = `
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; font-weight: bold; color: #4b5d88; padding: 3px 6px; background: rgba(75,93,136,0.08); border-radius: 3px; cursor: pointer; margin-top: 6px;">
+                  <span>${escapeHTML(lbl)} (${sign} ${abil.toUpperCase()})</span>
+                  <input type="checkbox" id="qm-extra-ability-toggle" style="margin: 0;">
+                </label>
+              `;
+              }
+
+              let extraDamageAbilityToggleHtml = "";
+              if (hasExtraDamageAbility) {
+                const abil = rawConfig.extraDamageAbility;
+                const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+                const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+                const lbl = rawConfig.extraDamageAbilityLabel || "Secondary Dmg Bonus";
+                extraDamageAbilityToggleHtml = `
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; font-weight: bold; color: #82442d; padding: 3px 6px; background: rgba(130,68,45,0.08); border-radius: 3px; cursor: pointer; margin-top: 6px;">
+                  <span>${escapeHTML(lbl)} (${sign} ${abil.toUpperCase()})</span>
+                  <input type="checkbox" id="qm-extra-dmg-ability-toggle" style="margin: 0;">
+                </label>
+              `;
+              }
+
+              let saveRiderToggleHtml = "";
+              if (hasSaveRider) {
+                let computedDC = 10;
+                if (rawConfig.saveRiderDcType === "ability") {
+                  const dcAbil = rawConfig.saveRiderDcAbility || "str";
+                  const dcAbilMod = Number(actor.system?.abilities?.[dcAbil]?.mod) || 0;
+                  const pb = Number(actor.system?.attributes?.prof) || 2;
+                  computedDC = 8 + pb + dcAbilMod;
+                } else {
+                  computedDC = Number(rawConfig.saveRiderDcFixed) || 13;
+                }
+                const saveAbil = (rawConfig.saveRiderAbility || "con").toUpperCase();
+                const riderLabel = rawConfig.saveRiderLabel || "Save Rider";
+                saveRiderToggleHtml = `
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; font-weight: bold; color: #502772; padding: 3px 6px; background: rgba(107,63,148,0.08); border-radius: 3px; cursor: pointer; margin-top: 6px;">
+                  <span>${escapeHTML(riderLabel)} (DC ${computedDC} ${saveAbil})</span>
+                  <input type="checkbox" id="qm-save-rider-toggle" style="margin: 0;">
+                </label>
+              `;
+              }
+
               const promptHtml = `
               <div style="font-family: inherit; padding: 4px;">
                 <label style="font-weight: bold; font-size: 0.85em; display: block; margin-bottom: 3px;">Macro Name:</label>
                 <input type="text" id="qm-name-input" value="${escapeHTML(`${actor.name}: ${choice}`)}" style="width: 100%; height: 28px; font-size: 0.9em; margin-bottom: 6px;" />
+                ${extraAbilityToggleHtml}
+                ${extraDamageAbilityToggleHtml}
+                ${saveRiderToggleHtml}
                 ${gwmToggleHtml}
+                ${savageAttackerToggleHtml}
                 ${extrasCheckboxesHtml}
               </div>
             `;
@@ -2224,6 +2397,39 @@ export function initActionEditors() {
                         targetData.attackCircumstanceModifier = (Number(targetData.attackCircumstanceModifier) || 0) - 5;
                         targetData.damageModifier = (Number(targetData.damageModifier) || 0) + 10;
                         targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [GWM/SS]`;
+                      }
+
+                      if (hasSavageAttacker && promptModal.find("#qm-savage-attacker-toggle").is(":checked")) {
+                        targetData.isSavageAttackerActive = true;
+                        targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [Savage Attacker]`;
+                      }
+
+                      if (hasExtraAttackAbility && promptModal.find("#qm-extra-ability-toggle").is(":checked")) {
+                        const abil = targetData.extraAttackAbility;
+                        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+                        targetData.secondaryAbilityMod = abilMod;
+                        targetData.secondaryAbilityKey = abil;
+                        targetData.secondaryAbilityLabel = targetData.extraAttackAbilityLabel;
+                        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+                        const tagLbl = targetData.extraAttackAbilityLabel || `${sign} ${abil.toUpperCase()}`;
+                        targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [${tagLbl}]`;
+                      }
+
+                      if (hasExtraDamageAbility && promptModal.find("#qm-extra-dmg-ability-toggle").is(":checked")) {
+                        const abil = targetData.extraDamageAbility;
+                        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+                        targetData.secondaryDamageAbilityMod = abilMod;
+                        targetData.secondaryDamageAbilityKey = abil;
+                        targetData.secondaryDamageAbilityLabel = targetData.extraDamageAbilityLabel;
+                        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+                        const tagLbl = targetData.extraDamageAbilityLabel || `${sign} ${abil.toUpperCase()} Dmg`;
+                        targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [${tagLbl}]`;
+                      }
+
+                      if (hasSaveRider && promptModal.find("#qm-save-rider-toggle").is(":checked")) {
+                        targetData.isSaveRiderActive = true;
+                        const tagLbl = targetData.saveRiderLabel || "Save";
+                        targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [${tagLbl}]`;
                       }
 
                       if (targetData.additionalDamageComponents) {
@@ -2562,6 +2768,10 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                 <span>Allow GWM / Sharpshooter (-5 / +10)</span>
                 <input type="checkbox" name="hasGWM" ${item.hasGWM ? 'checked' : ''}/>
               </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #8c3b2d; font-weight: bold;">
+                <span>Allow Savage Attacker (Roll damage twice, keep highest)</span>
+                <input type="checkbox" name="hasSavageAttacker" ${item.hasSavageAttacker ? 'checked' : ''}/>
+              </label>
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                 <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer; color: #2b7489; font-weight: bold;">
                   <input type="checkbox" name="isVersatile" ${item.isVersatile ? 'checked' : ''}/>
@@ -2570,6 +2780,87 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                 <div style="display: flex; align-items: center; gap: 4px;">
                   <span style="font-size: 0.75em; color: #555;">2H Die: d</span>
                   <input type="text" name="versatileDie" value="${item.versatileDie || '10'}" style="width: 36px; height: 22px; font-size: 0.8em; text-align: center;"/>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(0,0,0,0.02); border: 1px solid #e0e0e0; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #4b5d88; font-weight: bold;">
+                  <span>Add Secondary Ability to Attack</span>
+                  <input type="checkbox" name="hasExtraAttackAbility" ${item.hasExtraAttackAbility ? 'checked' : ''}/>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                  <select name="extraAttackAbility" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    <option value="" ${!item.extraAttackAbility ? 'selected' : ''}>-- None --</option>
+                    <option value="str" ${item.extraAttackAbility === 'str' ? 'selected' : ''}>STR</option>
+                    <option value="dex" ${item.extraAttackAbility === 'dex' ? 'selected' : ''}>DEX</option>
+                    <option value="con" ${item.extraAttackAbility === 'con' ? 'selected' : ''}>CON</option>
+                    <option value="int" ${item.extraAttackAbility === 'int' ? 'selected' : ''}>INT</option>
+                    <option value="wis" ${item.extraAttackAbility === 'wis' ? 'selected' : ''}>WIS</option>
+                    <option value="cha" ${item.extraAttackAbility === 'cha' ? 'selected' : ''}>CHA</option>
+                  </select>
+                  <input type="text" name="extraAttackAbilityLabel" value="${item.extraAttackAbilityLabel || ''}" placeholder="Feature label (e.g. Sacred Weapon)" style="flex: 2; height: 26px; font-size: 0.85em;"/>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(0,0,0,0.02); border: 1px solid #e0e0e0; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #82442d; font-weight: bold;">
+                  <span>Add Secondary Ability to Damage</span>
+                  <input type="checkbox" name="hasExtraDamageAbility" ${item.hasExtraDamageAbility ? 'checked' : ''}/>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                  <select name="extraDamageAbility" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    <option value="" ${!item.extraDamageAbility ? 'selected' : ''}>-- None --</option>
+                    <option value="str" ${item.extraDamageAbility === 'str' ? 'selected' : ''}>STR</option>
+                    <option value="dex" ${item.extraDamageAbility === 'dex' ? 'selected' : ''}>DEX</option>
+                    <option value="con" ${item.extraDamageAbility === 'con' ? 'selected' : ''}>CON</option>
+                    <option value="int" ${item.extraDamageAbility === 'int' ? 'selected' : ''}>INT</option>
+                    <option value="wis" ${item.extraDamageAbility === 'wis' ? 'selected' : ''}>WIS</option>
+                    <option value="cha" ${item.extraDamageAbility === 'cha' ? 'selected' : ''}>CHA</option>
+                  </select>
+                  <input type="text" name="extraDamageAbilityLabel" value="${item.extraDamageAbilityLabel || ''}" placeholder="Feature label (e.g. Aura of Hate)" style="flex: 2; height: 26px; font-size: 0.85em;"/>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(107, 63, 148, 0.04); border: 1px solid #d4c5e2; border-radius: 4px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; cursor: pointer; color: #502772; font-weight: bold;">
+                  <span>Saving Throw Rider (e.g. Maneuvers, Poison, Slaying)</span>
+                  <input type="checkbox" name="hasSaveRider" ${item.hasSaveRider ? 'checked' : ''}/>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                  <input type="text" name="saveRiderLabel" value="${item.saveRiderLabel || ''}" placeholder="Rider Name (e.g. Trip Attack, Javelin of Lightning)" style="flex: 2; height: 26px; font-size: 0.85em;"/>
+                  <select name="saveRiderAbility" style="flex: 1; height: 26px; font-size: 0.85em;" title="Target Saving Throw Ability">
+                    <option value="str" ${item.saveRiderAbility === 'str' ? 'selected' : ''}>STR Save</option>
+                    <option value="dex" ${item.saveRiderAbility === 'dex' ? 'selected' : ''}>DEX Save</option>
+                    <option value="con" ${(!item.saveRiderAbility || item.saveRiderAbility === 'con') ? 'selected' : ''}>CON Save</option>
+                    <option value="int" ${item.saveRiderAbility === 'int' ? 'selected' : ''}>INT Save</option>
+                    <option value="wis" ${item.saveRiderAbility === 'wis' ? 'selected' : ''}>WIS Save</option>
+                    <option value="cha" ${item.saveRiderAbility === 'cha' ? 'selected' : ''}>CHA Save</option>
+                  </select>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <select name="saveRiderDcType" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    <option value="fixed" ${(!item.saveRiderDcType || item.saveRiderDcType === 'fixed') ? 'selected' : ''}>Fixed DC</option>
+                    <option value="ability" ${item.saveRiderDcType === 'ability' ? 'selected' : ''}>8 + PB + Ability</option>
+                  </select>
+                  <input type="number" name="saveRiderDcFixed" value="${item.saveRiderDcFixed ?? 13}" placeholder="DC (e.g. 13)" style="flex: 1; height: 26px; font-size: 0.85em;"/>
+                  <select name="saveRiderDcAbility" style="flex: 1; height: 26px; font-size: 0.85em;" title="DC Calculation Ability">
+                    <option value="str" ${(!item.saveRiderDcAbility || item.saveRiderDcAbility === 'str') ? 'selected' : ''}>STR DC</option>
+                    <option value="dex" ${item.saveRiderDcAbility === 'dex' ? 'selected' : ''}>DEX DC</option>
+                    <option value="con" ${item.saveRiderDcAbility === 'con' ? 'selected' : ''}>CON DC</option>
+                    <option value="int" ${item.saveRiderDcAbility === 'int' ? 'selected' : ''}>INT DC</option>
+                    <option value="wis" ${item.saveRiderDcAbility === 'wis' ? 'selected' : ''}>WIS DC</option>
+                    <option value="cha" ${item.saveRiderDcAbility === 'cha' ? 'selected' : ''}>CHA DC</option>
+                  </select>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <input type="text" name="saveRiderDamageFormula" value="${item.saveRiderDamageFormula || ''}" placeholder="Rider Dmg (e.g. 4d6)" style="flex: 1; height: 26px; font-size: 0.85em;"/>
+                  <select name="saveRiderDamageType" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    ${generateDamageTypeOptions(item.saveRiderDamageType || "lightning")}
+                  </select>
+                  <select name="saveRiderSaveSuccess" style="flex: 1; height: 26px; font-size: 0.85em;">
+                    <option value="half" ${(!item.saveRiderSaveSuccess || item.saveRiderSaveSuccess === 'half') ? 'selected' : ''}>Half on Save</option>
+                    <option value="none" ${item.saveRiderSaveSuccess === 'none' ? 'selected' : ''}>No Dmg on Save</option>
+                  </select>
+                </div>
+                <div>
+                  <input type="text" name="saveRiderEffect" value="${item.saveRiderEffect || ''}" placeholder="Failure Effect (e.g. Knocked Prone, Poisoned 1 min)" style="width: 100%; height: 26px; font-size: 0.85em;"/>
                 </div>
               </div>
             </div>
@@ -2606,8 +2897,25 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               const HALFLING_LUCKY_REROLL_THRESHOLD = parseInt(getVal("HALFLING_LUCKY_REROLL_THRESHOLD")) || 0;
               const superAdv = getCheck("superAdv");
               const hasGWM = getCheck("hasGWM");
+              const hasSavageAttacker = getCheck("hasSavageAttacker");
               const isVersatile = getCheck("isVersatile");
               const versatileDie = getVal("versatileDie")?.replace(/^d/i, "").trim() || "10";
+              const hasExtraAttackAbility = getCheck("hasExtraAttackAbility");
+              const extraAttackAbility = getVal("extraAttackAbility") || "";
+              const extraAttackAbilityLabel = getVal("extraAttackAbilityLabel")?.trim() || "";
+              const hasExtraDamageAbility = getCheck("hasExtraDamageAbility");
+              const extraDamageAbility = getVal("extraDamageAbility") || "";
+              const extraDamageAbilityLabel = getVal("extraDamageAbilityLabel")?.trim() || "";
+              const hasSaveRider = getCheck("hasSaveRider");
+              const saveRiderLabel = getVal("saveRiderLabel")?.trim() || "";
+              const saveRiderAbility = getVal("saveRiderAbility") || "con";
+              const saveRiderDcType = getVal("saveRiderDcType") || "fixed";
+              const saveRiderDcFixed = parseInt(getVal("saveRiderDcFixed")) || 13;
+              const saveRiderDcAbility = getVal("saveRiderDcAbility") || "str";
+              const saveRiderDamageFormula = getVal("saveRiderDamageFormula")?.trim() || "";
+              const saveRiderDamageType = getVal("saveRiderDamageType") || "lightning";
+              const saveRiderSaveSuccess = getVal("saveRiderSaveSuccess") || "half";
+              const saveRiderEffect = getVal("saveRiderEffect")?.trim() || "";
 
               const components = [];
               for (let i = 1; i <= DAMAGE_COMPONENT_COUNT; i++) {
@@ -2631,8 +2939,12 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
                 macroName: newMacroName, chatCardTitle, abilityScore, isProficient, damageDiceCount, damageDieSize, damageType,
                 weaponModifier, attackCircumstanceModifier, damageModifier, CRIT_THRESHOLD,
                 extraCriticalBonus, GWF_REROLL_THRESHOLD, HAS_HALFLING_LUCKY,
-                HALFLING_LUCKY_REROLL_THRESHOLD, superAdv, hasGWM,
+                HALFLING_LUCKY_REROLL_THRESHOLD, superAdv, hasGWM, hasSavageAttacker,
                 isVersatile, versatileDie,
+                hasExtraAttackAbility, extraAttackAbility, extraAttackAbilityLabel,
+                hasExtraDamageAbility, extraDamageAbility, extraDamageAbilityLabel,
+                hasSaveRider, saveRiderLabel, saveRiderAbility, saveRiderDcType, saveRiderDcFixed,
+                saveRiderDcAbility, saveRiderDamageFormula, saveRiderDamageType, saveRiderSaveSuccess, saveRiderEffect,
                 addedBy: "gm", gmModified: true,
                 additionalDamageComponents: components
               };

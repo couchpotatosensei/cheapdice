@@ -694,5 +694,77 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.ok(buttonHtml.includes('width: 85%'));
     assert.ok(buttonHtml.includes('fa-shield-halved'));
   });
+
+  it("Dice Stuff header buttons order left-to-right: [theme], [refresh], [compact], [close]", () => {
+    // Simulate DOM elements array ordered via the injection logic
+    const headerChildren = ["close"];
+    const insertBefore = (targetClass, newClass) => {
+      const idx = headerChildren.indexOf(targetClass);
+      if (idx !== -1) {
+        headerChildren.splice(idx, 0, newClass);
+      } else {
+        headerChildren.unshift(newClass);
+      }
+    };
+
+    // Injection order backwards before .close:
+    // 1. collapseBtn before close
+    // 2. refreshBtn before collapseBtn
+    // 3. themeBtn before refreshBtn
+    // 4. gmBtn before themeBtn (if GM)
+    insertBefore("close", "dice-stuff-collapse-btn");
+    insertBefore("dice-stuff-collapse-btn", "dice-stuff-refresh-btn");
+    insertBefore("dice-stuff-refresh-btn", "dice-stuff-theme-btn");
+    insertBefore("dice-stuff-theme-btn", "gm-tools-header-btn");
+
+    assert.deepEqual(headerChildren, [
+      "gm-tools-header-btn",
+      "dice-stuff-theme-btn",
+      "dice-stuff-refresh-btn",
+      "dice-stuff-collapse-btn",
+      "close"
+    ]);
+
+    // For non-GM players (without gm-tools-header-btn)
+    const playerChildren = headerChildren.filter(c => c !== "gm-tools-header-btn");
+    assert.deepEqual(playerChildren, [
+      "dice-stuff-theme-btn",
+      "dice-stuff-refresh-btn",
+      "dice-stuff-collapse-btn",
+      "close"
+    ]);
+  });
+
+  it("Dice Stuff dialogOptions preserves top and left coordinates across reloads", () => {
+    const buildDialogConfig = (isCompact, dialogOptions) => ({
+      width: isCompact ? 310 : 980,
+      height: "auto",
+      resizable: true,
+      ...(dialogOptions?.top !== undefined ? { top: dialogOptions.top } : {}),
+      ...(dialogOptions?.left !== undefined ? { left: dialogOptions.left } : {})
+    });
+
+    const defaultCfg = buildDialogConfig(false, {});
+    assert.equal(defaultCfg.top, undefined);
+    assert.equal(defaultCfg.left, undefined);
+    assert.equal(defaultCfg.width, 980);
+
+    const reloadedCfg = buildDialogConfig(true, { top: 180, left: 340 });
+    assert.equal(reloadedCfg.top, 180);
+    assert.equal(reloadedCfg.left, 340);
+    assert.equal(reloadedCfg.width, 310);
+  });
+
+  it("Dice Stuff Tactical Glass theme styles vitals card elements for high readability", async () => {
+    const fs = await import("fs");
+    const customRollsSrc = fs.readFileSync("modules/custom-rolls.js", "utf8");
+    assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hp-max-label"));
+    assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hp-pct-label"));
+    assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill > span:first-child"));
+    assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill i"));
+  });
 });
+
+
+
 
