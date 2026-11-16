@@ -3176,7 +3176,7 @@ Click a numbered modifier badge to execute a roll.</div>
     // Vitals: HP and Hit Dice Extraction
     const hpData = actor.system?.attributes?.hp || { value: 0, max: 0, temp: 0 };
     const curHp = Number(hpData.value) || 0;
-    const maxHp = Number(hpData.max) || 0;
+    const maxHp = Number(hpData.effectiveMax ?? hpData.max) || 0;
     const tempHp = Number(hpData.temp) || 0;
 
     // Hit Dice: System aggregate (dnd5e 3+/4+) or computed from class items
@@ -4308,6 +4308,9 @@ Click a numbered modifier badge to execute a roll.</div>
                 <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; margin-left: 2px; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
                   ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
                 </button>
+                <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 18px; min-width: 18px; height: 18px; font-size: 0.68em; padding: 0; border-radius: 2px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                  <i class="fas fa-cog" style="margin: 0;"></i>
+                </button>
               </div>
             </div>
 
@@ -4324,8 +4327,8 @@ Click a numbered modifier badge to execute a roll.</div>
               </div>
             </div>
 
-            <!-- Rest Triggers Row (Compacted to ~60% width) -->
-            <div style="display: flex; gap: 4px; max-width: 110px;">
+            <!-- Rest Triggers Row (Matched to full row width) -->
+            <div style="display: flex; gap: 4px; width: 100%;">
               <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
                 <i class="fas fa-mug-hot"></i> Short
               </button>
@@ -5808,7 +5811,7 @@ Click a numbered modifier badge to execute a roll.</div>
           if (!rawVal) return;
 
           let currentVal = Number(actor.system?.attributes?.hp?.value) || 0;
-          const maxVal = Number(actor.system?.attributes?.hp?.max) || 0;
+          const maxVal = Number(actor.system?.attributes?.hp?.effectiveMax ?? actor.system?.attributes?.hp?.max) || 0;
           let currentTemp = Number(actor.system?.attributes?.hp?.temp) || 0;
 
           const actorUpdates = {};
@@ -5908,6 +5911,41 @@ Click a numbered modifier badge to execute a roll.</div>
           }, { width: 260 }).render(true);
         });
 
+        // HP Settings Cog Button Handler (Opens native dnd5e HitPointsConfig dialog)
+        html.find("#dice-stuff-hp-config-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const HpConfigClass =
+              globalThis.dnd5e?.applications?.actor?.HitPointsConfig ||
+              globalThis.dnd5e?.applications?.actor?.ActorHitPointsConfig ||
+              globalThis.CONFIG?.DND5E?.applications?.actor?.HitPointsConfig;
+
+            if (HpConfigClass) {
+              const isAppV2 =
+                Boolean(HpConfigClass.DEFAULT_OPTIONS) ||
+                Boolean(
+                  globalThis.foundry?.applications?.api?.ApplicationV2 &&
+                  HpConfigClass.prototype instanceof globalThis.foundry.applications.api.ApplicationV2
+                );
+              if (isAppV2) {
+                new HpConfigClass({ document: actor }).render({ force: true });
+              } else {
+                new HpConfigClass(actor).render(true);
+              }
+            } else if (typeof actor.sheet?._onConfigMenu === "function") {
+              actor.sheet._onConfigMenu({
+                preventDefault: () => {},
+                currentTarget: { dataset: { action: "hit-points", config: "hit-points" } }
+              });
+            } else {
+              ui.notifications.warn("Hit Points Configuration is not available in this system version.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error opening Hit Points Config:", err);
+          }
+        });
+
         // Helper to update Hit Dice fraction display
         const refreshHitDiceLabel = (targetActor) => {
           let liveHdCur = 0;
@@ -5940,7 +5978,7 @@ Click a numbered modifier badge to execute a roll.</div>
             if (foundry.utils.hasProperty(changes, "system.attributes.hp")) {
               const liveHp = updatedActor.system?.attributes?.hp || {};
               const liveCur = Number(liveHp.value) ?? 0;
-              const liveMax = Number(liveHp.max) ?? 0;
+              const liveMax = Number(liveHp.effectiveMax ?? liveHp.max) ?? 0;
               const liveTemp = Number(liveHp.temp) ?? 0;
 
               // Only update input if user is not currently actively typing inside it
