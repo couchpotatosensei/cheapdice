@@ -3129,6 +3129,7 @@ Click a numbered modifier badge to execute a roll.</div>
     const curHp = Number(hpData.value) || 0;
     const maxHp = Number(hpData.effectiveMax ?? hpData.max) || 0;
     const tempHp = Number(hpData.temp) || 0;
+    const curAc = actor.system?.attributes?.ac?.value ?? actor.system?.attributes?.ac ?? "--";
 
     // Hit Dice: System aggregate (dnd5e 3+/4+) or computed from class items
     let hdCurrent = 0;
@@ -4267,28 +4268,39 @@ Click a numbered modifier badge to execute a roll.</div>
               </div>
             </div>
 
-            <!-- Hit Dice Tracker & Rest Triggers Column (Auto-Stacked to exact content width) -->
-            <div style="display: inline-flex; flex-direction: column; width: fit-content; gap: 3px;">
-              <!-- Hit Dice Row -->
-              <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
-                <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
-                  <i class="fas fa-dice-d6"></i> HD
-                </span>
-                <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
-                  <span id="dice-stuff-hd-label" style="font-size: 0.74em; font-weight: 700; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
-                  <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;">
-                    Roll Hit Die
+            <!-- Lower Vitals: HD/Rest Stack on Left, Armor Class Container on Right -->
+            <div style="display: flex; align-items: stretch; justify-content: space-between; gap: 6px; width: 100%;">
+              <!-- Hit Dice Tracker & Rest Triggers Column (Auto-Stacked to exact content width) -->
+              <div style="display: inline-flex; flex-direction: column; width: fit-content; gap: 3px;">
+                <!-- Hit Dice Row -->
+                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
+                  <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
+                    <i class="fas fa-dice-d6"></i> HD
+                  </span>
+                  <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
+                    <span id="dice-stuff-hd-label" style="font-size: 0.74em; font-weight: 700; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
+                    <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;">
+                      Roll Hit Die
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Rest Triggers Row (Locked to exact width of Hit Die content above) -->
+                <div style="display: flex; gap: 4px; width: 100%;">
+                  <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
+                    <i class="fas fa-mug-hot"></i> Short
+                  </button>
+                  <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
+                    <i class="fas fa-moon"></i> Long
                   </button>
                 </div>
               </div>
 
-              <!-- Rest Triggers Row (Locked to exact width of Hit Die content above) -->
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
-                  <i class="fas fa-mug-hot"></i> Short
-                </button>
-                <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden;">
-                  <i class="fas fa-moon"></i> Long
+              <!-- Dedicated Armor Class Slot (Spans Rows 2 & 3 alongside HD/Rest stack) -->
+              <div id="dice-stuff-armor-class-slot" style="flex: 1; min-width: 0; display: flex; align-items: stretch; justify-content: center;">
+                <button type="button" id="dice-stuff-ac-btn" title="Armor Class: ${curAc} (Click to open AC Configuration)" style="height: 100%; min-height: 38px; width: 100%; border: 1px solid #bcc5d3; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 2px 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                  <i class="fas fa-shield-halved" style="color: #4b5d88; font-size: 1.25em;"></i>
+                  <span style="font-size: 1.2em; font-weight: 800; color: #1e293b; line-height: 1;">${curAc}</span>
                 </button>
               </div>
             </div>
@@ -5220,6 +5232,20 @@ Click a numbered modifier badge to execute a roll.</div>
               background: rgba(67, 56, 202, 0.38) !important;
               color: #ffffff !important;
             }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-ac-btn {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-ac-btn i {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-ac-btn span {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-ac-btn:hover {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+            }
 
             /* Slate Vitals Card */
             .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card {
@@ -5258,6 +5284,19 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #4338ca !important;
               color: #a5b4fc !important;
             }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn i {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn span {
+              color: #f8fafc !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn:hover {
+              border-color: #38bdf8 !important;
+            }
 
             /* Arcane Vitals Card */
             .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card {
@@ -5295,6 +5334,19 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #17113a !important;
               border-color: #6366f1 !important;
               color: #c7d2fe !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn i {
+              color: #c4b5fd !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn span {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn:hover {
+              border-color: #a78bfa !important;
             }
 
             .app.dialog.cheapdice-theme-glass input,
@@ -6035,6 +6087,41 @@ Click a numbered modifier badge to execute a roll.</div>
           }
         });
 
+        // AC Settings Button Handler (Opens native dnd5e ArmorClassConfig dialog)
+        html.find("#dice-stuff-ac-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const AcConfigClass =
+              globalThis.dnd5e?.applications?.actor?.ArmorClassConfig ||
+              globalThis.dnd5e?.applications?.actor?.ActorArmorClassConfig ||
+              globalThis.CONFIG?.DND5E?.applications?.actor?.ArmorClassConfig;
+
+            if (AcConfigClass) {
+              const isAppV2 =
+                Boolean(AcConfigClass.DEFAULT_OPTIONS) ||
+                Boolean(
+                  globalThis.foundry?.applications?.api?.ApplicationV2 &&
+                  AcConfigClass.prototype instanceof globalThis.foundry.applications.api.ApplicationV2
+                );
+              if (isAppV2) {
+                new AcConfigClass({ document: actor }).render({ force: true });
+              } else {
+                new AcConfigClass(actor).render(true);
+              }
+            } else if (typeof actor.sheet?._onConfigMenu === "function") {
+              actor.sheet._onConfigMenu({
+                preventDefault: () => {},
+                currentTarget: { dataset: { action: "armor", config: "armor" } }
+              });
+            } else {
+              ui.notifications.warn("Armor Class Configuration is not available in this system version.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error opening Armor Class Config:", err);
+          }
+        });
+
         // Helper to update Hit Dice fraction display
         const refreshHitDiceLabel = (targetActor) => {
           let liveHdCur = 0;
@@ -6091,15 +6178,27 @@ Click a numbered modifier badge to execute a roll.</div>
             if (foundry.utils.hasProperty(changes, "system.attributes.hd") || foundry.utils.hasProperty(changes, "items")) {
               refreshHitDiceLabel(updatedActor);
             }
+
+            // Live update AC value
+            if (foundry.utils.hasProperty(changes, "system.attributes.ac")) {
+              const liveAc = updatedActor.system?.attributes?.ac?.value ?? updatedActor.system?.attributes?.ac ?? "--";
+              html.find("#dice-stuff-ac-btn").attr("title", `Armor Class: ${liveAc} (Click to open AC Configuration)`);
+              html.find("#dice-stuff-ac-btn span").text(liveAc);
+            }
           });
         }
 
-        // Live update on embedded item updates (e.g. rolling Hit Die updates class item hitDiceUsed)
+        // Live update on embedded item updates (e.g. rolling Hit Die updates class item hitDiceUsed, equipping shield/armor updates AC)
         if (liveItemHookId === null) {
           liveItemHookId = Hooks.on("updateItem", (item, changes) => {
             if (item.parent?.id !== actor.id) return;
             if (item.type === "class" && (foundry.utils.hasProperty(changes, "system.hitDiceUsed") || foundry.utils.hasProperty(changes, "system.levels") || foundry.utils.hasProperty(changes, "system.hd"))) {
               refreshHitDiceLabel(item.parent || actor);
+            }
+            if (item.type === "equipment" || foundry.utils.hasProperty(changes, "system.equipped") || foundry.utils.hasProperty(changes, "system.armor")) {
+              const liveAc = actor.system?.attributes?.ac?.value ?? actor.system?.attributes?.ac ?? "--";
+              html.find("#dice-stuff-ac-btn").attr("title", `Armor Class: ${liveAc} (Click to open AC Configuration)`);
+              html.find("#dice-stuff-ac-btn span").text(liveAc);
             }
           });
         }

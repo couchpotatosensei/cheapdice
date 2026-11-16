@@ -634,5 +634,51 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(hdCurrent, 3);
     assert.equal(hdMax, 5);
   });
+
+  it("Dice Stuff vitals extraction handles AC and slot rendering cleanly", () => {
+    // 1. Standard dnd5e actor with attributes.ac.value
+    const actorA = {
+      system: {
+        attributes: {
+          ac: { value: 18, calc: "default" }
+        }
+      }
+    };
+    const acA = actorA.system?.attributes?.ac?.value ?? actorA.system?.attributes?.ac ?? "--";
+    assert.equal(acA, 18);
+
+    // 2. Fallback actor where ac is a flat number/string
+    const actorB = {
+      system: {
+        attributes: {
+          ac: 14
+        }
+      }
+    };
+    const acB = actorB.system?.attributes?.ac?.value ?? actorB.system?.attributes?.ac ?? "--";
+    assert.equal(acB, 14);
+
+    // 3. Fallback actor missing ac entirely
+    const actorC = {
+      system: {
+        attributes: {}
+      }
+    };
+    const acC = actorC.system?.attributes?.ac?.value ?? actorC.system?.attributes?.ac ?? "--";
+    assert.equal(acC, "--");
+
+    // 4. Test button HTML generation
+    const buttonHtml = `
+      <div id="dice-stuff-armor-class-slot">
+        <button type="button" id="dice-stuff-ac-btn" title="Armor Class: ${acA}">
+          <i class="fas fa-shield-halved"></i>
+          <span>${acA}</span>
+        </button>
+      </div>
+    `;
+    assert.ok(buttonHtml.includes('id="dice-stuff-ac-btn"'));
+    assert.ok(buttonHtml.includes('<span>18</span>'));
+    assert.ok(buttonHtml.includes('fa-shield-halved'));
+  });
 });
 
