@@ -4453,17 +4453,17 @@ Click a numbered modifier badge to execute a roll.</div>
         <!-- Actor Portrait & Vitals Card (Top Row) -->
         <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
           <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
-          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px; overflow: hidden;">
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px;">
             <!-- HP Tracker Row -->
-            <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
+            <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px; margin: 1px 0;">
               <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-heart"></i> HP
               </span>
               <div style="display: flex; align-items: center; gap: 3px; min-width: 0;">
-                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 30px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
+                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 38px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
                 <span id="dice-stuff-hp-max-label" style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap;">/ ${maxHp}</span>
                 <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; margin-left: 2px; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
-                  ${tempHp > 0 ? `<i class="fas fa-shield-halved" style="font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
+                  ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
                 </button>
               </div>
             </div>
@@ -5961,16 +5961,21 @@ Click a numbered modifier badge to execute a roll.</div>
           if (e.key === "Enter") {
             e.preventDefault();
             e.stopPropagation();
-            $(this).trigger("change").trigger("blur");
+            $(this).trigger("change");
+            $(this).blur();
           }
         });
 
         // Vitals Handlers: HP Quick-Update, Hit Dice Roll, Rest Triggers
         const hpInput = html.find("#dice-stuff-hp-input");
         const thpBtn = html.find("#dice-stuff-thp-btn");
+        let isUpdatingHp = false;
 
         const updateHpValue = async function (el) {
+          if (isUpdatingHp) return;
           const rawVal = $(el).val().trim();
+          if (!rawVal) return;
+
           let currentVal = Number(actor.system?.attributes?.hp?.value) || 0;
           const maxVal = Number(actor.system?.attributes?.hp?.max) || 0;
           let currentTemp = Number(actor.system?.attributes?.hp?.temp) || 0;
@@ -5980,7 +5985,7 @@ Click a numbered modifier badge to execute a roll.</div>
           if (rawVal.startsWith("-")) {
             // Damage: Deplete Temp HP first, then regular HP
             let dmg = Math.abs(Number(rawVal));
-            if (!isNaN(dmg)) {
+            if (!isNaN(dmg) && dmg > 0) {
               if (currentTemp > 0) {
                 const absorbed = Math.min(currentTemp, dmg);
                 currentTemp -= absorbed;
@@ -6010,15 +6015,20 @@ Click a numbered modifier badge to execute a roll.</div>
 
           $(el).val(currentVal);
           if (Object.keys(actorUpdates).length > 0) {
-            await actor.update(actorUpdates);
+            isUpdatingHp = true;
+            try {
+              await actor.update(actorUpdates);
+            } finally {
+              isUpdatingHp = false;
+            }
           }
         };
 
-        hpInput.on("change blur", async function () {
+        hpInput.on("change", async function () {
           await updateHpValue(this);
         });
 
-        // Clickable [+THP] / [🛡️ THP] Pill Handler
+        // Clickable [+THP] / [💙 THP] Pill Handler
         thpBtn.on("click", async (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -6028,7 +6038,7 @@ Click a numbered modifier badge to execute a roll.</div>
             content: `
               <div style="padding: 6px 4px; display: flex; flex-direction: column; gap: 6px;">
                 <label style="font-weight: 700; font-size: 0.85em; color: #0284c7;">
-                  <i class="fas fa-shield-halved"></i> Enter Temporary HP (or 0 to clear):
+                  <i class="fas fa-heart" style="color: #0284c7;"></i> Enter Temporary HP (or 0 to clear):
                 </label>
                 <input type="number" id="thp-prompt-input" value="${currentTemp > 0 ? currentTemp : ''}" placeholder="0" min="0" autofocus style="width: 100%; height: 28px; text-align: center; font-size: 1.1em; font-weight: 700; border-radius: 4px; border: 1px solid #7dd3fc;" />
               </div>
@@ -6076,7 +6086,7 @@ Click a numbered modifier badge to execute a roll.</div>
               const thpBtnElem = html.find("#dice-stuff-thp-btn");
               if (liveTemp > 0) {
                 thpBtnElem
-                  .html(`<i class="fas fa-shield-halved" style="font-size: 0.85em;"></i> ${liveTemp}`)
+                  .html(`<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${liveTemp}`)
                   .css({ background: "#e0f2fe", color: "#0284c7", border: "1px solid #7dd3fc" });
               } else {
                 thpBtnElem

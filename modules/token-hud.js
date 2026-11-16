@@ -625,12 +625,33 @@ export function initTokenHud() {
           const actor = token.actor;
           if (!actor) return;
 
-          const currentHp = Number(actor.system.attributes?.hp?.value ?? 0);
+          let currentHp = Number(actor.system.attributes?.hp?.value ?? 0);
           const maxHp = Number(actor.system.attributes?.hp?.max ?? 0);
-          const newHp = Math.clamp(currentHp + delta, 0, maxHp);
+          let currentTemp = Number(actor.system.attributes?.hp?.temp ?? 0);
 
-          await actor.update({ "system.attributes.hp.value": newHp });
-          if (bottomInput) bottomInput.value = newHp;
+          const actorUpdates = {};
+
+          if (delta < 0) {
+            let dmg = Math.abs(delta);
+            if (currentTemp > 0) {
+              const absorbed = Math.min(currentTemp, dmg);
+              currentTemp -= absorbed;
+              dmg -= absorbed;
+              actorUpdates["system.attributes.hp.temp"] = currentTemp;
+            }
+            if (dmg > 0) {
+              currentHp = Math.max(0, currentHp - dmg);
+              actorUpdates["system.attributes.hp.value"] = currentHp;
+            }
+          } else if (delta > 0) {
+            currentHp = Math.clamp(currentHp + delta, 0, maxHp);
+            actorUpdates["system.attributes.hp.value"] = currentHp;
+          }
+
+          if (Object.keys(actorUpdates).length > 0) {
+            await actor.update(actorUpdates);
+          }
+          if (bottomInput) bottomInput.value = currentHp;
         };
 
         btn.addEventListener("mousedown", (e) => e.stopPropagation());
