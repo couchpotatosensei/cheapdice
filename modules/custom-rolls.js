@@ -4490,10 +4490,6 @@ Click a numbered modifier badge to execute a roll.</div>
             </div>
           </div>
         </div>
-          </div>
-        </div>
-          </div>
-        </div>
 
         <!-- Initiative & Concentration Side-by-Side (Second Row) -->
         <div style="display: flex; gap: 4px; flex-shrink: 0; width: 100%; box-sizing: border-box;">
