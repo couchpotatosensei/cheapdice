@@ -2738,7 +2738,7 @@ function registerSocketHandlers() {
     return true;
   });
 
-  socket.register("rechargeActorTrackersAsGM", async (actorId, restType, userId) => {
+  socket.register("rechargeActorTrackersAsGM", async (actorId, restType, userId, preRestSnapshot) => {
     const actor = game.actors.get(actorId);
     if (!actor) return [];
 
@@ -2748,7 +2748,7 @@ function registerSocketHandlers() {
     }
 
     if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
-      return await window.CustomRolls.rechargeActorTrackers(actor, restType);
+      return await window.CustomRolls.rechargeActorTrackers(actor, restType, preRestSnapshot);
     }
     return [];
   });

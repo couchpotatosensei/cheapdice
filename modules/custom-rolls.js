@@ -2360,7 +2360,7 @@ Click a numbered modifier badge to execute a roll.</div>
   // =========================================================================
   // TRACKING STUFF: RECHARGE & RESOURCE ENGINE
   // =========================================================================
-  async function rechargeActorTrackers(actor, restType = "lr") {
+  async function rechargeActorTrackers(actor, restType = "lr", preRestSnapshot = null) {
     if (!actor) return [];
     const isLR = restType === "lr";
     const isSR = restType === "sr";
@@ -2400,7 +2400,10 @@ Click a numbered modifier badge to execute a roll.</div>
         if (item) {
           const uses = item.system.uses;
           const max = Number(uses?.max ?? t.max ?? 0);
-          const cur = uses?.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses?.value ?? t.value ?? 0);
+          let cur = uses?.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses?.value ?? t.value ?? 0);
+          if (preRestSnapshot?.items?.[item.id] !== undefined) {
+            cur = preRestSnapshot.items[item.id];
+          }
           if (isReset1 || isReset0) {
             const targetVal = isReset1 ? 1 : 0;
             if (cur !== targetVal) {
@@ -2446,8 +2449,11 @@ Click a numbered modifier badge to execute a roll.</div>
       } else if (t.type === "resource" && t.resourceSlot) {
         handledResourceSlots.add(t.resourceSlot);
         const res = actor.system.resources?.[t.resourceSlot];
-        const cur = Number(res?.value ?? t.value ?? 0);
         const max = Number(res?.max ?? t.max ?? 0);
+        let cur = Number(res?.value ?? t.value ?? 0);
+        if (preRestSnapshot?.resources?.[t.resourceSlot] !== undefined) {
+          cur = preRestSnapshot.resources[t.resourceSlot];
+        }
         if (isReset1 || isReset0) {
           const targetVal = isReset1 ? 1 : 0;
           if (cur !== targetVal) {
@@ -2476,8 +2482,11 @@ Click a numbered modifier badge to execute a roll.</div>
           }
         }
       } else if (t.type === "custom") {
-        const cur = Number(t.value ?? 0);
         const max = Number(t.max ?? 0);
+        let cur = Number(t.value ?? 0);
+        if (preRestSnapshot?.trackers?.[t.id] !== undefined) {
+          cur = preRestSnapshot.trackers[t.id];
+        }
         if (isReset1 || isReset0) {
           const targetVal = isReset1 ? 1 : 0;
           if (cur !== targetVal) {
@@ -2520,7 +2529,10 @@ Click a numbered modifier badge to execute a roll.</div>
           shouldRecharge = (per === "day" || per === "dawn" || per === "charges");
         }
         const max = Number(uses.max) || 0;
-        const cur = uses.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses.value ?? 0);
+        let cur = uses.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses.value ?? 0);
+        if (preRestSnapshot?.items?.[item.id] !== undefined) {
+          cur = preRestSnapshot.items[item.id];
+        }
         if (shouldRecharge && cur < max) {
           let formula = "";
           if (uses.recovery && Array.isArray(uses.recovery)) {
@@ -4460,7 +4472,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 <i class="fas fa-heart"></i> HP
               </span>
               <div style="display: flex; align-items: center; gap: 3px; min-width: 0;">
-                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 38px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
+                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports absolute or deltas like -15, +10)" style="width: 46px; min-width: 46px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
                 <span id="dice-stuff-hp-max-label" style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap;">/ ${maxHp}</span>
                 <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="height: 18px; font-size: 0.68em; font-weight: 700; padding: 0 4px; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; margin-left: 2px; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
                   ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 0.85em;"></i> ${tempHp}` : `<i class="fas fa-plus" style="font-size: 0.75em;"></i>THP`}
@@ -5961,7 +5973,11 @@ Click a numbered modifier badge to execute a roll.</div>
           if (e.key === "Enter") {
             e.preventDefault();
             e.stopPropagation();
-            $(this).trigger("change");
+            if (this.id === "dice-stuff-hp-input") {
+              applyHpInput(this);
+            } else {
+              $(this).trigger("change");
+            }
             $(this).blur();
           }
         });
@@ -5969,10 +5985,8 @@ Click a numbered modifier badge to execute a roll.</div>
         // Vitals Handlers: HP Quick-Update, Hit Dice Roll, Rest Triggers
         const hpInput = html.find("#dice-stuff-hp-input");
         const thpBtn = html.find("#dice-stuff-thp-btn");
-        let isUpdatingHp = false;
 
-        const updateHpValue = async function (el) {
-          if (isUpdatingHp) return;
+        const applyHpInput = async function (el) {
           const rawVal = $(el).val().trim();
           if (!rawVal) return;
 
@@ -5982,27 +5996,25 @@ Click a numbered modifier badge to execute a roll.</div>
 
           const actorUpdates = {};
 
-          if (rawVal.startsWith("-")) {
-            // Damage: Deplete Temp HP first, then regular HP
-            let dmg = Math.abs(Number(rawVal));
-            if (!isNaN(dmg) && dmg > 0) {
-              if (currentTemp > 0) {
-                const absorbed = Math.min(currentTemp, dmg);
-                currentTemp -= absorbed;
-                dmg -= absorbed;
-                actorUpdates["system.attributes.hp.temp"] = currentTemp;
-              }
-              if (dmg > 0) {
-                currentVal = Math.max(0, currentVal - dmg);
+          if (rawVal.startsWith("-") || rawVal.startsWith("+")) {
+            const delta = Number(rawVal);
+            if (!isNaN(delta)) {
+              if (delta < 0) {
+                let dmg = Math.abs(delta);
+                if (currentTemp > 0) {
+                  const absorbed = Math.min(currentTemp, dmg);
+                  currentTemp -= absorbed;
+                  dmg -= absorbed;
+                  actorUpdates["system.attributes.hp.temp"] = currentTemp;
+                }
+                if (dmg > 0) {
+                  currentVal = Math.max(0, currentVal - dmg);
+                  actorUpdates["system.attributes.hp.value"] = currentVal;
+                }
+              } else if (delta > 0) {
+                currentVal = Math.clamp(currentVal + delta, 0, maxVal);
                 actorUpdates["system.attributes.hp.value"] = currentVal;
               }
-            }
-          } else if (rawVal.startsWith("+")) {
-            // Healing: Restores regular HP up to max
-            const heal = Number(rawVal);
-            if (!isNaN(heal)) {
-              currentVal = Math.min(maxVal, Math.max(0, currentVal + heal));
-              actorUpdates["system.attributes.hp.value"] = currentVal;
             }
           } else {
             // Absolute direct value
@@ -6015,17 +6027,12 @@ Click a numbered modifier badge to execute a roll.</div>
 
           $(el).val(currentVal);
           if (Object.keys(actorUpdates).length > 0) {
-            isUpdatingHp = true;
-            try {
-              await actor.update(actorUpdates);
-            } finally {
-              isUpdatingHp = false;
-            }
+            await actor.update(actorUpdates);
           }
         };
 
-        hpInput.on("change", async function () {
-          await updateHpValue(this);
+        hpInput.on("change", function () {
+          applyHpInput(this);
         });
 
         // Clickable [+THP] / [💙 THP] Pill Handler
@@ -6065,6 +6072,29 @@ Click a numbered modifier badge to execute a roll.</div>
           }, { width: 260 }).render(true);
         });
 
+        // Helper to update Hit Dice fraction display
+        const refreshHitDiceLabel = (targetActor) => {
+          let liveHdCur = 0;
+          let liveHdMax = 0;
+          let liveHdDenom = "";
+          if (targetActor.system?.attributes?.hd && typeof targetActor.system.attributes.hd.value === "number") {
+            liveHdCur = Number(targetActor.system.attributes.hd.value) || 0;
+            liveHdMax = Number(targetActor.system.attributes.hd.max) || 0;
+          } else if (targetActor.itemTypes?.class && targetActor.itemTypes.class.length > 0) {
+            targetActor.itemTypes.class.forEach(c => {
+              const levels = Number(c.system?.levels) || 0;
+              const used = Number(c.system?.hitDiceUsed) || 0;
+              liveHdCur += Math.max(0, levels - used);
+              liveHdMax += levels;
+              if (!liveHdDenom && c.system?.hitDice) liveHdDenom = c.system.hitDice;
+            });
+          }
+          if (!liveHdDenom && targetActor.itemTypes?.class?.[0]?.system?.hitDice) {
+            liveHdDenom = targetActor.itemTypes.class[0].system.hitDice;
+          }
+          html.find("#dice-stuff-hd-label").html(`${liveHdCur}/${liveHdMax}${liveHdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${liveHdDenom})</small>` : ''}`);
+        };
+
         // Live Actor Updates Hook (HP, Max HP, Temp HP, Hit Dice)
         if (liveActorHookId === null) {
           liveActorHookId = Hooks.on("updateActor", (updatedActor, changes) => {
@@ -6095,31 +6125,8 @@ Click a numbered modifier badge to execute a roll.</div>
               }
             }
 
-            // Live update Hit Dice
-            function updateLiveHitDice(targetActor) {
-              let liveHdCur = 0;
-              let liveHdMax = 0;
-              let liveHdDenom = "";
-              if (targetActor.system?.attributes?.hd && typeof targetActor.system.attributes.hd.value === "number") {
-                liveHdCur = Number(targetActor.system.attributes.hd.value) || 0;
-                liveHdMax = Number(targetActor.system.attributes.hd.max) || 0;
-              } else if (targetActor.itemTypes?.class && targetActor.itemTypes.class.length > 0) {
-                targetActor.itemTypes.class.forEach(c => {
-                  const levels = Number(c.system?.levels) || 0;
-                  const used = Number(c.system?.hitDiceUsed) || 0;
-                  liveHdCur += Math.max(0, levels - used);
-                  liveHdMax += levels;
-                  if (!liveHdDenom && c.system?.hitDice) liveHdDenom = c.system.hitDice;
-                });
-              }
-              if (!liveHdDenom && targetActor.itemTypes?.class?.[0]?.system?.hitDice) {
-                liveHdDenom = targetActor.itemTypes.class[0].system.hitDice;
-              }
-              html.find("#dice-stuff-hd-label").html(`${liveHdCur}/${liveHdMax}${liveHdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${liveHdDenom})</small>` : ''}`);
-            }
-
             if (foundry.utils.hasProperty(changes, "system.attributes.hd") || foundry.utils.hasProperty(changes, "items")) {
-              updateLiveHitDice(updatedActor);
+              refreshHitDiceLabel(updatedActor);
             }
           });
         }
@@ -6128,27 +6135,8 @@ Click a numbered modifier badge to execute a roll.</div>
         if (liveItemHookId === null) {
           liveItemHookId = Hooks.on("updateItem", (item, changes) => {
             if (item.parent?.id !== actor.id) return;
-            if (item.type === "class" && (foundry.utils.hasProperty(changes, "system.hitDiceUsed") || foundry.utils.hasProperty(changes, "system.levels"))) {
-              const liveActor = item.parent || actor;
-              let liveHdCur = 0;
-              let liveHdMax = 0;
-              let liveHdDenom = "";
-              if (liveActor.system?.attributes?.hd && typeof liveActor.system.attributes.hd.value === "number") {
-                liveHdCur = Number(liveActor.system.attributes.hd.value) || 0;
-                liveHdMax = Number(liveActor.system.attributes.hd.max) || 0;
-              } else if (liveActor.itemTypes?.class && liveActor.itemTypes.class.length > 0) {
-                liveActor.itemTypes.class.forEach(c => {
-                  const levels = Number(c.system?.levels) || 0;
-                  const used = Number(c.system?.hitDiceUsed) || 0;
-                  liveHdCur += Math.max(0, levels - used);
-                  liveHdMax += levels;
-                  if (!liveHdDenom && c.system?.hitDice) liveHdDenom = c.system.hitDice;
-                });
-              }
-              if (!liveHdDenom && liveActor.itemTypes?.class?.[0]?.system?.hitDice) {
-                liveHdDenom = liveActor.itemTypes.class[0].system.hitDice;
-              }
-              html.find("#dice-stuff-hd-label").html(`${liveHdCur}/${liveHdMax}${liveHdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${liveHdDenom})</small>` : ''}`);
+            if (item.type === "class" && (foundry.utils.hasProperty(changes, "system.hitDiceUsed") || foundry.utils.hasProperty(changes, "system.levels") || foundry.utils.hasProperty(changes, "system.hd"))) {
+              refreshHitDiceLabel(item.parent || actor);
             }
           });
         }
@@ -6159,7 +6147,10 @@ Click a numbered modifier badge to execute a roll.</div>
           e.stopPropagation();
           try {
             if (typeof actor.rollHitDie === "function") {
-              await actor.rollHitDie();
+              const rollRes = await actor.rollHitDie();
+              if (rollRes) {
+                refreshHitDiceLabel(actor);
+              }
             } else {
               ui.notifications.warn("Native rollHitDie is not supported on this actor type.");
             }
@@ -6215,14 +6206,34 @@ Click a numbered modifier badge to execute a roll.</div>
           e.stopPropagation();
           try {
             if (typeof actor.longRest === "function") {
+              // Capture pre-rest snapshot of items, resources, and custom trackers
+              const preRestSnapshot = {
+                items: {},
+                resources: {},
+                trackers: {}
+              };
+              for (const it of actor.items) {
+                if (it.system?.uses) {
+                  const m = Number(it.system.uses.max) || 0;
+                  preRestSnapshot.items[it.id] = it.system.uses.spent !== undefined ? Math.max(0, m - Number(it.system.uses.spent)) : Number(it.system.uses.value ?? 0);
+                }
+              }
+              for (const slot of ["primary", "secondary", "tertiary"]) {
+                preRestSnapshot.resources[slot] = Number(actor.system?.resources?.[slot]?.value ?? 0);
+              }
+              const currentTrackers = actor.getFlag("world", "trackingStuff") || [];
+              for (const t of currentTrackers) {
+                preRestSnapshot.trackers[t.id] = Number(t.value ?? 0);
+              }
+
               const res = await actor.longRest();
               if (res) {
-                // Execute Tracking Stuff Long Rest recharge routines
+                // Execute Tracking Stuff Long Rest recharge routines with pre-rest snapshot
                 let lines = [];
                 if (globalThis.attackSocket?.executeAsGM) {
-                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id);
+                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id, preRestSnapshot);
                 } else if (typeof rechargeActorTrackers === "function") {
-                  lines = await rechargeActorTrackers(actor, "lr");
+                  lines = await rechargeActorTrackers(actor, "lr", preRestSnapshot);
                 }
                 if (lines && lines.length > 0) {
                   await ChatMessage.create({
