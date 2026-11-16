@@ -4451,40 +4451,40 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait & Vitals Card (Top Row) -->
-        <div style="display: flex; gap: 8px; align-items: stretch; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; height: 74px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
-          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px;">
+        <div style="display: flex; gap: 6px; align-items: stretch; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 4px 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
+          <img src="${portraitSrc}" alt="${actor.name}" style="width: 50px; min-width: 50px; max-width: 50px; height: 72px; border-radius: 5px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 2px; overflow: hidden;">
             <!-- HP Tracker Row -->
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
-              <span style="font-size: 0.78em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 3px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 2px;">
+              <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap;">
                 <i class="fas fa-heart"></i> HP
               </span>
-              <div style="display: flex; align-items: center; gap: 2px;">
-                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports +/- values e.g. -5, +10)" style="width: 38px; height: 20px; font-size: 0.82em; font-weight: 700; text-align: center; border-radius: 3px; border: 1px solid #d2d7df; background: #fff; padding: 0 2px;" />
-                <span style="font-size: 0.78em; color: #555; font-weight: 600;">/ ${maxHp}</span>
-                ${tempHp > 0 ? `<span style="font-size: 0.72em; font-weight: 700; color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 3px; padding: 1px 3px; margin-left: 2px;" title="Temp HP">+${tempHp}</span>` : ''}
+              <div style="display: flex; align-items: center; gap: 2px; min-width: 0;">
+                <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Enter delta +/- or new total)" style="width: 32px; height: 18px; font-size: 0.78em; font-weight: 700; text-align: center; border-radius: 2px; border: 1px solid #d2d7df; background: #fff; padding: 0 1px;" />
+                <span style="font-size: 0.74em; color: #555; font-weight: 600; white-space: nowrap;">/ ${maxHp}</span>
+                ${tempHp > 0 ? `<span style="font-size: 0.68em; font-weight: 700; color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 2px; padding: 0 2px; white-space: nowrap;" title="Temp HP">+${tempHp}</span>` : ''}
               </div>
             </div>
 
             <!-- Hit Dice Tracker Row -->
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
-              <span style="font-size: 0.78em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 3px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 2px;">
+              <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap;">
                 <i class="fas fa-dice-d6"></i> HD
               </span>
-              <div style="display: flex; align-items: center; gap: 3px;">
-                <span style="font-size: 0.78em; font-weight: 700; color: #2b3a4a;">${hdCurrent} / ${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
-                <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="width: 22px; height: 20px; font-size: 0.76em; padding: 0; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+              <div style="display: flex; align-items: center; gap: 2px; min-width: 0;">
+                <span style="font-size: 0.74em; font-weight: 700; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
+                <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="width: 20px; height: 18px; font-size: 0.72em; padding: 0; border: 1px solid #7289da; background: #fff; color: #7289da; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
                   <i class="fas fa-dice-d6"></i>
                 </button>
               </div>
             </div>
 
             <!-- Rest Triggers Row -->
-            <div style="display: flex; gap: 4px; margin-top: 1px;">
-              <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 20px; font-size: 0.72em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0 2px;">
+            <div style="display: flex; gap: 3px; margin-top: 1px;">
+              <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 1px; white-space: nowrap; overflow: hidden;">
                 <i class="fas fa-mug-hot"></i> Short
               </button>
-              <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 20px; font-size: 0.72em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0 2px;">
+              <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 18px; font-size: 0.68em; font-weight: 700; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0 1px; white-space: nowrap; overflow: hidden;">
                 <i class="fas fa-moon"></i> Long
               </button>
             </div>
@@ -4492,16 +4492,16 @@ Click a numbered modifier badge to execute a roll.</div>
         </div>
 
         <!-- Initiative & Concentration Side-by-Side (Second Row) -->
-        <div style="display: flex; gap: 6px; flex-shrink: 0;">
-          <div class="sheet-entry-row" data-key="init" data-type="init" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 4px; cursor: pointer;" title="Roll Initiative">
-            <span class="entry-label" style="font-size: 0.88em; font-weight: 700; color: #235d6e; white-space: nowrap;">Init</span>
-            <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; height: 20px; font-size: 0.78em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+        <div style="display: flex; gap: 4px; flex-shrink: 0; width: 100%; box-sizing: border-box;">
+          <div class="sheet-entry-row" data-key="init" data-type="init" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
+            <span class="entry-label" style="font-size: 0.78em; font-weight: 700; color: #235d6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Initiative</span>
+            <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; min-width: 44px; height: 19px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
               ${d20Data.formattedInit}
             </button>
           </div>
-          <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 4px; cursor: pointer;" title="Roll Concentration">
-            <span class="entry-label" style="font-size: 0.88em; font-weight: 700; color: #a34848; white-space: nowrap;">Conc</span>
-            <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 32px; height: 20px; font-size: 0.78em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
+          <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
+            <span class="entry-label" style="font-size: 0.78em; font-weight: 700; color: #a34848; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Concentration</span>
+            <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 30px; min-width: 30px; height: 19px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
               ${d20Data.formattedConc}
             </button>
           </div>
@@ -5933,8 +5933,8 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Vitals Handlers: HP Quick-Update, Hit Dice Roll, Rest Triggers
         const hpInput = html.find("#dice-stuff-hp-input");
-        hpInput.on("change", async function () {
-          const rawVal = $(this).val().trim();
+        const updateHpValue = async function (el) {
+          const rawVal = $(el).val().trim();
           let currentVal = Number(actor.system?.attributes?.hp?.value) || 0;
           const maxVal = Number(actor.system?.attributes?.hp?.max) || 0;
           let newVal = currentVal;
@@ -5947,8 +5947,20 @@ Click a numbered modifier badge to execute a roll.</div>
             if (!isNaN(num)) newVal = Math.max(0, num);
           }
 
-          $(this).val(newVal);
+          $(el).val(newVal);
           await actor.update({ "system.attributes.hp.value": newVal });
+        };
+
+        hpInput.on("keydown", function (e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            $(this).trigger("blur");
+          }
+        });
+
+        hpInput.on("change blur", async function () {
+          await updateHpValue(this);
         });
 
         // Hit Die Roll Handler
