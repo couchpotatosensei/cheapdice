@@ -2360,27 +2360,19 @@ Click a numbered modifier badge to execute a roll.</div>
   // =========================================================================
   // TRACKING STUFF: RECHARGE & RESOURCE ENGINE
   // =========================================================================
-  async function rechargeActorTrackers(actor, restType = "lr", options = {}) {
+  async function rechargeActorTrackers(actor, restType = "lr") {
     if (!actor) return [];
     const isLR = restType === "lr";
     const isSR = restType === "sr";
     const isDawn = restType === "dawn";
-    const onlyCustom = Boolean(options?.onlyCustom);
-    const preRestSnapshot = options?.preRestSnapshot || null;
 
-    const updates = {};
-    const itemUpdates = [];
     const rechargeChatLines = [];
-
     const trackers = actor.getFlag("world", "trackingStuff") || [];
     let trackersModified = false;
-    const handledItemIds = new Set();
-    const handledResourceSlots = new Set();
 
-    // 1. Process active Trackers configured in trackingStuff
+    // Process ONLY custom-created trackers (ignores any sheet items or sheet resources)
     for (const t of trackers) {
-      // If onlyCustom is set, skip any trackers that are directly attached to sheet Items
-      if (onlyCustom && t.type === "item") continue;
+      if (t.type !== "custom") continue;
 
       const reset = String(t.resetOn || "lr").toLowerCase();
       let shouldRecharge = false;
@@ -2397,204 +2389,36 @@ Click a numbered modifier badge to execute a roll.</div>
 
       if (!shouldRecharge) continue;
 
-      const trackerLabel = t.label || t.name || (t.resourceSlot ? `Resource: ${t.resourceSlot}` : "Tracker");
+      const trackerLabel = t.label || t.name || "Custom Counter";
+      const max = Number(t.max ?? 0);
+      let cur = Number(t.value ?? 0);
 
-      if (t.type === "item" && t.itemRefId) {
-        handledItemIds.add(t.itemRefId);
-        const item = actor.items.get(t.itemRefId);
-        if (item) {
-          const uses = item.system.uses;
-          const max = Number(uses?.max ?? t.max ?? 0);
-          let cur = uses?.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses?.value ?? t.value ?? 0);
-          if (preRestSnapshot?.items?.[item.id] !== undefined) {
-            cur = preRestSnapshot.items[item.id];
-          }
-          if (isReset1 || isReset0) {
-            const targetVal = isReset1 ? 1 : 0;
-            if (cur !== targetVal) {
-              itemUpdates.push({
-                _id: item.id,
-                "system.uses.spent": Math.max(0, max - targetVal),
-                "system.uses.value": targetVal
-              });
-              t.value = targetVal;
-              trackersModified = true;
-              rechargeChatLines.push(`• <strong>${item.name}</strong>: Reset to ${targetVal}/${max}`);
-            }
-          } else if (cur < max) {
-            const formula = (t.rechargeFormula || "").trim();
-            if (formula) {
-              try {
-                const roll = new Roll(formula);
-                await roll.evaluate();
-                const newVal = Math.min(max, cur + roll.total);
-                itemUpdates.push({
-                  _id: item.id,
-                  "system.uses.spent": Math.max(0, max - newVal),
-                  "system.uses.value": newVal
-                });
-                t.value = newVal;
-                trackersModified = true;
-                rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-              } catch (err) {
-                console.error("Recharge formula error", err);
-              }
-            } else {
-              itemUpdates.push({
-                _id: item.id,
-                "system.uses.spent": 0,
-                "system.uses.value": max
-              });
-              t.value = max;
-              trackersModified = true;
-              rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
-            }
-          }
+      if (isReset1 || isReset0) {
+        const targetVal = isReset1 ? 1 : 0;
+        if (cur !== targetVal) {
+          t.value = targetVal;
+          trackersModified = true;
+          rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Reset to ${targetVal}/${max}`);
         }
-      } else if (t.type === "resource" && t.resourceSlot) {
-        handledResourceSlots.add(t.resourceSlot);
-        const res = actor.system.resources?.[t.resourceSlot];
-        const max = Number(res?.max ?? t.max ?? 0);
-        let cur = Number(res?.value ?? t.value ?? 0);
-        if (preRestSnapshot?.resources?.[t.resourceSlot] !== undefined) {
-          cur = preRestSnapshot.resources[t.resourceSlot];
-        }
-        if (isReset1 || isReset0) {
-          const targetVal = isReset1 ? 1 : 0;
-          if (cur !== targetVal) {
-            updates[`system.resources.${t.resourceSlot}.value`] = targetVal;
-            t.value = targetVal;
+      } else if (cur < max) {
+        const formula = (t.rechargeFormula || "").trim();
+        if (formula) {
+          try {
+            const roll = new Roll(formula);
+            await roll.evaluate();
+            const newVal = Math.min(max, cur + roll.total);
+            t.value = newVal;
             trackersModified = true;
-            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Reset to ${targetVal}/${max}`);
-          }
-        } else if (cur < max) {
-          const formula = (t.rechargeFormula || "").trim();
-          if (formula) {
-            try {
-              const roll = new Roll(formula);
-              await roll.evaluate();
-              const newVal = Math.min(max, cur + roll.total);
-              updates[`system.resources.${t.resourceSlot}.value`] = newVal;
-              t.value = newVal;
-              trackersModified = true;
-              rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-            } catch (e) {}
-          } else {
-            updates[`system.resources.${t.resourceSlot}.value`] = max;
-            t.value = max;
-            trackersModified = true;
-            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Restored to ${max}/${max}`);
-          }
-        }
-      } else if (t.type === "custom") {
-        const max = Number(t.max ?? 0);
-        let cur = Number(t.value ?? 0);
-        if (preRestSnapshot?.trackers?.[t.id] !== undefined) {
-          cur = preRestSnapshot.trackers[t.id];
-        }
-        if (isReset1 || isReset0) {
-          const targetVal = isReset1 ? 1 : 0;
-          if (cur !== targetVal) {
-            t.value = targetVal;
-            trackersModified = true;
-            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Reset to ${targetVal}/${max}`);
-          }
-        } else if (cur < max) {
-          const formula = (t.rechargeFormula || "").trim();
-          if (formula) {
-            try {
-              const roll = new Roll(formula);
-              await roll.evaluate();
-              const newVal = Math.min(max, cur + roll.total);
-              t.value = newVal;
-              trackersModified = true;
-              rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-            } catch (e) {}
-          } else {
-            t.value = max;
-            trackersModified = true;
-            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Restored to ${max}/${max}`);
-          }
+            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+          } catch (e) { }
+        } else {
+          t.value = max;
+          trackersModified = true;
+          rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Restored to ${max}/${max}`);
         }
       }
     }
 
-    // 2. Actor items and sheet resources are handled ONLY when not restricted to custom counters
-    if (!onlyCustom) {
-      for (const item of actor.items) {
-        if (handledItemIds.has(item.id)) continue;
-        const uses = item.system.uses;
-        if (uses && typeof uses.max === "number" && uses.max > 0) {
-          const per = String(uses.per || "").toLowerCase();
-          let shouldRecharge = false;
-          if (isLR) {
-            shouldRecharge = (per === "lr" || per === "sr" || per === "day" || per === "dawn" || per === "charges");
-          } else if (isSR) {
-            shouldRecharge = (per === "sr");
-          } else if (isDawn) {
-            shouldRecharge = (per === "day" || per === "dawn" || per === "charges");
-          }
-          const max = Number(uses.max) || 0;
-          let cur = uses.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses.value ?? 0);
-          if (preRestSnapshot?.items?.[item.id] !== undefined) {
-            cur = preRestSnapshot.items[item.id];
-          }
-          if (shouldRecharge && cur < max) {
-            let formula = "";
-            if (uses.recovery && Array.isArray(uses.recovery)) {
-              const formRec = uses.recovery.find(r => r.formula);
-              if (formRec) formula = formRec.formula;
-            }
-            if (!formula && item.system.description?.value) {
-              const m = item.system.description.value.match(/regains?\s+(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+expended\s+charges/i);
-              if (m) formula = m[1].trim();
-            }
-            if (formula) {
-              try {
-                const roll = new Roll(formula);
-                await roll.evaluate();
-                const newVal = Math.min(max, cur + roll.total);
-                itemUpdates.push({
-                  _id: item.id,
-                  "system.uses.spent": Math.max(0, max - newVal),
-                  "system.uses.value": newVal
-                });
-                rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-              } catch (err) {}
-            } else {
-              itemUpdates.push({
-                _id: item.id,
-                "system.uses.spent": 0,
-                "system.uses.value": max
-              });
-              rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
-            }
-          }
-        }
-      }
-
-      // 3. Class resources not explicitly in trackers
-      for (const slot of ["primary", "secondary", "tertiary"]) {
-        if (handledResourceSlots.has(slot)) continue;
-        const res = actor.system.resources?.[slot];
-        if (res && res.label && typeof res.max === "number" && res.max > 0) {
-          let shouldReset = false;
-          if (isLR) shouldReset = (res.lr || res.sr || (!res.lr && !res.sr));
-          else if (isSR) shouldReset = Boolean(res.sr);
-          if (shouldReset && res.value < res.max) {
-            updates[`system.resources.${slot}.value`] = res.max;
-            rechargeChatLines.push(`• <strong>${res.label}</strong>: Reset to ${res.max}/${res.max}`);
-          }
-        }
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      await actor.update(updates);
-    }
-    if (itemUpdates.length > 0) {
-      await actor.updateEmbeddedDocuments("Item", itemUpdates);
-    }
     if (trackersModified) {
       await actor.setFlag("world", "trackingStuff", trackers);
     }
@@ -2926,8 +2750,45 @@ Click a numbered modifier badge to execute a roll.</div>
           }
 
           const syncResources = async () => {
-            // Tracking Stuff counters remain independent in flags.world.trackingStuff
-            // and do not overwrite or force dnd5e system.resources primary/secondary/tertiary.
+            const slots = ["primary", "secondary", "tertiary"];
+            const prevSlots = new Set(trackers.filter(t => t.type === "resource" && t.resourceSlot).map(t => t.resourceSlot));
+            const nonItemTrackers = trackers.filter(t => t.type !== "item");
+            const updateData = {};
+            const newOccupiedSlots = new Set();
+
+            for (let i = 0; i < slots.length; i++) {
+              const slot = slots[i];
+              const cand = nonItemTrackers[i];
+              if (cand) {
+                cand.type = "resource";
+                cand.resourceSlot = slot;
+                newOccupiedSlots.add(slot);
+                updateData[`system.resources.${slot}.label`] = cand.label || "";
+                updateData[`system.resources.${slot}.value`] = Number(cand.value) || 0;
+                updateData[`system.resources.${slot}.max`] = Number(cand.max) || 1;
+                updateData[`system.resources.${slot}.sr`] = (cand.resetOn || "").startsWith("sr");
+                updateData[`system.resources.${slot}.lr`] = (cand.resetOn || "").startsWith("lr");
+              }
+            }
+
+            for (const prevSlot of prevSlots) {
+              if (!newOccupiedSlots.has(prevSlot)) {
+                updateData[`system.resources.${prevSlot}.label`] = "";
+                updateData[`system.resources.${prevSlot}.value`] = 0;
+                updateData[`system.resources.${prevSlot}.max`] = 0;
+                updateData[`system.resources.${prevSlot}.sr`] = false;
+                updateData[`system.resources.${prevSlot}.lr`] = false;
+              }
+            }
+
+            for (let i = slots.length; i < nonItemTrackers.length; i++) {
+              nonItemTrackers[i].type = "custom";
+              nonItemTrackers[i].resourceSlot = null;
+            }
+
+            if (Object.keys(updateData).length > 0) {
+              await actor.update(updateData);
+            }
           };
 
           function renderActiveTrackersList() {
@@ -3659,7 +3520,7 @@ Click a numbered modifier badge to execute a roll.</div>
             </div>
           </div>
           ${srcInfo && srcInfo.hasItemUses ? (
-            srcInfo.chargeCost > 0 ? `
+          srcInfo.chargeCost > 0 ? `
               <div id="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed; font-size: 0.8em; opacity: ${chargeDeductDisabled ? '0.5' : '1'};">
                 <label style="display: flex; align-items: center; gap: 4px; cursor: ${chargeDeductDisabled ? 'not-allowed' : 'pointer'}; flex: 1; min-width: 0;" title="${chargeDeductDisabled ? 'No charges remaining on item' : 'Deduct charge/use from item on character sheet'}">
                   <input type="checkbox" id="deductChargeToggle" data-item-id="${srcInfo.itemId}" ${chargeDeductChecked ? 'checked' : ''} ${chargeDeductDisabled ? 'disabled' : ''} style="margin: 0;" />
@@ -3675,7 +3536,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 <i class="fas fa-check-circle"></i> Cast at will via ${srcInfo.name} (0 charge cost)
               </div>
             `
-          ) : ''}
+        ) : ''}
         </div>
       </div>
     `;
@@ -4139,7 +4000,7 @@ Click a numbered modifier badge to execute a roll.</div>
       const pb = Number(sys.attributes?.prof ?? 0);
       const spellcastingAbility = sys.attributes?.spellcasting;
       const hasSpellcasting = Boolean(spellcastingAbility && spellcastingAbility !== "" && spellcastingAbility !== "none");
-      
+
       const abilLabel = hasSpellcasting ? String(spellcastingAbility).toUpperCase() : "—";
       const abilModVal = hasSpellcasting ? Number(sys.abilities?.[spellcastingAbility]?.mod ?? 0) : null;
       const abilModDisplay = abilModVal !== null ? (abilModVal >= 0 ? `+${abilModVal}` : `${abilModVal}`) : "—";
@@ -4433,12 +4294,12 @@ Click a numbered modifier badge to execute a roll.</div>
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
         <!-- Actor Portrait & Vitals Card (Top Row) -->
-        <div id="dice-stuff-vitals-card" style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
+        <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
           <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
           <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 3px;">
             <!-- HP Tracker Row -->
             <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px; margin: 1px 0;">
-              <span id="dice-stuff-hp-header-label" style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
+              <span style="font-size: 0.74em; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-heart"></i> HP
               </span>
               <div style="display: flex; align-items: center; gap: 3px; min-width: 0;">
@@ -4452,7 +4313,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
             <!-- Hit Dice Tracker Row -->
             <div style="display: flex; align-items: center; justify-content: flex-start; gap: 5px;">
-              <span id="dice-stuff-hd-header-label" style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
+              <span style="font-size: 0.74em; font-weight: 700; color: #4b5d88; display: flex; align-items: center; gap: 2px; white-space: nowrap; width: 26px; flex-shrink: 0;">
                 <i class="fas fa-dice-d6"></i> HD
               </span>
               <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
@@ -4606,7 +4467,7 @@ Click a numbered modifier badge to execute a roll.</div>
           }
           try {
             localStorage.setItem(THEME_STORAGE_KEY, themeKey);
-          } catch (e) {}
+          } catch (e) { }
         }
 
         const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) || "default";
@@ -4698,7 +4559,6 @@ Click a numbered modifier badge to execute a roll.</div>
               border-right-color: #273142 !important;
             }
             .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper,
-            .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card,
             .app.dialog.cheapdice-theme-slate .custom-weapon-card,
             .app.dialog.cheapdice-theme-slate .custom-spell-card,
             .app.dialog.cheapdice-theme-slate .standard-weapon-card,
@@ -4706,37 +4566,6 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #1b212f !important;
               border-color: #2e3b52 !important;
               color: #e2e8f0 !important;
-            }
-            .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card span,
-            .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card div {
-              color: #e2e8f0 !important;
-            }
-            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-header-label {
-              color: #f87171 !important;
-            }
-            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-max-label {
-              color: #94a3b8 !important;
-            }
-            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-header-label {
-              color: #38bdf8 !important;
-            }
-            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-label {
-              color: #f1f5f9 !important;
-            }
-            .app.dialog.cheapdice-theme-slate #dice-stuff-roll-hd-btn {
-              background: #252f42 !important;
-              color: #38bdf8 !important;
-              border-color: #38bdf8 !important;
-            }
-            .app.dialog.cheapdice-theme-slate #dice-stuff-short-rest-btn {
-              background: rgba(217, 119, 6, 0.22) !important;
-              color: #fbbf24 !important;
-              border-color: #f59e0b !important;
-            }
-            .app.dialog.cheapdice-theme-slate #dice-stuff-long-rest-btn {
-              background: rgba(99, 102, 241, 0.25) !important;
-              color: #c7d2fe !important;
-              border-color: #818cf8 !important;
             }
             .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper span[style*="Tracking Stuff"],
             .app.dialog.cheapdice-theme-slate #tracking-stuff-wrapper div[style*="Tracking Stuff"],
@@ -4975,7 +4804,6 @@ Click a numbered modifier badge to execute a roll.</div>
               border-right-color: #2e2624 !important;
             }
             .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper,
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card,
             .app.dialog.cheapdice-theme-arcane .custom-weapon-card,
             .app.dialog.cheapdice-theme-arcane .custom-spell-card,
             .app.dialog.cheapdice-theme-arcane .standard-weapon-card,
@@ -4983,37 +4811,6 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #1c1a21 !important;
               border-color: #38312e !important;
               color: #fef3c7 !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card span,
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card div {
-              color: #fef3c7 !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-header-label {
-              color: #f87171 !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-max-label {
-              color: #d1d5db !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-header-label {
-              color: #fbbf24 !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-label {
-              color: #fef3c7 !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-roll-hd-btn {
-              background: #252026 !important;
-              color: #fbbf24 !important;
-              border-color: #d97706 !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-short-rest-btn {
-              background: rgba(217, 119, 6, 0.22) !important;
-              color: #fbbf24 !important;
-              border-color: #f59e0b !important;
-            }
-            .app.dialog.cheapdice-theme-arcane #dice-stuff-long-rest-btn {
-              background: rgba(139, 92, 246, 0.25) !important;
-              color: #ddd6fe !important;
-              border-color: #a78bfa !important;
             }
             .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper span[style*="Tracking Stuff"],
             .app.dialog.cheapdice-theme-arcane #tracking-stuff-wrapper div[style*="Tracking Stuff"] {
@@ -5266,7 +5063,6 @@ Click a numbered modifier badge to execute a roll.</div>
               border-right-color: rgba(255, 255, 255, 0.12) !important;
             }
             .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper,
-            .app.dialog.cheapdice-theme-glass #dice-stuff-vitals-card,
             .app.dialog.cheapdice-theme-glass .custom-weapon-card,
             .app.dialog.cheapdice-theme-glass .custom-spell-card,
             .app.dialog.cheapdice-theme-glass .standard-weapon-card,
@@ -5274,37 +5070,6 @@ Click a numbered modifier badge to execute a roll.</div>
               background: rgba(255, 255, 255, 0.05) !important;
               border-color: rgba(255, 255, 255, 0.12) !important;
               color: #ffffff !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dice-stuff-vitals-card span,
-            .app.dialog.cheapdice-theme-glass #dice-stuff-vitals-card div {
-              color: #ffffff !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-header-label {
-              color: #f87171 !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-max-label {
-              color: #cbd5e1 !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-header-label {
-              color: #38bdf8 !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-label {
-              color: #f1f5f9 !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dice-stuff-roll-hd-btn {
-              background: rgba(56, 189, 248, 0.15) !important;
-              color: #38bdf8 !important;
-              border-color: #38bdf8 !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dice-stuff-short-rest-btn {
-              background: rgba(217, 119, 6, 0.22) !important;
-              color: #fbbf24 !important;
-              border-color: #f59e0b !important;
-            }
-            .app.dialog.cheapdice-theme-glass #dice-stuff-long-rest-btn {
-              background: rgba(99, 102, 241, 0.25) !important;
-              color: #c7d2fe !important;
-              border-color: #818cf8 !important;
             }
             .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper span[style*="Tracking Stuff"],
             .app.dialog.cheapdice-theme-glass #tracking-stuff-wrapper div[style*="Tracking Stuff"] {
@@ -5872,7 +5637,7 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas fa-palette"></i> <span class="theme-label-text">${currentThemeObj.label}</span>
             </a>
           `);
-          themeBtnElem[0].onclick = () => {};
+          themeBtnElem[0].onclick = () => { };
 
           themeBtnElem.on("click", (e) => {
             e.preventDefault();
@@ -5903,7 +5668,7 @@ Click a numbered modifier badge to execute a roll.</div>
               },
               default: "close",
               render: (themeHtml) => {
-                themeHtml.find(".btn-select-theme").on("click", function() {
+                themeHtml.find(".btn-select-theme").on("click", function () {
                   const selectedKey = $(this).data("theme");
                   applyTheme(selectedKey);
                   const matched = THEMES.find(t => t.key === selectedKey) || THEMES[0];
@@ -5924,7 +5689,7 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas fa-sync-alt"></i> <span class="refresh-label-text">Refresh</span>
             </a>
           `);
-          refreshBtnElem[0].onclick = () => {};
+          refreshBtnElem[0].onclick = () => { };
 
           refreshBtnElem.on("click", async (e) => {
             e.preventDefault();
@@ -5951,7 +5716,7 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas ${isInitiallyCompact ? 'fa-expand-alt' : 'fa-compress-alt'}"></i> <span class="collapse-label-text">${isInitiallyCompact ? 'Expand' : 'Compact'}</span>
             </a>
           `);
-          collapseBtnElem[0].onclick = () => {};
+          collapseBtnElem[0].onclick = () => { };
 
           collapseBtnElem.on("click", (e) => {
             e.preventDefault();
@@ -5969,7 +5734,7 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas fa-crown" style="color: #d97706;"></i> <span class="gm-label-text">GM Tools</span>
             </a>
           `);
-          gmBtnElem[0].onclick = () => {};
+          gmBtnElem[0].onclick = () => { };
 
           gmBtnElem.on("click", (ev) => {
             ev.preventDefault();
@@ -6238,29 +6003,6 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.shortRest === "function") {
               const res = await actor.shortRest();
               if (res) {
-                // Execute Tracking Stuff Short Rest recharge routines ONLY for custom counters
-                // (Native dnd5e already handles items and short rest resources)
-                let lines = [];
-                if (globalThis.attackSocket?.executeAsGM) {
-                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "sr", game.user.id, { onlyCustom: true });
-                } else if (typeof rechargeActorTrackers === "function") {
-                  lines = await rechargeActorTrackers(actor, "sr", { onlyCustom: true });
-                }
-                if (lines && lines.length > 0) {
-                  await ChatMessage.create({
-                    user: game.user.id,
-                    speaker: ChatMessage.getSpeaker({ actor }),
-                    content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #2b7489; background: #eef7fa; border-radius: 4px; color: #1a2d36;">
-                      <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #1e5a6a;">
-                        <i class="fas fa-rotate"></i> ${actor.name}: Tracking Stuff Custom Counters Recharged
-                      </div>
-                      <div style="margin-top: 4px;">
-                        ${lines.join("<br>")}
-                      </div>
-                    </div>`
-                  });
-                }
-
                 dlg.close();
                 await window.CustomRolls.openActionDialog(currentMode, actor);
               }
@@ -6280,29 +6022,6 @@ Click a numbered modifier badge to execute a roll.</div>
             if (typeof actor.longRest === "function") {
               const res = await actor.longRest();
               if (res) {
-                // Execute Tracking Stuff Long Rest recharge routines ONLY for custom counters
-                // (Native dnd5e already handles items and primary/secondary/tertiary resources)
-                let lines = [];
-                if (globalThis.attackSocket?.executeAsGM) {
-                  lines = await globalThis.attackSocket.executeAsGM("rechargeActorTrackersAsGM", actor.id, "lr", game.user.id, { onlyCustom: true });
-                } else if (typeof rechargeActorTrackers === "function") {
-                  lines = await rechargeActorTrackers(actor, "lr", { onlyCustom: true });
-                }
-                if (lines && lines.length > 0) {
-                  await ChatMessage.create({
-                    user: game.user.id,
-                    speaker: ChatMessage.getSpeaker({ actor }),
-                    content: `<div style="font-size: 1.05em; line-height: 1.45; padding: 8px 10px; border-left: 4px solid #388e3c; background: #f1f8f2; border-radius: 4px; color: #1d331f;">
-                      <div style="font-weight: 700; font-size: 1.1em; margin-bottom: 4px; color: #256029;">
-                        <i class="fas fa-rotate"></i> ${actor.name}: Tracking Stuff Custom Counters Recharged
-                      </div>
-                      <div style="margin-top: 4px;">
-                        ${lines.join("<br>")}
-                      </div>
-                    </div>`
-                  });
-                }
-
                 dlg.close();
                 await window.CustomRolls.openActionDialog(currentMode, actor);
               }
@@ -6602,7 +6321,7 @@ Click a numbered modifier badge to execute a roll.</div>
           spellSlotDisplayMode = mode;
           try {
             localStorage.setItem(SPELL_SLOT_MODE_STORAGE_KEY, mode);
-          } catch (_err) {}
+          } catch (_err) { }
           html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
         });
 
@@ -6765,10 +6484,10 @@ Click a numbered modifier badge to execute a roll.</div>
             themeBtn.find(".theme-label-text").hide();
             refreshBtn.find(".refresh-label-text").hide();
             gmBtn.find(".gm-label-text").hide();
-            gmBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
+            gmBtn.contents().filter(function () { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
             dialogApp.find(".gm-label-text").hide();
 
-            closeBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="close-label-text" style="display: none;"></span>');
+            closeBtn.contents().filter(function () { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="close-label-text" style="display: none;"></span>');
             dialogApp.find(".close-label-text").hide();
 
             compactNav.css("display", "flex");
@@ -6845,7 +6564,7 @@ Click a numbered modifier badge to execute a roll.</div>
           isCompact = !isCompact;
           try {
             localStorage.setItem(COMPACT_STORAGE_KEY, String(isCompact));
-          } catch (e) {}
+          } catch (e) { }
           updateCompactView();
         }
 
@@ -6855,7 +6574,7 @@ Click a numbered modifier badge to execute a roll.</div>
           compactTab = $(this).data("tab");
           try {
             localStorage.setItem(COMPACT_TAB_STORAGE_KEY, compactTab);
-          } catch (e) {}
+          } catch (e) { }
           if (compactTab !== "abilities") {
             currentMode = compactTab;
           }
@@ -7311,14 +7030,14 @@ Click a numbered modifier badge to execute a roll.</div>
             let plainText = "";
             try {
               plainText = e.originalEvent.dataTransfer.getData("text/plain");
-            } catch (err) {}
+            } catch (err) { }
 
             // Check if this was an Item drop from character sheet
             let isItemDrop = false;
             try {
               const parsed = JSON.parse(plainText);
               if (parsed?.type === "Item") isItemDrop = true;
-            } catch (err) {}
+            } catch (err) { }
 
             if (isItemDrop) {
               // Defer to container drop handler
