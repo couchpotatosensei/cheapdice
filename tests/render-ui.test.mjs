@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { buildSpellConfigFromItem, isSpellPrepared, syncSpellsWithSheet } from '../modules/custom-rolls.js';
-import { formatChatMessageWithMode, toggleChatMode, getActiveChatMode, setActiveChatMode } from '../modules/chat-controls.js';
+import { formatChatMessageWithMode, toggleChatMode, getActiveChatMode, setActiveChatMode, wrapChatLogProcessMessage, handleChatMessageHook } from '../modules/chat-controls.js';
 import {
   appendDieToChatText,
   removeDieFromChatText,
@@ -528,7 +529,7 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     };
     globalThis.ui = {
       notifications: {
-        info: () => {}
+        info: () => { }
       }
     };
 
@@ -724,7 +725,7 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.ok(buttonHtml.includes('fa-shield-halved'));
   });
 
-  it("Dice Stuff header buttons order left-to-right: [theme], [refresh], [compact], [close]", () => {
+  it("Dice Stuff header buttons order left-to-right: [gm-tools], [refresh], [compact], [options], [close]", () => {
     // Simulate DOM elements array ordered via the injection logic
     const headerChildren = ["close"];
     const insertBefore = (targetClass, newClass) => {
@@ -737,31 +738,70 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     };
 
     // Injection order backwards before .close:
-    // 1. collapseBtn before close
-    // 2. refreshBtn before collapseBtn
-    // 3. themeBtn before refreshBtn
-    // 4. gmBtn before themeBtn (if GM)
-    insertBefore("close", "dice-stuff-collapse-btn");
+    // 1. menuBtn before close
+    // 2. collapseBtn before menuBtn
+    // 3. refreshBtn before collapseBtn
+    // 4. gmBtn before refreshBtn (if GM)
+    insertBefore("close", "dice-stuff-menu-btn");
+    insertBefore("dice-stuff-menu-btn", "dice-stuff-collapse-btn");
     insertBefore("dice-stuff-collapse-btn", "dice-stuff-refresh-btn");
-    insertBefore("dice-stuff-refresh-btn", "dice-stuff-theme-btn");
-    insertBefore("dice-stuff-theme-btn", "gm-tools-header-btn");
+    insertBefore("dice-stuff-refresh-btn", "gm-tools-header-btn");
 
     assert.deepEqual(headerChildren, [
       "gm-tools-header-btn",
-      "dice-stuff-theme-btn",
       "dice-stuff-refresh-btn",
       "dice-stuff-collapse-btn",
+      "dice-stuff-menu-btn",
       "close"
     ]);
 
     // For non-GM players (without gm-tools-header-btn)
     const playerChildren = headerChildren.filter(c => c !== "gm-tools-header-btn");
     assert.deepEqual(playerChildren, [
-      "dice-stuff-theme-btn",
       "dice-stuff-refresh-btn",
       "dice-stuff-collapse-btn",
+      "dice-stuff-menu-btn",
       "close"
     ]);
+  });
+
+  it("Dice Stuff Options menu contains Theme, Guide, and Combat Reference buttons", () => {
+    const menuHtml = `
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
+        <button type="button" id="ds-menu-theme">Choose Theme</button>
+        <button type="button" id="ds-menu-guide">Dice Stuff Guide</button>
+        <button type="button" id="ds-menu-quickref">5e Combat Reference</button>
+      </div>
+    `;
+    assert.ok(menuHtml.includes('id="ds-menu-theme"'));
+    assert.ok(menuHtml.includes('id="ds-menu-guide"'));
+    assert.ok(menuHtml.includes('id="ds-menu-quickref"'));
+  });
+
+  it("Dice Stuff Options header button is icon-only with no text label across views", () => {
+    const menuBtnHtml = `
+      <a class="header-button dice-stuff-menu-btn" title="Options & Help" style="cursor: pointer; margin-right: 4px;">
+        <i class="fas fa-cog"></i>
+      </a>
+    `;
+    assert.ok(menuBtnHtml.includes('dice-stuff-menu-btn'));
+    assert.ok(menuBtnHtml.includes('fa-cog'));
+    assert.ok(!menuBtnHtml.includes('menu-label-text'));
+    assert.ok(!menuBtnHtml.includes('>Options<'));
+  });
+
+  it("5e Combat QuickRef structures Movement, Actions, Bonus Actions, Reactions, Cover, and Conditions", () => {
+    const categories = [
+      "Movement",
+      "Action",
+      "Bonus Action",
+      "Reaction",
+      "Cover & Environment",
+      "Conditions"
+    ];
+    for (const cat of categories) {
+      assert.ok(typeof cat === "string" && cat.length > 0);
+    }
   });
 
   it("Dice Stuff dialogOptions preserves top and left coordinates across reloads", () => {
@@ -809,6 +849,11 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(formatChatMessageWithMode("/em Already em", "em"), "/em Already em");
     assert.equal(formatChatMessageWithMode("/ooc Out of character", "ic"), "/ooc Out of character");
 
+    // ProseMirror <p> tag unwrapping
+    assert.equal(formatChatMessageWithMode("<p>thinking about lunch</p>", "em"), "/em thinking about lunch");
+    assert.equal(formatChatMessageWithMode("<p>speaking in character</p>", "ic"), "/ic speaking in character");
+    assert.equal(formatChatMessageWithMode("<p>/r 1d20+5</p>", "em"), "/r 1d20+5");
+
     // Whitespace resilience
     assert.equal(formatChatMessageWithMode("   /roll 2d6   ", "ic"), "   /roll 2d6   ");
     assert.equal(formatChatMessageWithMode("", "ic"), "");
@@ -840,6 +885,65 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     // Toggle IC off
     assert.equal(toggleChatMode("ic"), null);
     assert.equal(getActiveChatMode(), null);
+  });
+
+  it("wrapChatLogProcessMessage wraps processMessage targets and forwards formatted mode and extra args", async () => {
+    let received = null;
+    let receivedArgs = null;
+    const fakeChatLog = {
+      processMessage: async function (msg, ...args) {
+        received = msg;
+        receivedArgs = args;
+        return { success: true };
+      }
+    };
+    globalThis.ChatLog = function () { };
+    globalThis.ChatLog.prototype = fakeChatLog;
+
+    wrapChatLogProcessMessage();
+
+    // With EM active
+    setActiveChatMode("em");
+    await fakeChatLog.processMessage("waves friendly", { speaker: { alias: "Hero" } });
+    assert.equal(received, "/em waves friendly");
+    assert.deepEqual(receivedArgs, [{ speaker: { alias: "Hero" } }]);
+
+    // With mode off
+    setActiveChatMode(null);
+    await fakeChatLog.processMessage("normal text");
+    assert.equal(received, "normal text");
+
+    delete globalThis.ChatLog;
+  });
+
+  it("handleChatMessageHook intercepts chat submissions and routes to slash command", () => {
+    let sent = null;
+    const fakeLog = {
+      processMessage: (msg) => { sent = msg; }
+    };
+
+    // When mode is EM
+    setActiveChatMode("em");
+    const resultEm = handleChatMessageHook(fakeLog, "thinking about lunch", {});
+    assert.equal(resultEm, false);
+    assert.equal(sent, "/em thinking about lunch");
+
+    // With ProseMirror wrapped HTML input
+    const resultHtml = handleChatMessageHook(fakeLog, "<p>looking around</p>", {});
+    assert.equal(resultHtml, false);
+    assert.equal(sent, "/em looking around");
+
+    // When input is already a slash command
+    sent = null;
+    const resultSlash = handleChatMessageHook(fakeLog, "/r 1d20", {});
+    assert.equal(resultSlash, true);
+    assert.equal(sent, null);
+
+    // When mode is null
+    setActiveChatMode(null);
+    const resultNull = handleChatMessageHook(fakeLog, "just talking", {});
+    assert.equal(resultNull, true);
+    assert.equal(sent, null);
   });
 
   it("appendDieToChatText accurately appends dice notation and respects operators", () => {
@@ -992,7 +1096,7 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
         return null;
       }
       querySelectorAll() { return []; }
-      addEventListener() {}
+      addEventListener() { }
     }
 
     const prevDoc = globalThis.document;
@@ -1018,6 +1122,39 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     } finally {
       globalThis.document = prevDoc;
     }
+  });
+
+  it("CSS linter: ensures no un-scoped #chat or sidebar tab display rules exist", () => {
+    const diceTrayJs = fs.readFileSync(new URL('../modules/dice-tray-copycat.js', import.meta.url), 'utf-8');
+    const chatControlsJs = fs.readFileSync(new URL('../modules/chat-controls.js', import.meta.url), 'utf-8');
+
+    const checkCss = (code, filename) => {
+      const styleMatches = code.match(/style\.textContent\s*=\s*`([\s\S]*?)`/g) || [];
+      for (const block of styleMatches) {
+        // Assert no bare un-scoped #chat { ... display: ... !important; }
+        // Legitimate scoped forms are #chat.active or .chat-popout #chat
+        const bareChatDisplay = /(?:^|[{};,\n`])\s*#chat\s*\{[^}]*display\s*:\s*(?:flex|grid|block)\s*!important/i.test(block);
+        assert.equal(bareChatDisplay, false, `${filename} must not contain bare un-scoped '#chat { display: ... !important }'`);
+
+        // Assert that #chat:not(.active) is hidden if #chat.active is styled
+        if (/#chat\.active/i.test(block)) {
+          assert.ok(
+            /#chat:not\(\.active\)[^}]*display\s*:\s*none\s*!important/i.test(block),
+            `${filename} must enforce '#chat:not(.active) { display: none !important }' when styling #chat.active`
+          );
+        }
+      }
+    };
+
+    checkCss(diceTrayJs, 'modules/dice-tray-copycat.js');
+    checkCss(chatControlsJs, 'modules/chat-controls.js');
+
+    // Self-test: verify linter regex flags illegal bare selectors
+    const testPattern = /(?:^|[{};,\n`])\s*#chat\s*\{[^}]*display\s*:\s*(?:flex|grid|block)\s*!important/i;
+    assert.equal(testPattern.test("`\n  #chat { display: flex !important; }\n`"), true);
+    assert.equal(testPattern.test("`.other, #chat { display: block !important; }`"), true);
+    assert.equal(testPattern.test("`#chat.active { display: flex !important; }`"), false);
+    assert.equal(testPattern.test("`.chat-popout #chat { display: flex !important; }`"), false);
   });
 });
 

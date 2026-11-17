@@ -2873,7 +2873,7 @@ Click a numbered modifier badge to execute a roll.</div>
             }
           }
 
-          const syncResources = async () => {};
+          const syncResources = async () => { };
 
           function renderActiveTrackersList() {
             if (!trackers || trackers.length === 0) {
@@ -6098,54 +6098,89 @@ Click a numbered modifier badge to execute a roll.</div>
           document.head.appendChild(styleTag);
         }
 
-        // Header Theme Button Injection (Works reliably with window dragging)
+        // Header Settings Menu Button Injection (Unified Settings, Theme & Help menu)
         const header = dialogApp.find(".window-header");
-        let themeBtnElem = null;
-        if (header.find(".dice-stuff-theme-btn").length === 0) {
-          const currentThemeObj = THEMES.find(t => t.key === savedTheme) || THEMES[0];
-          themeBtnElem = $(`
-            <a class="header-button dice-stuff-theme-btn" title="Current Theme: ${currentThemeObj.label} (Click to switch)" style="cursor: pointer; margin-right: 4px;">
-              <i class="fas fa-palette"></i> <span class="theme-label-text">${currentThemeObj.label}</span>
+        let menuBtnElem = null;
+        if (header.find(".dice-stuff-menu-btn").length === 0) {
+          menuBtnElem = $(`
+            <a class="header-button dice-stuff-menu-btn" title="Settings" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas fa-cog"></i>
             </a>
           `);
-          themeBtnElem[0].onclick = () => { };
+          menuBtnElem[0].onclick = () => { };
 
-          themeBtnElem.on("click", (e) => {
+          menuBtnElem.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
 
             const cur = localStorage.getItem(THEME_STORAGE_KEY) || "default";
             new Dialog({
-              title: "Choose Dice Stuff Theme",
+              title: `Dice Stuff: Settings (${actor.name})`,
               content: `
                 <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
-                  <button type="button" class="btn-select-theme ${cur === 'default' ? 'active-theme' : ''}" data-theme="default" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: ${cur === 'default' ? '#e2e8f0' : '#fff'}; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
-                    Default (Foundry Standard)
+                  <button type="button" id="ds-menu-theme" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 12px;">
+                    <i class="fas fa-palette" style="color: #6366f1; width: 16px;"></i> Choose Theme
                   </button>
-                  <button type="button" class="btn-select-theme ${cur === 'slate' ? 'active-theme' : ''}" data-theme="slate" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #334155; background: ${cur === 'slate' ? '#1e293b' : '#0f172a'}; color: #f8fafc; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
-                    Slate & Obsidian
+                  <button type="button" id="ds-menu-guide" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 12px;">
+                    <i class="fas fa-book-open" style="color: #0284c7; width: 16px;"></i> Dice Stuff Guide
                   </button>
-                  <button type="button" class="btn-select-theme ${cur === 'arcane' ? 'active-theme' : ''}" data-theme="arcane" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #78350f; background: ${cur === 'arcane' ? '#252026' : '#121216'}; color: #fef3c7; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
-                    Arcane Midnight
-                  </button>
-                  <button type="button" class="btn-select-theme ${cur === 'glass' ? 'active-theme' : ''}" data-theme="glass" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid rgba(255,255,255,0.2); background: ${cur === 'glass' ? 'rgba(56,189,248,0.2)' : 'rgba(15,23,42,0.9)'}; color: #ffffff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
-                    Tactical Glass
+                  <button type="button" id="ds-menu-quickref" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 12px;">
+                    <i class="fas fa-shield-halved" style="color: #16a34a; width: 16px;"></i> 5e Combat Reference
                   </button>
                 </div>
               `,
               buttons: {
-                close: { label: "Cancel" }
+                close: { label: "Close" }
               },
               default: "close",
-              render: (themeHtml) => {
-                themeHtml.find(".btn-select-theme").on("click", function () {
-                  const selectedKey = $(this).data("theme");
-                  applyTheme(selectedKey);
-                  const matched = THEMES.find(t => t.key === selectedKey) || THEMES[0];
-                  themeBtnElem.find(".theme-label-text").text(matched.label);
-                  themeBtnElem.attr("title", `Current Theme: ${matched.label} (Click to switch)`);
-                  themeHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+              render: (menuHtml) => {
+                const menuApp = menuHtml.closest(".dialog");
+                if (cur && cur !== "default") {
+                  menuApp.addClass(`cheapdice-theme-${cur}`);
+                }
+                menuHtml.find("#ds-menu-theme").on("click", () => {
+                  menuHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                  new Dialog({
+                    title: "Choose Dice Stuff Theme",
+                    content: `
+                      <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
+                        <button type="button" class="btn-select-theme ${cur === 'default' ? 'active-theme' : ''}" data-theme="default" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: ${cur === 'default' ? '#e2e8f0' : '#fff'}; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                          Default (Foundry Standard)
+                        </button>
+                        <button type="button" class="btn-select-theme ${cur === 'slate' ? 'active-theme' : ''}" data-theme="slate" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #334155; background: ${cur === 'slate' ? '#1e293b' : '#0f172a'}; color: #f8fafc; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                          Slate & Obsidian
+                        </button>
+                        <button type="button" class="btn-select-theme ${cur === 'arcane' ? 'active-theme' : ''}" data-theme="arcane" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #78350f; background: ${cur === 'arcane' ? '#252026' : '#121216'}; color: #fef3c7; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                          Arcane Midnight
+                        </button>
+                        <button type="button" class="btn-select-theme ${cur === 'glass' ? 'active-theme' : ''}" data-theme="glass" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid rgba(255,255,255,0.2); background: ${cur === 'glass' ? 'rgba(56,189,248,0.2)' : 'rgba(15,23,42,0.9)'}; color: #ffffff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                          Tactical Glass
+                        </button>
+                      </div>
+                    `,
+                    buttons: {
+                      close: { label: "Cancel" }
+                    },
+                    default: "close",
+                    render: (themeHtml) => {
+                      themeHtml.find(".btn-select-theme").on("click", function () {
+                        const selectedKey = $(this).data("theme");
+                        applyTheme(selectedKey);
+                        themeHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                      });
+                    }
+                  }, { width: 260 }).render(true);
+                });
+
+                menuHtml.find("#ds-menu-guide").on("click", () => {
+                  menuHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                  window.CustomRolls?.openDiceStuffGuide?.(actor);
+                });
+
+                menuHtml.find("#ds-menu-quickref").on("click", () => {
+                  menuHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                  window.CustomRolls?.openCombatQuickRef?.();
                 });
               }
             }, { width: 260 }).render(true);
@@ -6248,17 +6283,17 @@ Click a numbered modifier badge to execute a roll.</div>
         }
 
         // Ordered Header Button Injection:
-        // Left-to-right order: [GM Tools] [Theme] [Refresh] [Compact/Expand] [Close]
+        // Left-to-right order: [GM Tools] [Refresh] [Compact/Expand] [Options / Gear] [Close]
         // Inserted backwards before .close:
-        // 1. collapseBtn before close
-        // 2. refreshBtn before collapseBtn
-        // 3. themeBtn before refreshBtn
-        // 4. gmBtn before themeBtn
+        // 1. menuBtn before close
+        // 2. collapseBtn before menuBtn
+        // 3. refreshBtn before collapseBtn
+        // 4. gmBtn before refreshBtn
         const closeBtnElem = header.find(".close");
-        if (collapseBtnElem) closeBtnElem.before(collapseBtnElem);
-        if (refreshBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem).before(refreshBtnElem);
-        if (themeBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem)).before(themeBtnElem);
-        if (gmBtnElem) (header.find(".dice-stuff-theme-btn").length ? header.find(".dice-stuff-theme-btn") : (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem))).before(gmBtnElem);
+        if (menuBtnElem) closeBtnElem.before(menuBtnElem);
+        if (collapseBtnElem) (header.find(".dice-stuff-menu-btn").length ? header.find(".dice-stuff-menu-btn") : closeBtnElem).before(collapseBtnElem);
+        if (refreshBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : (header.find(".dice-stuff-menu-btn").length ? header.find(".dice-stuff-menu-btn") : closeBtnElem)).before(refreshBtnElem);
+        if (gmBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : (header.find(".dice-stuff-menu-btn").length ? header.find(".dice-stuff-menu-btn") : closeBtnElem))).before(gmBtnElem);
 
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
@@ -6407,7 +6442,7 @@ Click a numbered modifier badge to execute a roll.</div>
               }
             } else if (typeof actor.sheet?._onConfigMenu === "function") {
               actor.sheet._onConfigMenu({
-                preventDefault: () => {},
+                preventDefault: () => { },
                 currentTarget: { dataset: { action: "hit-points", config: "hit-points" } }
               });
             } else {
@@ -6442,7 +6477,7 @@ Click a numbered modifier badge to execute a roll.</div>
               }
             } else if (typeof actor.sheet?._onConfigMenu === "function") {
               actor.sheet._onConfigMenu({
-                preventDefault: () => {},
+                preventDefault: () => { },
                 currentTarget: { dataset: { action: "armor", config: "armor" } }
               });
             } else {
@@ -7084,7 +7119,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
         function updateCompactView() {
           const collapseBtn = dialogApp.find(".dice-stuff-collapse-btn");
-          const themeBtn = dialogApp.find(".dice-stuff-theme-btn");
+          const menuBtn = dialogApp.find(".dice-stuff-menu-btn");
           const gmBtn = dialogApp.find(".gm-tools-header-btn");
           const refreshBtn = dialogApp.find(".dice-stuff-refresh-btn");
           const closeBtn = dialogApp.find(".header-button.close");
@@ -7095,7 +7130,7 @@ Click a numbered modifier badge to execute a roll.</div>
             collapseBtn.attr("title", "Expand to Full View");
 
             // Hide text labels in header buttons in compact mode (icons only)
-            themeBtn.find(".theme-label-text").hide();
+            menuBtn.find(".menu-label-text").hide();
             refreshBtn.find(".refresh-label-text").hide();
             gmBtn.find(".gm-label-text").hide();
             gmBtn.contents().filter(function () { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
@@ -7152,8 +7187,7 @@ Click a numbered modifier badge to execute a roll.</div>
             collapseBtn.find(".collapse-label-text").show().text("Compact");
             collapseBtn.attr("title", "Collapse to Compact View");
 
-            // Restore text labels in header buttons in expanded mode
-            themeBtn.find(".theme-label-text").show();
+            // Restore text labels in header buttons in expanded mode (Options remains icon-only)
             refreshBtn.find(".refresh-label-text").show();
             dialogApp.find(".gm-label-text").show();
             dialogApp.find(".close-label-text").show();
@@ -8293,6 +8327,649 @@ Click a numbered modifier badge to execute a roll.</div>
       d.render(true);
     }
     renderInspector();
+  };
+
+  // Dice Stuff User Guide Dialog
+  window.CustomRolls.openDiceStuffGuide = function (actor) {
+    const actorName = actor?.name || "your character";
+    new Dialog({
+      title: `Dice Stuff Guide (${actorName})`,
+      content: `
+        <div class="dice-stuff-guide-container" style="max-height: 520px; overflow-y: auto; padding: 4px 8px; font-size: 0.88em; line-height: 1.45; color: #1e293b;">
+          <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+            <h3 style="margin: 0 0 4px 0; font-size: 1.15em; color: #fff; border: none; font-weight: 700;">
+              <i class="fas fa-dice-d20" style="margin-right: 6px;"></i> This is Dice Stuff
+            </h3>
+            <div style="font-size: 0.9em; opacity: 0.95;">Rather than a character sheet replacement, consider this a character sheet supplement that ideally serves as a one stop shop for rolling dice and other useful functions.</div>
+          </div>
+
+          <div style="margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
+            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-sync-alt" style="color: #2563eb;"></i> Syncing with Character Sheet
+            </h4>
+            <p style="margin: 0 0 6px 0;">Weapons, features, and prepared spells are automatically read from your character sheet.</p>
+            <ul style="margin: 0; padding-left: 18px;">
+              <li><strong>Equipped Items:</strong> Weapons must be equipped on your character sheet to appear in the Weapons tab.</li>
+              <li><strong>Prepared Spells:</strong> Spells marked prepared (or cantrips / rituals) are pulled automatically.</li>
+              <li><strong>Sheet Changed?</strong> Click <i class="fas fa-sync-alt"></i> <strong>Refresh</strong> in the window header to instantly resynchronize with your sheet.</li>
+            </ul>
+          </div>
+
+          <div style="margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
+            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-heart-pulse" style="color: #dc2626;"></i> Vitals, AC & Trackers
+            </h4>
+            <ul style="margin: 0; padding-left: 18px;">
+              <li><strong>Hit Points:</strong> Click the HP bar or numbers to open the HP editor to apply damage, healing, or temp HP.</li>
+              <li><strong>Armor Class:</strong> Displays current AC. Clicking opens the Armor Class configuration.</li>
+              <li><strong>Spell Slots:</strong> Click circular slot pips to spend or restore available spell slots.</li>
+              <li><strong>Rests:</strong> Use <em>Short Rest</em> (spend Hit Dice) or <em>Long Rest</em> to reset HP and features cleanly.</li>
+            </ul>
+          </div>
+
+          <div style="margin-bottom: 6px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
+            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-mouse-pointer" style="color: #16a34a;"></i> Clicking & Rolling Shortcuts
+            </h4>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 0.92em;">
+              <tr style="border-bottom: 1px solid #cbd5e1;">
+                <td style="padding: 4px 6px; font-weight: 700; width: 35%;">Left-Click</td>
+                <td style="padding: 4px 6px;">Normal attack / damage roll or trigger action.</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #cbd5e1;">
+                <td style="padding: 4px 6px; font-weight: 700;">Right-Click</td>
+                <td style="padding: 4px 6px;">Advantage / Disadvantage prompt or card options.</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 6px; font-weight: 700;">Shift + Click</td>
+                <td style="padding: 4px 6px;">Fast-forward roll directly to chat (bypasses dialogs).</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      `,
+      buttons: {
+        close: { label: "Close" }
+      },
+      default: "close"
+    }, { width: 440, height: "auto" }).render(true);
+  };
+
+  // 5e Combat Quick Reference Dialog (Crobi style, Interactive & Themed)
+  window.CustomRolls.openCombatQuickRef = function () {
+    const curTheme = localStorage.getItem("cheapdice_dice_stuff_theme") || "default";
+
+    const quickrefData = [
+      {
+        category: "Movement",
+        icon: "fa-person-running",
+        color: "#2563eb",
+        items: [
+          { name: "Move", desc: "You can move up to your speed on your turn. You can break up movement before and after actions.", tag: "Speed / Break up" },
+          { name: "Difficult Terrain", desc: "Moving 1 foot in difficult terrain costs 1 extra foot (2 feet total per foot moved).", tag: "+1 ft per foot" },
+          { name: "Climbing, Swimming & Crawling", desc: "Each foot of movement costs 1 extra foot unless you have a climbing or swimming speed.", tag: "+1 ft per foot" },
+          { name: "Dropping Prone", desc: "Dropping prone costs 0 movement. You can drop prone freely on your turn.", tag: "0 ft cost" },
+          { name: "Standing Up", desc: "Standing up from prone costs half your movement speed for the turn.", tag: "Costs half speed" }
+        ]
+      },
+      {
+        category: "Action (1 / turn)",
+        icon: "fa-hand-fist",
+        color: "#dc2626",
+        items: [
+          { name: "Attack", desc: "Make one melee or ranged weapon attack (or multiple if you have Extra Attack).", tag: "d20 + Stat + Prof" },
+          { name: "Cast a Spell", desc: "Cast a spell with a casting time of 1 action. Check V, S, M components and concentration.", tag: "1 Action / V, S, M" },
+          { name: "Dash", desc: "Gain extra movement equal to your speed for the current turn.", tag: "+Speed for turn" },
+          { name: "Disengage", desc: "Your movement doesn't provoke opportunity attacks for the rest of the turn.", tag: "No opportunity attacks" },
+          { name: "Dodge", desc: "Attacks against you have disadvantage if you can see the attacker; Dex saves have advantage.", tag: "Disadv to hit / Adv Dex" },
+          { name: "Help", desc: "Feint or distract to give an ally advantage on their next ability check or attack roll.", tag: "Advantage to ally" },
+          { name: "Hide", desc: "Make a Dexterity (Stealth) check to become hidden from creatures that cannot see you.", tag: "Dex (Stealth) check" },
+          { name: "Ready", desc: "Wait for a specific trigger to take an action using your reaction, or hold a spell (requires concentration).", tag: "Reaction trigger" },
+          { name: "Search", desc: "Devote your attention to find something (Wisdom/Perception or Intelligence/Investigation check).", tag: "Wis / Int check" },
+          { name: "Use Object", desc: "Interact with a second object, or use a complex item requiring an action.", tag: "Item interaction" },
+          { name: "Grapple / Shove", desc: "Contested Strength (Athletics) check vs target's Athletics or Acrobatics to grapple or push 5ft / knock prone.", tag: "Contested Athletics" }
+        ]
+      },
+      {
+        category: "Bonus Action (Max 1 / turn)",
+        icon: "fa-bolt",
+        color: "#d97706",
+        items: [
+          { name: "Off-Hand Attack", desc: "Attack with a different light melee weapon after attacking with a light weapon in your main hand (no ability mod to damage unless negative).", tag: "No stat mod to damage" },
+          { name: "Cast a Bonus Action Spell", desc: "If you cast a bonus action spell, you cannot cast another spell this turn except a cantrip with a casting time of 1 action.", tag: "Action = Cantrip only" },
+          { name: "Class Features", desc: "Features specified as bonus actions (e.g., Cunning Action, Second Wind, Rage, Bardic Inspiration).", tag: "Class / Feat specific" }
+        ]
+      },
+      {
+        category: "Reaction (1 / round)",
+        icon: "fa-shield-halved",
+        color: "#7c3aed",
+        items: [
+          { name: "Opportunity Attack", desc: "Make one melee attack when a hostile creature moves out of your reach without Disengaging.", tag: "Interrupts movement" },
+          { name: "Readied Action", desc: "Execute the action you prepared with the Ready action when its trigger occurs.", tag: "Triggered response" },
+          { name: "Reaction Spells", desc: "Cast spells triggered by specific events (e.g., Shield on attack, Absorb Elements on elemental damage, Counterspell).", tag: "Shield / Absorb / Counter" }
+        ]
+      },
+      {
+        category: "Cover & Environment",
+        icon: "fa-mountain-sun",
+        color: "#059669",
+        items: [
+          { name: "Half Cover (+2)", desc: "+2 bonus to AC and Dexterity saving throws against attacks and effects from behind cover.", tag: "+2 AC & Dex saves" },
+          { name: "Three-Quarters Cover (+5)", desc: "+5 bonus to AC and Dexterity saving throws against attacks and effects originating from behind cover.", tag: "+5 AC & Dex saves" },
+          { name: "Total Cover", desc: "Target cannot be targeted directly by an attack or spell (though area effects may reach around corners).", tag: "Cannot target directly" }
+        ]
+      },
+      {
+        category: "Conditions",
+        icon: "fa-triangle-exclamation",
+        color: "#475569",
+        items: [
+          { name: "Blinded", desc: "Fails ability checks requiring sight. Attack rolls against you have adv; your attacks have disadv.", tag: "Attacks adv / disadv" },
+          { name: "Charmed", desc: "Cannot attack the charmer. Charmer has adv on social interaction checks against you.", tag: "Cannot attack charmer" },
+          { name: "Frightened", desc: "Disadvantage on ability checks and attack rolls while source of fear is in line of sight. Can't move closer.", tag: "Disadv / Can't move closer" },
+          { name: "Grappled", desc: "Speed becomes 0. Condition ends if grappler is incapacitated or moved out of reach.", tag: "Speed = 0" },
+          { name: "Incapacitated", desc: "Cannot take actions or reactions.", tag: "No actions / reactions" },
+          { name: "Invisible", desc: "Impossible to see without magic or special senses. Attacks against you have disadv; your attacks have adv.", tag: "Adv on attacks / Disadv vs" },
+          { name: "Paralyzed", desc: "Incapacitated, cannot move or speak. Auto-fails Str/Dex saves. Attacks have adv; hits within 5ft are critical hits.", tag: "Auto-crit within 5ft" },
+          { name: "Poisoned", desc: "Disadvantage on attack rolls and ability checks.", tag: "Disadvantage" },
+          { name: "Prone", desc: "Only movement is crawl. Disadv on attacks. Attacks against you have adv within 5ft, disadv if further.", tag: "Adv within 5ft / Disadv away" },
+          { name: "Restrained", desc: "Speed 0. Attacks against you have adv; your attacks have disadv. Disadv on Dex saves.", tag: "Speed 0 / Adv against" },
+          { name: "Stunned", desc: "Incapacitated, cannot move, speaks falteringly. Auto-fails Str/Dex saves. Attacks against you have adv.", tag: "Auto-fail Str/Dex" },
+          { name: "Unconscious", desc: "Incapacitated, drops held items, falls prone. Auto-fails Str/Dex saves. Attacks have adv; hits within 5ft are crits.", tag: "Incapacitated / Auto-crit" }
+        ]
+      }
+    ];
+
+    let sectionsHtml = "";
+    for (const cat of quickrefData) {
+      const itemsHtml = cat.items.map(it => `
+        <div class="quickref-card" data-name="${it.name}" data-desc="${it.desc}">
+          <div class="quickref-card-header">
+            <span class="quickref-card-title" style="color: ${cat.color};">
+              <i class="fas ${cat.icon}" style="margin-right: 4px; opacity: 0.9;"></i> ${it.name}
+            </span>
+            <a class="quickref-chat-btn" data-name="${it.name}" data-cat="${cat.category}" data-color="${cat.color}" data-icon="${cat.icon}" data-desc="${it.desc}" data-tag="${it.tag || ''}" title="Send '${it.name}' rule to Chat">
+              <i class="fas fa-comment-dots"></i>
+            </a>
+          </div>
+          <div class="quickref-desc">${it.desc}</div>
+          ${it.tag ? `<div class="quickref-tag"><i class="fas fa-tag" style="font-size: 0.85em; opacity: 0.7; margin-right: 3px;"></i>${it.tag}</div>` : ""}
+        </div>
+      `).join("");
+
+      sectionsHtml += `
+        <div class="quickref-section" data-cat="${cat.category}">
+          <div class="quickref-section-header" style="border-left-color: ${cat.color};">
+            <span style="display: flex; align-items: center; gap: 6px; color: ${cat.color};">
+              <i class="fas ${cat.icon}"></i> ${cat.category}
+            </span>
+            <span class="quickref-section-count">(${cat.items.length})</span>
+          </div>
+          <div class="quickref-grid">
+            ${itemsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    new Dialog({
+      title: "5e Combat Quick Reference",
+      content: `
+        <style>
+          .cheapdice-quickref-dialog .window-content {
+            padding: 8px 10px;
+          }
+          .cheapdice-quickref-dialog .dialog-buttons {
+            display: none !important;
+          }
+          .cheapdice-quickref-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.88em;
+          }
+          .quickref-search-row {
+            position: relative;
+            display: flex;
+            align-items: center;
+          }
+          .quickref-search-row i.search-icon {
+            position: absolute;
+            left: 8px;
+            color: #94a3b8;
+            font-size: 0.85em;
+            pointer-events: none;
+          }
+          .quickref-search-input {
+            width: 100%;
+            height: 28px;
+            padding: 0 26px 0 28px;
+            font-size: 0.84em;
+            border-radius: 4px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #0f172a;
+            outline: none;
+            box-sizing: border-box;
+          }
+          .quickref-search-input:focus {
+            border-color: #3b82f6;
+          }
+          .quickref-clear-btn {
+            display: none;
+            position: absolute;
+            right: 8px;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 0.85em;
+          }
+          .quickref-clear-btn:hover {
+            color: #64748b;
+          }
+          .cheapdice-quickref-dialog .quickref-filter-bar {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 4px !important;
+            align-items: center !important;
+          }
+          .cheapdice-quickref-dialog button.quickref-filter-btn {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 4px !important;
+            width: auto !important;
+            flex: 0 0 auto !important;
+            margin: 0 !important;
+            height: 24px !important;
+            line-height: 22px !important;
+            padding: 0 8px !important;
+            font-size: 0.78em !important;
+            font-weight: 700 !important;
+            background: #ffffff !important;
+            color: #475569 !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
+            transition: all 0.15s ease !important;
+          }
+          .cheapdice-quickref-dialog button.quickref-filter-btn.active {
+            background: #1e293b !important;
+            color: #ffffff !important;
+            border-color: #1e293b !important;
+          }
+          .quickref-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+            gap: 6px;
+          }
+          .quickref-section {
+            margin-bottom: 10px;
+          }
+          .quickref-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 3px 6px;
+            background: #f1f5f9;
+            border-left: 3px solid #2563eb;
+            border-radius: 0 4px 4px 0;
+            font-weight: 700;
+            font-size: 0.86em;
+            color: #1e293b;
+            margin-bottom: 6px;
+          }
+          .quickref-section-count {
+            font-size: 0.78em;
+            font-weight: 600;
+            color: #64748b;
+          }
+          .quickref-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 5px;
+            padding: 6px 8px;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 4px;
+            transition: transform 0.1s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+          }
+          .quickref-card:hover {
+            border-color: #94a3b8;
+            box-shadow: 0 3px 6px -1px rgba(0,0,0,0.08);
+          }
+          .quickref-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+          }
+          .quickref-card-title {
+            font-weight: 700;
+            font-size: 0.88em;
+            display: flex;
+            align-items: center;
+          }
+          .quickref-chat-btn {
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            transition: color 0.15s ease, background 0.15s ease;
+          }
+          .quickref-chat-btn:hover {
+            color: #2563eb;
+            background: rgba(37, 99, 235, 0.08);
+          }
+          .quickref-desc {
+            font-size: 0.81em;
+            color: #475569;
+            line-height: 1.35;
+          }
+          .quickref-tag {
+            font-size: 0.74em;
+            font-weight: 600;
+            color: #64748b;
+            border-top: 1px dashed #e2e8f0;
+            padding-top: 3px;
+            margin-top: 2px;
+          }
+
+          /* --- Slate & Obsidian Theme Styling --- */
+          .cheapdice-theme-slate.cheapdice-quickref-dialog {
+            background: #131722 !important;
+            border: 1px solid #334155 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .window-header {
+            background: #1e2536 !important;
+            border-bottom: 1px solid #334155 !important;
+            color: #f8fafc !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .window-content {
+            background: #131722 !important;
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-search-input {
+            background: #1b212f !important;
+            border-color: #334155 !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog button.quickref-filter-btn {
+            background: #1b212f !important;
+            border-color: #334155 !important;
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog button.quickref-filter-btn.active {
+            background: #2563eb !important;
+            border-color: #38bdf8 !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-section-header {
+            background: #1e2536 !important;
+            color: #38bdf8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-section-count {
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-card {
+            background: #1b212f !important;
+            border-color: #2e3b52 !important;
+            color: #e2e8f0 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-card:hover {
+            border-color: #38bdf8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-desc {
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-tag {
+            color: #38bdf8 !important;
+            border-top-color: #2e3b52 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-chat-btn {
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-chat-btn:hover {
+            color: #38bdf8 !important;
+            background: rgba(56, 189, 248, 0.15) !important;
+          }
+
+          /* --- Arcane Midnight Theme Styling --- */
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog {
+            background: #121216 !important;
+            border: 1px solid #78350f !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .window-header {
+            background: #1c1a21 !important;
+            border-bottom: 1px solid #78350f !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .window-content {
+            background: #121216 !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-search-input {
+            background: #1c1a21 !important;
+            border-color: #78350f !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog button.quickref-filter-btn {
+            background: #1c1a21 !important;
+            border-color: #78350f !important;
+            color: #a8a29e !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog button.quickref-filter-btn.active {
+            background: #d97706 !important;
+            border-color: #fbbf24 !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-section-header {
+            background: #252026 !important;
+            color: #fbbf24 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-section-count {
+            color: #d97706 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-card {
+            background: #1c1a21 !important;
+            border-color: #38312e !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-card:hover {
+            border-color: #d97706 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-desc {
+            color: #d4cfc5 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-tag {
+            color: #fbbf24 !important;
+            border-top-color: #38312e !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-chat-btn {
+            color: #a8a29e !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-chat-btn:hover {
+            color: #fbbf24 !important;
+            background: rgba(251, 191, 36, 0.15) !important;
+          }
+
+          /* --- Tactical Glass Theme Styling --- */
+          .cheapdice-theme-glass.cheapdice-quickref-dialog {
+            background: rgba(15, 23, 42, 0.9) !important;
+            border: 1px solid rgba(56, 189, 248, 0.4) !important;
+            backdrop-filter: blur(12px) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .window-header {
+            background: rgba(30, 41, 59, 0.75) !important;
+            border-bottom: 1px solid rgba(56, 189, 248, 0.3) !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .window-content {
+            background: transparent !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-search-input {
+            background: rgba(15, 23, 42, 0.7) !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog button.quickref-filter-btn {
+            background: rgba(30, 41, 59, 0.7) !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog button.quickref-filter-btn.active {
+            background: rgba(56, 189, 248, 0.4) !important;
+            border-color: rgba(56, 189, 248, 0.8) !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-section-header {
+            background: rgba(56, 189, 248, 0.15) !important;
+            color: #38bdf8 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-section-count {
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-card {
+            background: rgba(30, 41, 59, 0.7) !important;
+            border-color: rgba(255, 255, 255, 0.15) !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-card:hover {
+            border-color: rgba(56, 189, 248, 0.7) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-desc {
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-tag {
+            color: #38bdf8 !important;
+            border-top-color: rgba(255, 255, 255, 0.12) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-chat-btn {
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-chat-btn:hover {
+            color: #38bdf8 !important;
+            background: rgba(56, 189, 248, 0.2) !important;
+          }
+        </style>
+
+        <div class="cheapdice-quickref-container">
+          <div class="quickref-search-row">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" id="quickref-search-input" class="quickref-search-input" placeholder="Search rules, actions, conditions (e.g. grapple, cover, spell)..." />
+            <i class="fas fa-times-circle quickref-clear-btn" id="quickref-clear-btn" title="Clear search"></i>
+          </div>
+
+          <div class="quickref-filter-bar">
+            <button type="button" class="quickref-filter-btn active" data-filter="all">All (${quickrefData.reduce((acc, c) => acc + c.items.length, 0)})</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Movement"><i class="fas fa-person-running"></i> Movement</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Action"><i class="fas fa-hand-fist"></i> Action</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Bonus Action"><i class="fas fa-bolt"></i> Bonus Action</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Reaction"><i class="fas fa-shield-halved"></i> Reaction</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Cover"><i class="fas fa-mountain-sun"></i> Cover</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Conditions"><i class="fas fa-triangle-exclamation"></i> Conditions</button>
+          </div>
+
+          <div id="quickref-scroll-container" style="max-height: 520px; overflow-y: auto; padding-right: 4px;">
+            ${sectionsHtml}
+          </div>
+        </div>
+      `,
+      buttons: {},
+      render: (dlgHtml) => {
+        const dialogApp = dlgHtml.closest(".dialog");
+        dialogApp.addClass("cheapdice-quickref-dialog");
+        if (curTheme && curTheme !== "default") {
+          dialogApp.addClass(`cheapdice-theme-${curTheme}`);
+        }
+
+        const filterQuickRef = () => {
+          const query = dlgHtml.find("#quickref-search-input").val().toLowerCase().trim();
+          const activeFilter = dlgHtml.find(".quickref-filter-btn.active").data("filter") || "all";
+
+          if (query.length > 0) {
+            dlgHtml.find("#quickref-clear-btn").show();
+          } else {
+            dlgHtml.find("#quickref-clear-btn").hide();
+          }
+
+          dlgHtml.find(".quickref-section").each(function () {
+            const section = $(this);
+            const cat = (section.data("cat") || "").toLowerCase();
+            const matchesCat = activeFilter === "all" || cat.includes(activeFilter.toLowerCase());
+
+            let hasMatchingCard = false;
+            section.find(".quickref-card").each(function () {
+              const card = $(this);
+              const name = (card.data("name") || "").toLowerCase();
+              const desc = (card.data("desc") || "").toLowerCase();
+              const matchesSearch = !query || name.includes(query) || desc.includes(query);
+              card.toggle(matchesSearch);
+              if (matchesSearch) hasMatchingCard = true;
+            });
+
+            section.toggle(matchesCat && hasMatchingCard);
+          });
+        };
+
+        // Real-time search handler
+        dlgHtml.find("#quickref-search-input").on("input", filterQuickRef);
+
+        // Clear search button
+        dlgHtml.find("#quickref-clear-btn").on("click", function () {
+          dlgHtml.find("#quickref-search-input").val("").focus();
+          filterQuickRef();
+        });
+
+        // Filter button click handler
+        dlgHtml.find(".quickref-filter-btn").on("click", function () {
+          dlgHtml.find(".quickref-filter-btn").removeClass("active");
+          $(this).addClass("active");
+          filterQuickRef();
+        });
+
+        // Send to Chat Button Handler
+        dlgHtml.find(".quickref-chat-btn").on("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const btn = $(this);
+          const name = btn.data("name");
+          const cat = btn.data("cat");
+          const color = btn.data("color");
+          const icon = btn.data("icon");
+          const desc = btn.data("desc");
+          const tag = btn.data("tag");
+
+          ChatMessage.create({
+            user: game.user.id,
+            speaker: ChatMessage.getSpeaker(),
+            content: `
+              <div style="border-left: 4px solid ${color}; padding: 6px 10px; background: rgba(0, 0, 0, 0.04); border-radius: 0 4px 4px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px;">
+                  <span style="font-weight: 700; font-size: 1.05em; color: ${color}; display: flex; align-items: center; gap: 6px;">
+                    <i class="fas ${icon}"></i> ${name}
+                  </span>
+                  <span style="font-size: 0.72em; text-transform: uppercase; font-weight: 700; color: #64748b; background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 3px;">
+                    ${cat}
+                  </span>
+                </div>
+                <div style="font-size: 0.88em; line-height: 1.4; color: #1e293b; margin-bottom: 4px;">
+                  ${desc}
+                </div>
+                ${tag ? `<div style="font-size: 0.76em; font-weight: 600; color: ${color}; border-top: 1px dashed rgba(0,0,0,0.12); padding-top: 3px;"><i class="fas fa-tag" style="margin-right: 3px; font-size: 0.85em;"></i>${tag}</div>` : ""}
+              </div>
+            `
+          });
+          ui.notifications?.info?.(`Sent "${name}" rule to chat.`);
+        });
+      }
+    }, { width: 580, height: "auto" }).render(true);
   };
 
 

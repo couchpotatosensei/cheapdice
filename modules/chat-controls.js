@@ -42,6 +42,7 @@ export function toggleChatMode(mode) {
 /**
  * Pure function: formats a raw chat message string based on the active mode.
  * Leaves messages starting with "/" untouched (e.g. rolls, whispers, existing commands).
+ * Also strips ProseMirror HTML wrapping tags (<p>...</p>) so slash commands are clean.
  * 
  * @param {string} message
  * @param {"ic" | "em" | null} mode
@@ -57,7 +58,12 @@ export function formatChatMessageWithMode(message, mode) {
     return message;
   }
 
-  return `/${mode} ${message}`;
+  // Strip leading/trailing <p> and </p> if ProseMirror wrapped the input
+  let text = trimmed.replace(/^<p>\s*/i, "").replace(/\s*<\/p>$/i, "").trim();
+  if (!text) return message;
+  if (text.startsWith("/")) return text;
+
+  return `/${mode} ${text}`;
 }
 
 /**
@@ -252,17 +258,49 @@ export function renderChatControls(app, html) {
 /**
  * Wraps ChatLog.prototype.processMessage to prepend /ic or /em when active.
  */
-function wrapChatLogProcessMessage() {
-  const ChatLogClass = foundry?.applications?.sidebar?.tabs?.ChatLog ?? globalThis.ChatLog;
-  if (!ChatLogClass || !ChatLogClass.prototype) return;
-  if (ChatLogClass.prototype._gpChatModeWrapped) return;
+export function wrapChatLogProcessMessage() {
+  const candidates = [
+    globalThis.ChatLog?.prototype,
+    globalThis.CONFIG?.ui?.chat?.prototype,
+    foundry?.applications?.sidebar?.tabs?.ChatLog?.prototype,
+    typeof ui !== "undefined" ? ui.chat : null
+  ].filter((c) => c && typeof c.processMessage === "function");
 
-  const originalProcessMessage = ChatLogClass.prototype.processMessage;
-  ChatLogClass.prototype.processMessage = async function(message) {
-    const formatted = formatChatMessageWithMode(message, activeChatMode);
-    return originalProcessMessage.call(this, formatted);
-  };
-  ChatLogClass.prototype._gpChatModeWrapped = true;
+  for (const target of candidates) {
+    if (target._gpChatModeWrapped) continue;
+    const originalProcessMessage = target.processMessage;
+    target.processMessage = async function(message, ...args) {
+      const formatted = formatChatMessageWithMode(message, activeChatMode);
+      return originalProcessMessage.call(this, formatted, ...args);
+    };
+    target._gpChatModeWrapped = true;
+  }
+}
+
+let isProcessingModeMessage = false;
+
+/**
+ * Hook handler for Foundry's native 'chatMessage' hook.
+ * Intercepts raw text entered into the chat input and converts it to /ic or /em.
+ * Returns false to abort Foundry's default un-prefixed message creation.
+ * 
+ * @param {ChatLog} chatLog
+ * @param {string} message
+ * @param {object} chatData
+ * @returns {boolean|void}
+ */
+export function handleChatMessageHook(chatLog, message, chatData) {
+  if (isProcessingModeMessage || !activeChatMode) return true;
+  const formatted = formatChatMessageWithMode(message, activeChatMode);
+  if (formatted === message) return true;
+
+  isProcessingModeMessage = true;
+  try {
+    chatLog.processMessage(formatted);
+  } finally {
+    isProcessingModeMessage = false;
+  }
+  return false;
 }
 
 /**
@@ -271,7 +309,11 @@ function wrapChatLogProcessMessage() {
 export function initChatControls() {
   wrapChatLogProcessMessage();
 
+  // Register native Foundry chatMessage hook interceptor
+  Hooks.on("chatMessage", handleChatMessageHook);
+
   Hooks.on("renderChatLog", (app, html) => {
+    wrapChatLogProcessMessage();
     try {
       renderChatControls(app, html);
     } catch (err) {
@@ -282,10 +324,12 @@ export function initChatControls() {
   // Mount when game is ready if not already rendered
   if (typeof game !== "undefined") {
     if (game.ready) {
+      wrapChatLogProcessMessage();
       const chatEl = ui.chat?.element?.[0] ?? (ui.chat?.element instanceof HTMLElement ? ui.chat.element : document.getElementById("chat"));
       if (chatEl) renderChatControls(ui.chat, chatEl);
     } else {
       Hooks.once("ready", () => {
+        wrapChatLogProcessMessage();
         const chatEl = ui.chat?.element?.[0] ?? (ui.chat?.element instanceof HTMLElement ? ui.chat.element : document.getElementById("chat"));
         if (chatEl) renderChatControls(ui.chat, chatEl);
       });
