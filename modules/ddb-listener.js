@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { MODULE_ID, SETTINGS } from "../src/constants.js";
+import { getCardDispositionWrapper } from "./socket-handlers.js";
 
 const DDB_WS_BASE_URL = "wss://game-log-api-live.dndbeyond.com/v1";
 
@@ -205,111 +206,164 @@ export function matchDdbActor(characterName, ddbCharacterId, actorsCollection = 
 export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {}) {
   const actorName = escapeHtml(actor?.name || parsedRoll.characterName);
   const actionName = escapeHtml(parsedRoll.actionName);
-  const rollTypeLabel = parsedRoll.rollType.toUpperCase();
 
-  const tags = [
-    `<span style="background: #2b3a4a; color: #fff; font-size: 0.72em; font-weight: 700; padding: 1px 6px; border-radius: 3px;">DDB</span>`,
-    `<span style="background: #4b5d88; color: #fff; font-size: 0.72em; font-weight: 700; padding: 1px 6px; border-radius: 3px;">${rollTypeLabel}</span>`
-  ];
+  // 1. Cheap Dice Header
+  const headerHtml = `
+    <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #343a40; padding-bottom: 3px; margin-bottom: 6px;">
+      <span style="font-size: 1.05em; font-weight: bold; color: #2b3a4a;">${actionName}</span>
+      <span style="font-size: 0.8em; color: #777;">${actorName}</span>
+    </div>
+  `;
+
+  // 2. Cheap Dice Style Tags
+  const tags = [];
+  if (parsedRoll.rollType === "attack") {
+    tags.push('<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #4b5d88;">Attack Roll</span>');
+  } else if (parsedRoll.rollType === "skill") {
+    tags.push('<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #4b5d88;">Skill Check</span>');
+  } else if (parsedRoll.rollType === "check") {
+    tags.push('<span style="background: rgba(40, 167, 69, 0.15); border: 1px solid rgba(40, 167, 69, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #28a745;">Ability Check</span>');
+  } else if (parsedRoll.rollType === "save") {
+    tags.push('<span style="background: rgba(220, 53, 69, 0.15); border: 1px solid rgba(220, 53, 69, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #dc3545;">Saving Throw</span>');
+  } else if (parsedRoll.rollType === "damage") {
+    tags.push('<span style="background: rgba(220, 53, 69, 0.15); border: 1px solid rgba(220, 53, 69, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #dc3545;">Damage</span>');
+  } else if (parsedRoll.rollType === "initiative") {
+    tags.push('<span style="background: rgba(43, 116, 137, 0.15); border: 1px solid rgba(43, 116, 137, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #235d6e;">Initiative</span>');
+  }
 
   if (parsedRoll.rollMode === "advantage") {
-    tags.push(`<span style="background: #1b5e20; color: #fff; font-size: 0.72em; font-weight: 700; padding: 1px 6px; border-radius: 3px;">ADVANTAGE</span>`);
+    tags.push('<span style="background: rgba(40, 167, 69, 0.15); border: 1px solid rgba(40, 167, 69, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #28a745;">Advantage</span>');
   } else if (parsedRoll.rollMode === "disadvantage") {
-    tags.push(`<span style="background: #b71c1c; color: #fff; font-size: 0.72em; font-weight: 700; padding: 1px 6px; border-radius: 3px;">DISADVANTAGE</span>`);
+    tags.push('<span style="background: rgba(220, 53, 69, 0.15); border: 1px solid rgba(220, 53, 69, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #dc3545;">Disadvantage</span>');
   }
 
   if (parsedRoll.isCrit) {
-    tags.push(`<span style="background: #15803d; color: #fff; font-size: 0.72em; font-weight: 800; padding: 1px 6px; border-radius: 3px;">CRITICAL HIT!</span>`);
+    tags.push('<span style="background: rgba(40, 167, 69, 0.2); border: 1px solid rgba(40, 167, 69, 0.5); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 700; color: #1e7e34;">Critical Hit!</span>');
   } else if (parsedRoll.isFumble) {
-    tags.push(`<span style="background: #991b1b; color: #fff; font-size: 0.72em; font-weight: 800; padding: 1px 6px; border-radius: 3px;">CRITICAL MISS</span>`);
+    tags.push('<span style="background: rgba(220, 53, 69, 0.2); border: 1px solid rgba(220, 53, 69, 0.5); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 700; color: #dc3545;">Critical Miss</span>');
   }
 
-  const diceBadgesHtml = parsedRoll.dice.map((d) => {
-    const isNat20 = d.dieType === "d20" && d.dieValue === 20 && !d.dropped;
-    const isNat1 = d.dieType === "d20" && d.dieValue === 1 && !d.dropped;
-    let bg = "#f1f5f9";
-    let border = "#cbd5e1";
-    let color = "#1e293b";
-    let extraStyle = "";
+  tags.push('<span style="background: rgba(108, 117, 125, 0.15); border: 1px solid rgba(108, 117, 125, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #495057;">D&amp;D Beyond</span>');
 
-    if (d.dropped) {
-      bg = "#f8fafc";
-      color = "#94a3b8";
-      extraStyle = "text-decoration: line-through; opacity: 0.65;";
-    } else if (isNat20) {
-      bg = "#dcfce7";
-      border = "#16a34a";
-      color = "#15803d";
-    } else if (isNat1) {
-      bg = "#fee2e2";
-      border = "#dc2626";
-      color = "#b91c1c";
-    }
+  const tagsBlock = tags.length > 0
+    ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;">${tags.join("")}</div>`
+    : "";
 
-    return `<span style="display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 4px; background: ${bg}; border: 1px solid ${border}; color: ${color}; font-size: 0.85em; font-weight: 700; ${extraStyle}">${escapeHtml(d.dieType)}: ${d.dieValue}</span>`;
-  }).join(" ");
+  // 3. Dice Roll Box (Dual-column for Advantage/Disadvantage, single-column for normal)
+  const modDisplay = parsedRoll.modifier > 0
+    ? `+ ${parsedRoll.modifier}`
+    : parsedRoll.modifier < 0
+      ? `- ${Math.abs(parsedRoll.modifier)}`
+      : "";
 
-  const totalBorderColor = parsedRoll.isCrit
-    ? "#16a34a"
-    : parsedRoll.isFumble
-      ? "#dc2626"
-      : "#343a40";
+  let rollsRowHtml = "";
+  if ((parsedRoll.rollMode === "advantage" || parsedRoll.rollMode === "disadvantage") && parsedRoll.d20Values.length > 1) {
+    const keptVal = parsedRoll.keptD20 ?? parsedRoll.d20Values[0];
+    const droppedVal = parsedRoll.d20Values.find((v, idx) => {
+      const isKept = v === keptVal;
+      // return the first non-kept or the alternate duplicate
+      return parsedRoll.dice[idx]?.dropped ?? !isKept;
+    }) ?? parsedRoll.d20Values[1];
 
-  const totalBgColor = parsedRoll.isCrit
-    ? "rgba(22, 163, 74, 0.1)"
-    : parsedRoll.isFumble
-      ? "rgba(220, 38, 38, 0.1)"
-      : "rgba(52, 58, 64, 0.06)";
+    const totalKept = Number(parsedRoll.total);
+    const totalDropped = droppedVal + parsedRoll.modifier;
 
-  // Quick Damage button when an attack matches an actor item
+    const keptClass = keptVal === 20 ? " critical" : keptVal === 1 ? " fumble" : "";
+    const droppedClass = droppedVal === 20 ? " critical" : droppedVal === 1 ? " fumble" : "";
+
+    const diceBoxKept = `
+      <div class="dice-roll">
+        <div class="dice-result">
+          <div class="dice-formula" style="font-size: 0.8em; color: #666;">1d20 ${modDisplay}</div>
+          <h4 class="dice-total${keptClass}" style="margin: 2px 0;">${totalKept}</h4>
+        </div>
+      </div>
+    `;
+
+    const diceBoxDropped = `
+      <div class="dice-roll">
+        <div class="dice-result">
+          <div class="dice-formula" style="font-size: 0.8em; color: #666;">1d20 ${modDisplay}</div>
+          <h4 class="dice-total${droppedClass}" style="margin: 2px 0; opacity: 0.6; text-decoration: line-through;">${totalDropped}</h4>
+        </div>
+      </div>
+    `;
+
+    rollsRowHtml = `
+      <div style="display: flex; justify-content: space-around; gap: 8px; margin-bottom: 6px;">
+        <div style="flex: 1; text-align: center;">
+          <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">KEPT (${parsedRoll.rollMode.toUpperCase()})</div>
+          <div style="transform: scale(0.96); margin: -2px 0;">${diceBoxKept}</div>
+        </div>
+        <div style="flex: 1; text-align: center;">
+          <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">DROPPED</div>
+          <div style="transform: scale(0.96); margin: -2px 0;">${diceBoxDropped}</div>
+        </div>
+      </div>
+    `;
+  } else {
+    const critClass = parsedRoll.isCrit ? " critical" : parsedRoll.isFumble ? " fumble" : "";
+    const singleDiceBox = `
+      <div class="dice-roll">
+        <div class="dice-result">
+          <div class="dice-formula" style="font-size: 0.8em; color: #666;">${escapeHtml(parsedRoll.formula)}</div>
+          <h4 class="dice-total${critClass}" style="margin: 2px 0;">${parsedRoll.total}</h4>
+        </div>
+      </div>
+    `;
+
+    rollsRowHtml = `
+      <div style="display: flex; justify-content: center; margin-bottom: 6px;">
+        <div style="max-width: 200px; width: 100%; text-align: center;">
+          <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">TOTAL RESULT</div>
+          <div style="transform: scale(0.96); margin: -2px 0;">${singleDiceBox}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 4. Interactive Action Buttons (Roll Damage)
   let actionButtonsHtml = "";
   if (parsedRoll.rollType === "attack" && actor && options.matchingItem) {
     const itemId = escapeHtml(options.matchingItem.id);
     const actorId = escapeHtml(actor.id);
     const critAttr = parsedRoll.isCrit ? "true" : "false";
     actionButtonsHtml = `
-      <div style="display: flex; gap: 6px; margin-top: 6px;">
+      <div style="display: flex; gap: 6px; margin: 6px 0;">
         <button type="button" class="cheapdice-ddb-roll-damage" data-actor-id="${actorId}" data-item-id="${itemId}" data-is-crit="${critAttr}"
-          style="flex: 1; height: 26px; font-size: 0.82em; font-weight: 700; border-radius: 4px; border: 1px solid #991b1b; background: ${parsedRoll.isCrit ? "#15803d" : "#b91c1c"}; color: #fff; cursor: pointer;">
-          <i class="fas fa-burst"></i> ${parsedRoll.isCrit ? "Roll Crit Damage" : "Roll Damage"}
+          style="flex: 1; height: 28px; line-height: 26px; font-size: 0.82em; font-weight: 700; border-radius: 4px; border: 1px solid #7289da; background: #fff; color: #4b5d88; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px;">
+          <i class="fas fa-burst" style="color: #7289da;"></i> ${parsedRoll.isCrit ? "Roll Crit Damage" : "Roll Damage"}
         </button>
       </div>`;
   }
 
-  const modDisplay = parsedRoll.modifier > 0
-    ? `+${parsedRoll.modifier}`
-    : parsedRoll.modifier < 0
-      ? `${parsedRoll.modifier}`
-      : "0";
+  // 5. Modifier Breakdown Accordion
+  const breakdownHtml = `
+    <details style="margin-top: 6px; padding: 2px 4px;">
+      <summary style="font-weight: 600; font-size: 0.82em; color: #666; cursor: pointer;">Modifier Breakdown</summary>
+      <div style="padding-top: 4px; border-top: 1px solid #e0e0e0; font-size: 0.8em; color: #555; margin-top: 3px; line-height: 1.45;">
+        <div><strong>Source:</strong> D&amp;D Beyond Game Log</div>
+        <div><strong>Base Formula:</strong> <code>${escapeHtml(parsedRoll.formula)}</code></div>
+        <div><strong>Modifier:</strong> ${modDisplay || "0"}</div>
+        <div><strong>Raw Result:</strong> ${escapeHtml(parsedRoll.resultText)} = <strong>${parsedRoll.total}</strong></div>
+      </div>
+    </details>
+  `;
 
-  return `
-    <div class="cheapdice-ddb-card" style="font-family: inherit; color: #1e293b;">
-      <p style="margin: 0 0 4px 0;"><strong>${actorName}: ${actionName}</strong></p>
-      <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px;">
-        ${tags.join("")}
-      </div>
-      <hr style="margin: 4px 0;">
-      <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 5px; border: 1px solid ${totalBorderColor}; background: ${totalBgColor}; margin: 4px 0;">
-        <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-          ${diceBadgesHtml || `<span style="font-size: 0.85em; color: #64748b;">${escapeHtml(parsedRoll.formula)}</span>`}
-          ${parsedRoll.modifier !== 0 ? `<span style="font-size: 0.85em; font-weight: 700; color: #475569;">(${modDisplay})</span>` : ""}
-        </div>
-        <div style="font-size: 1.45em; font-weight: 900; color: ${totalBorderColor}; min-width: 34px; text-align: right;">
-          ${parsedRoll.total}
-        </div>
-      </div>
+  const innerCardHtml = `
+    <div style="font-family: inherit; color: #333;">
+      ${headerHtml}
+      ${tagsBlock}
+      ${rollsRowHtml}
       ${actionButtonsHtml}
-      <details style="margin-top: 6px; padding: 2px 4px;">
-        <summary style="font-weight: 600; font-size: 0.82em; color: #64748b; cursor: pointer;">Formula Breakdown &amp; Audit</summary>
-        <div style="padding-top: 4px; border-top: 1px solid #e2e8f0; font-size: 0.8em; color: #475569; margin-top: 3px; line-height: 1.45;">
-          <div><strong>Source:</strong> D&amp;D Beyond Game Log</div>
-          <div><strong>Formula:</strong> ${escapeHtml(parsedRoll.formula)}</div>
-          <div><strong>Modifier:</strong> ${modDisplay}</div>
-          <div><strong>Raw Result:</strong> ${escapeHtml(parsedRoll.resultText)} = <strong>${parsedRoll.total}</strong></div>
-        </div>
-      </details>
+      ${breakdownHtml}
     </div>
   `;
+
+  if (typeof getCardDispositionWrapper === "function") {
+    return getCardDispositionWrapper(actor, options.token, options.userId, innerCardHtml);
+  }
+  return innerCardHtml;
 }
 
 /**
@@ -470,19 +524,38 @@ export class DdbGameLogClient {
  */
 export async function postDdbRollToFoundry(parsedRoll) {
   const actor = matchDdbActor(parsedRoll.characterName, parsedRoll.ddbCharacterId);
+  const token = actor?.getActiveTokens?.()[0] || null;
   const matchingItem = actor?.items?.find(
     (i) => String(i.name || "").trim().toLowerCase() === String(parsedRoll.actionName || "").trim().toLowerCase()
   ) || null;
 
-  const content = buildDdbCustomChatCardHtml(parsedRoll, actor, { matchingItem });
+  const content = buildDdbCustomChatCardHtml(parsedRoll, actor, {
+    matchingItem,
+    token,
+    userId: game.user?.id
+  });
+
   const speaker = actor
-    ? ChatMessage.getSpeaker({ actor })
+    ? ChatMessage.getSpeaker({ actor, token })
     : { alias: parsedRoll.characterName };
+
+  let evaluatedRoll = null;
+  try {
+    if (typeof Roll !== "undefined") {
+      evaluatedRoll = await new Roll(parsedRoll.formula).evaluate();
+      if (game.dice3d) {
+        await game.dice3d.showForRoll(evaluatedRoll, game.user, true);
+      }
+    }
+  } catch (err) {
+    console.warn(`[${MODULE_ID}] Could not render 3D roll for DDB:`, err);
+  }
 
   await ChatMessage.create({
     user: game.user.id,
     speaker,
     content,
+    rolls: evaluatedRoll ? [evaluatedRoll] : [],
     sound: CONFIG.sounds?.dice
   });
 
@@ -520,6 +593,23 @@ export function initDdbListener() {
       });
     },
     disconnect: () => activeClient.disconnect(),
+    syncFromClipboard: async () => {
+      if (!game.user?.isGM) return false;
+      try {
+        const text = await navigator.clipboard.readText();
+        const clean = String(text || "").trim();
+        if (!clean) {
+          ui.notifications?.warn?.("Clipboard is empty. Click 'Sync DDB Token' on D&D Beyond first.");
+          return false;
+        }
+        await game.settings.set(MODULE_ID, SETTINGS.DDB_COBALT_TOKEN, clean);
+        ui.notifications?.info?.("DDB Token updated from clipboard! Connecting...");
+        return await window.CustomRolls.ddb.connect();
+      } catch (err) {
+        ui.notifications?.error?.("Failed to read clipboard: " + (err?.message || err));
+        return false;
+      }
+    },
     ingestEvent: (rawEvent) => activeClient.handleRawMessage(rawEvent),
     simulateRoll: (actionName = "Longsword", rollType = "to hit", rollKind = "advantage") => {
       const sampleActor = canvas?.tokens?.controlled?.[0]?.actor || game.actors?.contents?.[0];

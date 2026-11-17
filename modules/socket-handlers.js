@@ -14,6 +14,72 @@ function getSetting(key, fallback = true) {
   return fallback;
 }
 
+// --- Helper: Chat Card Disposition & Player Border Outline Wrapper ---
+export function getCardDispositionWrapper(actor, token, userId, innerHtml) {
+  if (typeof game === "undefined") return innerHtml;
+  const rollUser = game.users?.get(userId) || game.user;
+  if (!rollUser) return innerHtml;
+
+  let borderColor = null;
+  let glowColor = null;
+
+  if (rollUser.isGM) {
+    // If GM is rolling a player-owned token, do not apply DM disposition outline
+    if (actor?.hasPlayerOwner) return innerHtml;
+
+    const tok = token || actor?.getActiveTokens?.()[0];
+    const disposition = tok?.document?.disposition ?? actor?.prototypeToken?.disposition;
+
+    // Match Foundry token border colors:
+    // FRIENDLY = #43dfdf (cyan), NEUTRAL = #f1d836 (yellow), HOSTILE = #e72124 (red), SECRET = #a612d3 (purple)
+    if (disposition === CONST.TOKEN_DISPOSITIONS?.HOSTILE) {
+      borderColor = "rgba(231, 33, 36, 0.75)";
+      glowColor = "rgba(231, 33, 36, 0.18)";
+    } else if (disposition === CONST.TOKEN_DISPOSITIONS?.NEUTRAL) {
+      borderColor = "rgba(241, 216, 54, 0.75)";
+      glowColor = "rgba(241, 216, 54, 0.18)";
+    } else if (disposition === CONST.TOKEN_DISPOSITIONS?.FRIENDLY) {
+      borderColor = "rgba(67, 223, 223, 0.75)";
+      glowColor = "rgba(67, 223, 223, 0.18)";
+    } else if (disposition === CONST.TOKEN_DISPOSITIONS?.SECRET) {
+      borderColor = "rgba(166, 18, 211, 0.75)";
+      glowColor = "rgba(166, 18, 211, 0.18)";
+    }
+  } else {
+    // For non-GM players rolling tokens they own: color card using their player color
+    const isOwner = actor?.testUserPermission ? actor.testUserPermission(rollUser, "OWNER") : actor?.isOwner;
+    if (isOwner && rollUser.color) {
+      let hex = rollUser.color;
+      if (typeof hex === "object" && typeof hex.css === "string") {
+        hex = hex.css;
+      } else {
+        hex = String(hex);
+      }
+
+      let r = 0, g = 0, b = 0;
+      const cleanHex = hex.replace("#", "");
+      if (cleanHex.length === 3) {
+        r = parseInt(cleanHex[0] + cleanHex[0], 16);
+        g = parseInt(cleanHex[1] + cleanHex[1], 16);
+        b = parseInt(cleanHex[2] + cleanHex[2], 16);
+      } else if (cleanHex.length >= 6) {
+        r = parseInt(cleanHex.substring(0, 2), 16);
+        g = parseInt(cleanHex.substring(2, 4), 16);
+        b = parseInt(cleanHex.substring(4, 6), 16);
+      }
+
+      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+        borderColor = `rgba(${r}, ${g}, ${b}, 0.75)`;
+        glowColor = `rgba(${r}, ${g}, ${b}, 0.18)`;
+      }
+    }
+  }
+
+  if (!borderColor) return innerHtml;
+
+  return `<div style="border: 1.5px solid ${borderColor}; border-radius: 6px; padding: 6px 8px; box-shadow: 0 0 8px 1px ${glowColor}, inset 0 0 6px 0 ${glowColor}; background: linear-gradient(to bottom, ${glowColor} 0%, transparent 18%);">${innerHtml}</div>`;
+}
+
 function registerSocketHandlers() {
   if (!getSetting("featureSocketHandlers")) return;
   if (globalThis.attackSocket) return;
@@ -120,70 +186,6 @@ function registerSocketHandlers() {
     }
   };
 
-  // --- Helper: Chat Card Disposition & Player Border Outline Wrapper ---
-  function getCardDispositionWrapper(actor, token, userId, innerHtml) {
-    const rollUser = game.users.get(userId) || game.user;
-    if (!rollUser) return innerHtml;
-
-    let borderColor = null;
-    let glowColor = null;
-
-    if (rollUser.isGM) {
-      // If GM is rolling a player-owned token, do not apply DM disposition outline
-      if (actor?.hasPlayerOwner) return innerHtml;
-
-      const tok = token || actor?.getActiveTokens?.()[0];
-      const disposition = tok?.document?.disposition ?? actor?.prototypeToken?.disposition;
-
-      // Match Foundry token border colors:
-      // FRIENDLY = #43dfdf (cyan), NEUTRAL = #f1d836 (yellow), HOSTILE = #e72124 (red), SECRET = #a612d3 (purple)
-      if (disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE) {
-        borderColor = "rgba(231, 33, 36, 0.75)";
-        glowColor = "rgba(231, 33, 36, 0.18)";
-      } else if (disposition === CONST.TOKEN_DISPOSITIONS.NEUTRAL) {
-        borderColor = "rgba(241, 216, 54, 0.75)";
-        glowColor = "rgba(241, 216, 54, 0.18)";
-      } else if (disposition === CONST.TOKEN_DISPOSITIONS.FRIENDLY) {
-        borderColor = "rgba(67, 223, 223, 0.75)";
-        glowColor = "rgba(67, 223, 223, 0.18)";
-      } else if (disposition === CONST.TOKEN_DISPOSITIONS.SECRET) {
-        borderColor = "rgba(166, 18, 211, 0.75)";
-        glowColor = "rgba(166, 18, 211, 0.18)";
-      }
-    } else {
-      // For non-GM players rolling tokens they own: color card using their player color
-      const isOwner = actor?.testUserPermission ? actor.testUserPermission(rollUser, "OWNER") : actor?.isOwner;
-      if (isOwner && rollUser.color) {
-        let hex = rollUser.color;
-        if (typeof hex === "object" && typeof hex.css === "string") {
-          hex = hex.css;
-        } else {
-          hex = String(hex);
-        }
-
-        let r = 0, g = 0, b = 0;
-        const cleanHex = hex.replace("#", "");
-        if (cleanHex.length === 3) {
-          r = parseInt(cleanHex[0] + cleanHex[0], 16);
-          g = parseInt(cleanHex[1] + cleanHex[1], 16);
-          b = parseInt(cleanHex[2] + cleanHex[2], 16);
-        } else if (cleanHex.length >= 6) {
-          r = parseInt(cleanHex.substring(0, 2), 16);
-          g = parseInt(cleanHex.substring(2, 4), 16);
-          b = parseInt(cleanHex.substring(4, 6), 16);
-        }
-
-        if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
-          borderColor = `rgba(${r}, ${g}, ${b}, 0.75)`;
-          glowColor = `rgba(${r}, ${g}, ${b}, 0.18)`;
-        }
-      }
-    }
-
-    if (!borderColor) return innerHtml;
-
-    return `<div style="border: 1.5px solid ${borderColor}; border-radius: 6px; padding: 6px 8px; box-shadow: 0 0 8px 1px ${glowColor}, inset 0 0 6px 0 ${glowColor}; background: linear-gradient(to bottom, ${glowColor} 0%, transparent 18%);">${innerHtml}</div>`;
-  }
 
   // --- 2.2 Attack Execution Handler ---
   socket.register("runAttackRoll", async (config, actorId, userId) => {

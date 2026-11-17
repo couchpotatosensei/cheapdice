@@ -117,6 +117,7 @@ describe("D&D Beyond Game Log Listener", () => {
       rollMode: "normal",
       dice: [{ dieType: "d20", dieValue: 20, dropped: false }],
       keptD20: 20,
+      d20Values: [20],
       isCrit: true,
       isFumble: false,
       modifier: 8,
@@ -129,12 +130,40 @@ describe("D&D Beyond Game Log Listener", () => {
     const matchingItem = { id: "item-1", name: "Firebolt" };
     const html = buildDdbCustomChatCardHtml(parsed, actor, { matchingItem });
 
-    assert.ok(html.includes("Gandalf: Firebolt"));
-    assert.ok(html.includes("CRITICAL HIT!"));
-    assert.ok(html.includes("Formula Breakdown &amp; Audit"));
+    assert.ok(html.includes("Firebolt"));
+    assert.ok(html.includes("Gandalf"));
+    assert.ok(html.includes("Critical Hit!"));
+    assert.ok(html.includes("Modifier Breakdown"));
     assert.ok(html.includes("cheapdice-ddb-roll-damage"));
     assert.ok(html.includes("Roll Crit Damage"));
     assert.equal(html.includes("<script>"), false);
+  });
+
+  it("buildDdbCustomChatCardHtml renders dual-column dice boxes for advantage", () => {
+    const parsedAdv = {
+      characterName: "Legolas",
+      actionName: "Longbow",
+      rollType: "attack",
+      rollMode: "advantage",
+      dice: [
+        { dieType: "d20", dieValue: 9, dropped: true },
+        { dieType: "d20", dieValue: 19, dropped: false }
+      ],
+      keptD20: 19,
+      d20Values: [9, 19],
+      isCrit: false,
+      isFumble: false,
+      modifier: 7,
+      total: 26,
+      formula: "2d20kh1 + 7",
+      resultText: "19 + 7"
+    };
+
+    const html = buildDdbCustomChatCardHtml(parsedAdv, { name: "Legolas" });
+    assert.ok(html.includes("KEPT (ADVANTAGE)"));
+    assert.ok(html.includes("DROPPED"));
+    assert.ok(html.includes("26"));
+    assert.ok(html.includes("line-through"));
   });
 
   it("DdbGameLogClient deduplicates repeated message IDs and builds valid socket URLs", () => {
