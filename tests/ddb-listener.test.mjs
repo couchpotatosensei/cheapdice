@@ -199,4 +199,15 @@ describe("D&D Beyond Game Log Listener", () => {
     assert.equal(received.length, 1);
     assert.equal(received[0].total, 20);
   });
+
+  it("DdbGameLogClient.resolveToken handles JWTs directly and handles non-JWT fallback", async () => {
+    const client = new DdbGameLogClient();
+    const jwt = "eyJhbGci.eyJzdWIi.signature";
+    const resolvedJwt = await client.resolveToken(jwt);
+    assert.equal(resolvedJwt, jwt);
+
+    const rawCobalt = "cobalt-cookie-session-value-12345";
+    const resolvedCobalt = await client.resolveToken(rawCobalt);
+    assert.equal(resolvedCobalt, rawCobalt);
+  });
 });

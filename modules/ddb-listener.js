@@ -447,21 +447,57 @@ export class DdbGameLogClient {
     const cleanToken = String(rawToken || "").trim();
     const cleanProxy = String(proxyUrl || "").trim();
     if (!cleanToken) return "";
-    if (!cleanProxy) return cleanToken;
-
-    try {
-      const response = await fetch(cleanProxy, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cobaltSession: cleanToken })
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const json = await response.json();
-      return json.token || json.stt || cleanToken;
-    } catch (err) {
-      console.warn(`[${MODULE_ID}] DDB Auth Proxy failed, using raw token:`, err);
-      return cleanToken;
+    if (cleanProxy) {
+      try {
+        const response = await fetch(cleanProxy, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cobaltSession: cleanToken })
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const json = await response.json();
+        return json.token || json.stt || cleanToken;
+      } catch (err) {
+        console.warn(`[${MODULE_ID}] DDB Auth Proxy failed, using raw token:`, err);
+        return cleanToken;
+      }
     }
+
+    // If running in browser and token is not already a JWT (CobaltSession is not a JWT),
+    // request an STT from the local Tampermonkey userscript bridge if installed.
+    const isJwt = cleanToken.split(".").length === 3;
+    if (!isJwt && typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+      try {
+        const bridgedToken = await new Promise((resolve) => {
+          let timer = null;
+          const handler = (e) => {
+            if (timer) clearTimeout(timer);
+            window.removeEventListener("ddb:response-stt", handler);
+            if (e?.detail?.success && e?.detail?.stt) {
+              resolve(e.detail.stt);
+            } else {
+              resolve(null);
+            }
+          };
+          window.addEventListener("ddb:response-stt", handler);
+          window.dispatchEvent(new CustomEvent("ddb:request-stt", {
+            detail: { cobaltSession: cleanToken }
+          }));
+          timer = setTimeout(() => {
+            window.removeEventListener("ddb:response-stt", handler);
+            resolve(null);
+          }, 3000);
+        });
+
+        if (bridgedToken) {
+          return bridgedToken;
+        }
+      } catch (err) {
+        console.warn(`[${MODULE_ID}] Tampermonkey bridge attempt failed:`, err);
+      }
+    }
+
+    return cleanToken;
   }
 
   async connect(config) {
