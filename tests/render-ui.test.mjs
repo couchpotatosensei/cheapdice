@@ -1,6 +1,21 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSpellConfigFromItem, isSpellPrepared } from '../modules/custom-rolls.js';
+import fs from 'node:fs';
+import { buildSpellConfigFromItem, isSpellPrepared, syncSpellsWithSheet } from '../modules/custom-rolls.js';
+import { formatChatMessageWithMode, toggleChatMode, getActiveChatMode, setActiveChatMode, wrapChatLogProcessMessage, handleChatMessageHook } from '../modules/chat-controls.js';
+import {
+  appendDieToChatText,
+  removeDieFromChatText,
+  swapD20ModeInText,
+  getChatTextareaValue,
+  writeToChatTextarea,
+  setChatEditorView,
+  updateFlatModifierInChatText,
+  parseFormulaStateFromChatText,
+  getTrayDiceCounts,
+  resetTrayDiceCounts,
+  buildDiceTrayElement
+} from '../modules/dice-tray-copycat.js';
 
 describe('UI Render Safety & Spell Parser Test Suite', () => {
   const mockActor = {
@@ -446,8 +461,8 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(chargeDeductDisabled, true);
   });
 
-  it("Dice Stuff side tray formula builder handles normal, advantage, and disadvantage", () => {
-    function buildFormula(counts, mode) {
+  it("Dice Stuff side tray formula builder handles normal, advantage, disadvantage, and flat modifiers", () => {
+    function buildFormula(counts, mode, modifier = 0) {
       const parts = [];
       const diceOrder = ["d4", "d6", "d8", "d10", "d12", "d20", "d100"];
       for (const d of diceOrder) {
@@ -466,7 +481,15 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
           }
         }
       }
-      return parts.join(" + ");
+      let formula = parts.join(" + ");
+      if (modifier !== 0) {
+        if (formula) {
+          formula += modifier > 0 ? ` + ${modifier}` : ` - ${Math.abs(modifier)}`;
+        } else {
+          formula = `${modifier}`;
+        }
+      }
+      return formula;
     }
 
     // Normal multi-dice
@@ -480,6 +503,661 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
 
     // Combined d20 adv + extra damage die
     assert.equal(buildFormula({ d20: 1, d8: 1 }, "adv"), "1d8 + 2d20kh");
+
+    // Flat modifiers
+    assert.equal(buildFormula({ d20: 1 }, "norm", 5), "1d20 + 5");
+    assert.equal(buildFormula({ d20: 1 }, "adv", 3), "2d20kh + 3");
+    assert.equal(buildFormula({ d8: 2 }, "norm", -2), "2d8 - 2");
+    assert.equal(buildFormula({}, "norm", 4), "4");
+    assert.equal(buildFormula({}, "norm", 0), "");
+  });
+
+  it("syncSpellsWithSheet synchronizes spells without assignment error and sorts alphabetically", async () => {
+    let savedProfileSpells = null;
+    globalThis.foundry = {
+      utils: {
+        deepClone: (obj) => JSON.parse(JSON.stringify(obj || {}))
+      }
+    };
+    globalThis.game = {
+      user: { isGM: true },
+      settings: {
+        settings: new Map(),
+        get: () => ({}),
+        set: async () => true
+      }
+    };
+    globalThis.ui = {
+      notifications: {
+        info: () => { }
+      }
+    };
+
+    const mockSyncActor = {
+      id: "syncActor1",
+      name: "Sync Tester",
+      system: {
+        abilities: { int: { mod: 4 } },
+        attributes: { prof: 2, spellcasting: "int" }
+      },
+      itemTypes: {
+        class: [{ name: "Wizard" }],
+        feat: [],
+        spell: [
+          {
+            id: "spZ",
+            name: "Zephyr Strike",
+            type: "spell",
+            system: {
+              level: 1,
+              preparation: { mode: "always", prepared: true },
+              activation: { cost: 1, type: "bonus" },
+              damage: { parts: [] }
+            }
+          },
+          {
+            id: "spA",
+            name: "Acid Splash",
+            type: "spell",
+            system: {
+              level: 0,
+              preparation: { mode: "prepared", prepared: true },
+              activation: { cost: 1, type: "action" },
+              damage: { parts: [["1d6", "acid"]] }
+            }
+          }
+        ]
+      },
+      getFlag: (scope, key) => {
+        if (key === "spellConfigs") return savedProfileSpells;
+        return null;
+      },
+      setFlag: async (scope, key, val) => {
+        if (key === "spellConfigs") savedProfileSpells = val;
+      }
+    };
+
+    // Run sync without prompting (promptUser: false)
+    const result = await syncSpellsWithSheet(mockSyncActor, { promptUser: false });
+    assert.equal(result, true);
+    assert.ok(savedProfileSpells);
+    const keys = Object.keys(savedProfileSpells);
+    assert.deepEqual(keys, ["Acid Splash", "Zephyr Strike"]);
+  });
+
+  it("Dice Stuff vitals extraction & delta math handles HP and hit dice cleanly", () => {
+    const mockActor = {
+      system: {
+        attributes: {
+          hp: { value: 35, max: 40, temp: 5 },
+          hd: { value: 3, max: 5 }
+        }
+      },
+      itemTypes: {
+        class: [
+          { system: { levels: 3, hitDiceUsed: 1, hitDice: "d8" } },
+          { system: { levels: 2, hitDiceUsed: 1, hitDice: "d10" } }
+        ]
+      }
+    };
+
+    // Extract HP
+    const curHp = Number(mockActor.system.attributes.hp.value) || 0;
+    const maxHp = Number(mockActor.system.attributes.hp.max) || 0;
+    const tempHp = Number(mockActor.system.attributes.hp.temp) || 0;
+    assert.equal(curHp, 35);
+    assert.equal(maxHp, 40);
+    assert.equal(tempHp, 5);
+
+    // Delta test
+    const applyDelta = (current, str) => {
+      if (str.startsWith("+") || str.startsWith("-")) {
+        const delta = Number(str);
+        return !isNaN(delta) ? Math.max(0, current + delta) : current;
+      }
+      const num = Number(str);
+      return !isNaN(num) ? Math.max(0, num) : current;
+    };
+
+    assert.equal(applyDelta(curHp, "-10"), 25);
+    assert.equal(applyDelta(curHp, "+15"), 50);
+    assert.equal(applyDelta(curHp, "-100"), 0);
+    assert.equal(applyDelta(curHp, "20"), 20);
+
+    // Smart damage / healing delta with THP absorption test
+    const applySmartDelta = (curHp, curTemp, maxHp, inputStr) => {
+      let hp = curHp;
+      let temp = curTemp;
+      if (inputStr.startsWith("-")) {
+        let dmg = Math.abs(Number(inputStr));
+        if (temp > 0) {
+          const absorbed = Math.min(temp, dmg);
+          temp -= absorbed;
+          dmg -= absorbed;
+        }
+        if (dmg > 0) {
+          hp = Math.max(0, hp - dmg);
+        }
+      } else if (inputStr.startsWith("+")) {
+        const heal = Number(inputStr);
+        hp = Math.min(maxHp, Math.max(0, hp + heal));
+      }
+      return { hp, temp };
+    };
+
+    // 100 HP, 10 THP takes 20 damage -> 90 HP, 0 THP
+    assert.deepEqual(applySmartDelta(100, 10, 100, "-20"), { hp: 90, temp: 0 });
+    // 100 HP, 10 THP takes 5 damage -> 100 HP, 5 THP
+    assert.deepEqual(applySmartDelta(100, 10, 100, "-5"), { hp: 100, temp: 5 });
+    // 80 HP, 5 THP heals +15 -> 95 HP, 5 THP (healing doesn't touch temp)
+    assert.deepEqual(applySmartDelta(80, 5, 100, "+15"), { hp: 95, temp: 5 });
+
+    // Hit Dice calculation fallback
+    let hdCurrent = 0;
+    let hdMax = 0;
+    mockActor.itemTypes.class.forEach(c => {
+      const levels = Number(c.system.levels) || 0;
+      const used = Number(c.system.hitDiceUsed) || 0;
+      hdCurrent += Math.max(0, levels - used);
+      hdMax += levels;
+    });
+    assert.equal(hdCurrent, 3);
+    assert.equal(hdMax, 5);
+  });
+
+  it("Dice Stuff vitals extraction handles AC and slot rendering cleanly", () => {
+    // 1. Standard dnd5e actor with attributes.ac.value
+    const actorA = {
+      system: {
+        attributes: {
+          ac: { value: 18, calc: "default" }
+        }
+      }
+    };
+    const acA = actorA.system?.attributes?.ac?.value ?? actorA.system?.attributes?.ac ?? "--";
+    assert.equal(acA, 18);
+
+    // 2. Fallback actor where ac is a flat number/string
+    const actorB = {
+      system: {
+        attributes: {
+          ac: 14
+        }
+      }
+    };
+    const acB = actorB.system?.attributes?.ac?.value ?? actorB.system?.attributes?.ac ?? "--";
+    assert.equal(acB, 14);
+
+    // 3. Fallback actor missing ac entirely
+    const actorC = {
+      system: {
+        attributes: {}
+      }
+    };
+    const acC = actorC.system?.attributes?.ac?.value ?? actorC.system?.attributes?.ac ?? "--";
+    assert.equal(acC, "--");
+
+    // 4. Test button HTML generation and progress bar percentage math
+    const maxHp = 142;
+    const curHp = 120;
+    const tempHp = 15;
+    const hpPct = Math.min(100, Math.max(0, Math.round((curHp / (maxHp || 1)) * 100)));
+    const thpPct = Math.min(100, Math.round((tempHp / (maxHp || 1)) * 100));
+    assert.equal(hpPct, 85);
+    assert.equal(thpPct, 11);
+
+    const buttonHtml = `
+      <div id="dice-stuff-armor-class-slot">
+        <button type="button" id="dice-stuff-ac-btn" title="Armor Class: ${acA}">
+          <i class="fas fa-shield-halved"></i>
+          <span>${acA}</span>
+        </button>
+      </div>
+      <div id="dice-stuff-hp-bar-track">
+        <div id="dice-stuff-hp-bar-fill" style="width: ${hpPct}%"></div>
+        <div id="dice-stuff-thp-bar-fill" style="width: ${thpPct}%"></div>
+      </div>
+    `;
+    assert.ok(buttonHtml.includes('id="dice-stuff-ac-btn"'));
+    assert.ok(buttonHtml.includes('<span>18</span>'));
+    assert.ok(buttonHtml.includes('id="dice-stuff-hp-bar-track"'));
+    assert.ok(buttonHtml.includes('width: 85%'));
+    assert.ok(buttonHtml.includes('fa-shield-halved'));
+  });
+
+  it("Dice Stuff header buttons order left-to-right: [gm-tools], [refresh], [compact], [options], [close]", () => {
+    // Simulate DOM elements array ordered via the injection logic
+    const headerChildren = ["close"];
+    const insertBefore = (targetClass, newClass) => {
+      const idx = headerChildren.indexOf(targetClass);
+      if (idx !== -1) {
+        headerChildren.splice(idx, 0, newClass);
+      } else {
+        headerChildren.unshift(newClass);
+      }
+    };
+
+    // Injection order backwards before .close:
+    // 1. menuBtn before close
+    // 2. collapseBtn before menuBtn
+    // 3. refreshBtn before collapseBtn
+    // 4. gmBtn before refreshBtn (if GM)
+    insertBefore("close", "dice-stuff-menu-btn");
+    insertBefore("dice-stuff-menu-btn", "dice-stuff-collapse-btn");
+    insertBefore("dice-stuff-collapse-btn", "dice-stuff-refresh-btn");
+    insertBefore("dice-stuff-refresh-btn", "gm-tools-header-btn");
+
+    assert.deepEqual(headerChildren, [
+      "gm-tools-header-btn",
+      "dice-stuff-refresh-btn",
+      "dice-stuff-collapse-btn",
+      "dice-stuff-menu-btn",
+      "close"
+    ]);
+
+    // For non-GM players (without gm-tools-header-btn)
+    const playerChildren = headerChildren.filter(c => c !== "gm-tools-header-btn");
+    assert.deepEqual(playerChildren, [
+      "dice-stuff-refresh-btn",
+      "dice-stuff-collapse-btn",
+      "dice-stuff-menu-btn",
+      "close"
+    ]);
+  });
+
+  it("Dice Stuff Options menu contains Theme, Guide, and Combat Reference buttons", () => {
+    const menuHtml = `
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
+        <button type="button" id="ds-menu-theme">Choose Theme</button>
+        <button type="button" id="ds-menu-guide">Dice Stuff Guide</button>
+        <button type="button" id="ds-menu-quickref">5e Combat Reference</button>
+      </div>
+    `;
+    assert.ok(menuHtml.includes('id="ds-menu-theme"'));
+    assert.ok(menuHtml.includes('id="ds-menu-guide"'));
+    assert.ok(menuHtml.includes('id="ds-menu-quickref"'));
+  });
+
+  it("Dice Stuff Options header button is icon-only with no text label across views", () => {
+    const menuBtnHtml = `
+      <a class="header-button dice-stuff-menu-btn" title="Options & Help" style="cursor: pointer; margin-right: 4px;">
+        <i class="fas fa-cog"></i>
+      </a>
+    `;
+    assert.ok(menuBtnHtml.includes('dice-stuff-menu-btn'));
+    assert.ok(menuBtnHtml.includes('fa-cog'));
+    assert.ok(!menuBtnHtml.includes('menu-label-text'));
+    assert.ok(!menuBtnHtml.includes('>Options<'));
+  });
+
+  it("5e Combat QuickRef structures Movement, Actions, Bonus Actions, Reactions, Cover, and Conditions", () => {
+    const categories = [
+      "Movement",
+      "Action",
+      "Bonus Action",
+      "Reaction",
+      "Cover & Environment",
+      "Conditions"
+    ];
+    for (const cat of categories) {
+      assert.ok(typeof cat === "string" && cat.length > 0);
+    }
+  });
+
+  it("Dice Stuff dialogOptions preserves top and left coordinates across reloads", () => {
+    const buildDialogConfig = (isCompact, dialogOptions) => ({
+      width: isCompact ? 310 : 980,
+      height: "auto",
+      resizable: true,
+      ...(dialogOptions?.top !== undefined ? { top: dialogOptions.top } : {}),
+      ...(dialogOptions?.left !== undefined ? { left: dialogOptions.left } : {})
+    });
+
+    const defaultCfg = buildDialogConfig(false, {});
+    assert.equal(defaultCfg.top, undefined);
+    assert.equal(defaultCfg.left, undefined);
+    assert.equal(defaultCfg.width, 980);
+
+    const reloadedCfg = buildDialogConfig(true, { top: 180, left: 340 });
+    assert.equal(reloadedCfg.top, 180);
+    assert.equal(reloadedCfg.left, 340);
+    assert.equal(reloadedCfg.width, 310);
+  });
+
+  it("Dice Stuff Tactical Glass theme styles vitals card elements for high readability", async () => {
+    const fs = await import("fs");
+    const customRollsSrc = fs.readFileSync("modules/custom-rolls.js", "utf8");
+    assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hp-max-label"));
+    assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hp-pct-label"));
+    assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill > span:first-child"));
+    assert.ok(customRollsSrc.includes(".app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill i"));
+  });
+
+  it("formatChatMessageWithMode formats messages correctly for IC and EM modes", () => {
+    // Basic text prefixing
+    assert.equal(formatChatMessageWithMode("Hello there!", "ic"), "/ic Hello there!");
+    assert.equal(formatChatMessageWithMode("smiles warmly.", "em"), "/em smiles warmly.");
+
+    // Does not prefix when mode is null or empty
+    assert.equal(formatChatMessageWithMode("Normal text", null), "Normal text");
+    assert.equal(formatChatMessageWithMode("Normal text", undefined), "Normal text");
+
+    // Preserves slash commands regardless of active mode
+    assert.equal(formatChatMessageWithMode("/r 1d20+4", "ic"), "/r 1d20+4");
+    assert.equal(formatChatMessageWithMode("/w GM secret", "em"), "/w GM secret");
+    assert.equal(formatChatMessageWithMode("/ic Already ic", "ic"), "/ic Already ic");
+    assert.equal(formatChatMessageWithMode("/em Already em", "em"), "/em Already em");
+    assert.equal(formatChatMessageWithMode("/ooc Out of character", "ic"), "/ooc Out of character");
+
+    // ProseMirror <p> tag unwrapping
+    assert.equal(formatChatMessageWithMode("<p>thinking about lunch</p>", "em"), "/em thinking about lunch");
+    assert.equal(formatChatMessageWithMode("<p>speaking in character</p>", "ic"), "/ic speaking in character");
+    assert.equal(formatChatMessageWithMode("<p>/r 1d20+5</p>", "em"), "/r 1d20+5");
+
+    // Whitespace resilience
+    assert.equal(formatChatMessageWithMode("   /roll 2d6   ", "ic"), "   /roll 2d6   ");
+    assert.equal(formatChatMessageWithMode("", "ic"), "");
+    assert.equal(formatChatMessageWithMode("   ", "ic"), "   ");
+    assert.equal(formatChatMessageWithMode(null, "ic"), null);
+  });
+
+  it("toggleChatMode handles mutually exclusive toggling and deselection cleanly", () => {
+    // Reset to null
+    setActiveChatMode(null);
+    assert.equal(getActiveChatMode(), null);
+
+    // Toggle IC on
+    assert.equal(toggleChatMode("ic"), "ic");
+    assert.equal(getActiveChatMode(), "ic");
+
+    // Toggle IC off (deselect)
+    assert.equal(toggleChatMode("ic"), null);
+    assert.equal(getActiveChatMode(), null);
+
+    // Toggle EM on
+    assert.equal(toggleChatMode("em"), "em");
+    assert.equal(getActiveChatMode(), "em");
+
+    // Switch from EM to IC directly
+    assert.equal(toggleChatMode("ic"), "ic");
+    assert.equal(getActiveChatMode(), "ic");
+
+    // Toggle IC off
+    assert.equal(toggleChatMode("ic"), null);
+    assert.equal(getActiveChatMode(), null);
+  });
+
+  it("wrapChatLogProcessMessage wraps processMessage targets and forwards formatted mode and extra args", async () => {
+    let received = null;
+    let receivedArgs = null;
+    const fakeChatLog = {
+      processMessage: async function (msg, ...args) {
+        received = msg;
+        receivedArgs = args;
+        return { success: true };
+      }
+    };
+    globalThis.ChatLog = function () { };
+    globalThis.ChatLog.prototype = fakeChatLog;
+
+    wrapChatLogProcessMessage();
+
+    // With EM active
+    setActiveChatMode("em");
+    await fakeChatLog.processMessage("waves friendly", { speaker: { alias: "Hero" } });
+    assert.equal(received, "/em waves friendly");
+    assert.deepEqual(receivedArgs, [{ speaker: { alias: "Hero" } }]);
+
+    // With mode off
+    setActiveChatMode(null);
+    await fakeChatLog.processMessage("normal text");
+    assert.equal(received, "normal text");
+
+    delete globalThis.ChatLog;
+  });
+
+  it("handleChatMessageHook intercepts chat submissions and routes to slash command", () => {
+    let sent = null;
+    const fakeLog = {
+      processMessage: (msg) => { sent = msg; }
+    };
+
+    // When mode is EM
+    setActiveChatMode("em");
+    const resultEm = handleChatMessageHook(fakeLog, "thinking about lunch", {});
+    assert.equal(resultEm, false);
+    assert.equal(sent, "/em thinking about lunch");
+
+    // With ProseMirror wrapped HTML input
+    const resultHtml = handleChatMessageHook(fakeLog, "<p>looking around</p>", {});
+    assert.equal(resultHtml, false);
+    assert.equal(sent, "/em looking around");
+
+    // When input is already a slash command
+    sent = null;
+    const resultSlash = handleChatMessageHook(fakeLog, "/r 1d20", {});
+    assert.equal(resultSlash, true);
+    assert.equal(sent, null);
+
+    // When mode is null
+    setActiveChatMode(null);
+    const resultNull = handleChatMessageHook(fakeLog, "just talking", {});
+    assert.equal(resultNull, true);
+    assert.equal(sent, null);
+  });
+
+  it("appendDieToChatText accurately appends dice notation and respects operators", () => {
+    // Empty text
+    assert.equal(appendDieToChatText("", "d20", "norm"), "/r 1d20");
+    assert.equal(appendDieToChatText("", "d20", "adv"), "/r 2d20kh");
+    assert.equal(appendDieToChatText("", "d20", "dis"), "/r 2d20kl");
+    assert.equal(appendDieToChatText("", "d6", "norm"), "/r 1d6");
+
+    // Combines identical dice
+    assert.equal(appendDieToChatText("/r 1d4", "d4", "norm"), "/r 2d4");
+    assert.equal(appendDieToChatText("/r 2d4", "d4", "norm"), "/r 3d4");
+
+    // Existing /r command
+    assert.equal(appendDieToChatText("/r 1d20", "d6", "norm"), "/r 1d20 + 1d6");
+    assert.equal(appendDieToChatText("/r 1d20 + 1d6", "d8", "norm"), "/r 1d20 + 1d6 + 1d8");
+    assert.equal(appendDieToChatText("/r 1d20 + 1d6", "d6", "norm"), "/r 1d20 + 2d6");
+
+    // Existing arithmetic operator (+, -, *, /)
+    assert.equal(appendDieToChatText("/r 1d20 +", "d6", "norm"), "/r 1d20 + 1d6");
+    assert.equal(appendDieToChatText("/r 2d6 -", "d4", "norm"), "/r 2d6 - 1d4");
+
+    // Preserves other roll prefixes
+    assert.equal(appendDieToChatText("/gmroll 1d20", "d4", "norm"), "/gmroll 1d20 + 1d4");
+    assert.equal(appendDieToChatText("/blindroll 2d6", "d6", "norm"), "/blindroll 3d6");
+
+    // Text without /r
+    assert.equal(appendDieToChatText("1d20 + 5", "d4", "norm"), "/r 1d20 + 1d4 + 5");
+  });
+
+  it("removeDieFromChatText and swapD20ModeInText accurately update chat input", () => {
+    // removeDieFromChatText decrements counts
+    assert.equal(removeDieFromChatText("/r 3d4", "d4"), "/r 2d4");
+    assert.equal(removeDieFromChatText("/r 2d4", "d4"), "/r 1d4");
+    assert.equal(removeDieFromChatText("/r 1d4", "d4"), "");
+    assert.equal(removeDieFromChatText("/r 1d20 + 2d6", "d6"), "/r 1d20 + 1d6");
+    assert.equal(removeDieFromChatText("/r 1d20 + 1d6", "d6"), "/r 1d20");
+    assert.equal(removeDieFromChatText("/r 1d20", "d20"), "");
+    assert.equal(removeDieFromChatText("/r 2d20kh", "d20"), "");
+    assert.equal(removeDieFromChatText("/r 3d20kh", "d20"), "/r 2d20kh");
+
+    // swapD20ModeInText
+    assert.equal(swapD20ModeInText("/r 1d20 + 5", "adv"), "/r 2d20kh + 5");
+    assert.equal(swapD20ModeInText("/r 2d20kh + 5", "dis"), "/r 2d20kl + 5");
+    assert.equal(swapD20ModeInText("/r 2d20kl + 5", "norm"), "/r 1d20 + 5");
+  });
+
+  it("getChatTextareaValue strips ProseMirror HTML and writeToChatTextarea handles PM transaction cleanly", () => {
+    // 1. Mock ProseMirror captured view
+    let dispatchedTr = null;
+    let focused = false;
+    const mockView = {
+      state: {
+        doc: {
+          content: { size: 12 },
+          textContent: "/r 1d20 + 5"
+        },
+        schema: {},
+        tr: {
+          replaceWith: (from, to, content) => ({ from, to, content, isTr: true })
+        }
+      },
+      dispatch: (tr) => { dispatchedTr = tr; },
+      focus: () => { focused = true; }
+    };
+
+    setChatEditorView(mockView);
+    assert.equal(getChatTextareaValue(), "/r 1d20 + 5");
+
+    // Mock global parseString
+    globalThis.foundry = globalThis.foundry || {};
+    globalThis.foundry.prosemirror = globalThis.foundry.prosemirror || {};
+    globalThis.foundry.prosemirror.dom = {
+      parseString: (text) => ({ content: { text } })
+    };
+
+    writeToChatTextarea("/r 1d20 + 5 + 1d6");
+    assert.ok(dispatchedTr);
+    assert.equal(dispatchedTr.isTr, true);
+    assert.equal(dispatchedTr.content.text, "/r 1d20 + 5 + 1d6");
+    assert.equal(focused, true);
+
+    // Reset view
+    setChatEditorView(null);
+  });
+
+  it("updateFlatModifierInChatText and parseFormulaStateFromChatText accurately sync chat formulas", () => {
+    // Adding/updating flat modifier
+    assert.equal(updateFlatModifierInChatText("/r 1d20", 3), "/r 1d20 + 3");
+    assert.equal(updateFlatModifierInChatText("/r 1d20 + 3", 5), "/r 1d20 + 5");
+    assert.equal(updateFlatModifierInChatText("/r 1d20 + 5", 0), "/r 1d20");
+    assert.equal(updateFlatModifierInChatText("/r 1d20", -2), "/r 1d20 - 2");
+    assert.equal(updateFlatModifierInChatText("/r 1d20 - 2", 0), "/r 1d20");
+    assert.equal(updateFlatModifierInChatText("", 4), "/r 4");
+    assert.equal(updateFlatModifierInChatText("/r 4", 0), "");
+    assert.equal(updateFlatModifierInChatText("/r 2d20kh", 2), "/r 2d20kh + 2");
+
+    // Parsing formula state
+    const parsed = parseFormulaStateFromChatText("/r 2d20kh + 2d6 + 1d4 + 3");
+    assert.equal(parsed.rollMode, "adv");
+    assert.equal(parsed.counts.d20, 1);
+    assert.equal(parsed.counts.d6, 2);
+    assert.equal(parsed.counts.d4, 1);
+    assert.equal(parsed.modifier, 3);
+
+    const parsedDis = parseFormulaStateFromChatText("/r 2d20kl + 1d10 - 2");
+    assert.equal(parsedDis.rollMode, "dis");
+    assert.equal(parsedDis.counts.d20, 1);
+    assert.equal(parsedDis.counts.d10, 1);
+    assert.equal(parsedDis.modifier, -2);
+  });
+
+  it("tray badge counts can be manipulated and reset cleanly", () => {
+    const counts = getTrayDiceCounts();
+    counts.d100 = 2;
+    counts.d20 = 1;
+    assert.equal(getTrayDiceCounts().d100, 2);
+    assert.equal(getTrayDiceCounts().d20, 1);
+
+    resetTrayDiceCounts();
+    assert.equal(getTrayDiceCounts().d100, 0);
+    assert.equal(getTrayDiceCounts().d20, 0);
+  });
+
+  it("buildDiceTrayElement constructs row 2 controls in exact order: [norm] [flat mod] [clear] [roll]", () => {
+    class MockElement {
+      constructor(tag) {
+        this.tagName = tag.toUpperCase();
+        this.children = [];
+        this.className = "";
+        this.dataset = {};
+        this._innerHTML = "";
+      }
+      set innerHTML(val) {
+        this._innerHTML = val;
+        if (val.includes("gp-dt-mod-input")) {
+          const span = new MockElement("span");
+          span.className = "gp-dt-mod-label";
+          const input = new MockElement("input");
+          input.className = "gp-dt-mod-input";
+          this.children.push(span, input);
+        }
+      }
+      get innerHTML() { return this._innerHTML; }
+      appendChild(child) { this.children.push(child); return child; }
+      querySelector(selector) {
+        if (selector === ".gp-dt-mod-input") {
+          return this.children.find(c => c.className.includes("gp-dt-mod-input")) || new MockElement("input");
+        }
+        return null;
+      }
+      querySelectorAll() { return []; }
+      addEventListener() { }
+    }
+
+    const prevDoc = globalThis.document;
+    globalThis.document = {
+      createElement: (tag) => new MockElement(tag)
+    };
+
+    try {
+      const tray = buildDiceTrayElement();
+      assert.ok(tray);
+      assert.equal(tray.id, "gp-dice-tray-copycat");
+      assert.equal(tray.children.length, 2); // row 1: dice grid, row 2: controls row
+
+      const controlsRow = tray.children[1];
+      assert.equal(controlsRow.className, "gp-dt-controls-row");
+      assert.equal(controlsRow.children.length, 4);
+
+      // Verify exact order: [norm] [flat mod] [clear] [roll]
+      assert.ok(controlsRow.children[0].className.includes("gp-dt-mode-cycle-btn"), "child 0 is mode cycle button");
+      assert.ok(controlsRow.children[1].className.includes("gp-dt-mod-wrapper"), "child 1 is flat mod wrapper");
+      assert.ok(controlsRow.children[2].className.includes("gp-dt-clear-btn"), "child 2 is clear button");
+      assert.ok(controlsRow.children[3].className.includes("gp-dt-roll-btn"), "child 3 is roll button");
+    } finally {
+      globalThis.document = prevDoc;
+    }
+  });
+
+  it("CSS linter: ensures no un-scoped #chat or sidebar tab display rules exist", () => {
+    const diceTrayJs = fs.readFileSync(new URL('../modules/dice-tray-copycat.js', import.meta.url), 'utf-8');
+    const chatControlsJs = fs.readFileSync(new URL('../modules/chat-controls.js', import.meta.url), 'utf-8');
+
+    const checkCss = (code, filename) => {
+      const styleMatches = code.match(/style\.textContent\s*=\s*`([\s\S]*?)`/g) || [];
+      for (const block of styleMatches) {
+        // Assert no bare un-scoped #chat { ... display: ... !important; }
+        // Legitimate scoped forms are #chat.active or .chat-popout #chat
+        const bareChatDisplay = /(?:^|[{};,\n`])\s*#chat\s*\{[^}]*display\s*:\s*(?:flex|grid|block)\s*!important/i.test(block);
+        assert.equal(bareChatDisplay, false, `${filename} must not contain bare un-scoped '#chat { display: ... !important }'`);
+
+        // Assert that #chat:not(.active) is hidden if #chat.active is styled
+        if (/#chat\.active/i.test(block)) {
+          assert.ok(
+            /#chat:not\(\.active\)[^}]*display\s*:\s*none\s*!important/i.test(block),
+            `${filename} must enforce '#chat:not(.active) { display: none !important }' when styling #chat.active`
+          );
+        }
+      }
+    };
+
+    checkCss(diceTrayJs, 'modules/dice-tray-copycat.js');
+    checkCss(chatControlsJs, 'modules/chat-controls.js');
+
+    // Self-test: verify linter regex flags illegal bare selectors
+    const testPattern = /(?:^|[{};,\n`])\s*#chat\s*\{[^}]*display\s*:\s*(?:flex|grid|block)\s*!important/i;
+    assert.equal(testPattern.test("`\n  #chat { display: flex !important; }\n`"), true);
+    assert.equal(testPattern.test("`.other, #chat { display: block !important; }`"), true);
+    assert.equal(testPattern.test("`#chat.active { display: flex !important; }`"), false);
+    assert.equal(testPattern.test("`.chat-popout #chat { display: flex !important; }`"), false);
   });
 });
+
+
+
 

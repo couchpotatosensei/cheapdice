@@ -28,6 +28,8 @@ export function registerSettings() {
   registerFeature(SETTINGS.FEATURES.PRESET_EDITORS, "Preset & Action Editors", "Enables D20 preset editors and Action Builder/Generator tools.");
   registerFeature(SETTINGS.FEATURES.SOCKET_HANDLERS, "SocketLib Remote Handlers", "Enables SocketLib registration for automated combat and timer broadcasts.");
   registerFeature(SETTINGS.FEATURES.ANIMATIONS, "Automated Animations & Sequencer", "Enables Sequencer and Automated Animations integrations.");
+  registerFeature(SETTINGS.FEATURES.CHAT_CONTROLS, "Chat Mode Controls (IC / EM)", "Adds In-Character (/ic) and Emote (/em) toggles above the chat box.");
+  registerFeature(SETTINGS.FEATURES.DICE_TRAY, "Dice Tray Copycat", "Adds a dedicated dice tray below the chat input with advantage/disadvantage, modifiers, and recent rolls.");
 
   // Master Token AC Visibility Toggle (Internal State)
   game.settings.register(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, {

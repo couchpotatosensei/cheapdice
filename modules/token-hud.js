@@ -88,10 +88,15 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     const rollConfig = foundry.utils.deepClone(config);
     const extras = (rollConfig.additionalDamageComponents || []).filter(c => c && c.formula);
     const hasGWM = Boolean(rollConfig.hasGWM);
+    const hasSavageAttacker = Boolean(rollConfig.hasSavageAttacker);
+    const hasPiercer = Boolean(rollConfig.hasPiercer);
     const isVersatile = Boolean(rollConfig.isVersatile);
+    const hasExtraAbility = Boolean(rollConfig.hasExtraAttackAbility && rollConfig.extraAttackAbility);
+    const hasExtraDamageAbility = Boolean(rollConfig.hasExtraDamageAbility && rollConfig.extraDamageAbility);
+    const hasSaveRider = Boolean(rollConfig.hasSaveRider);
 
-    // If extra damage components, GWM, or Versatile are present, prompt a quick toggle dialog
-    if (extras.length > 0 || hasGWM || isVersatile) {
+    // If extra damage components, GWM, Versatile, or extra ability are present, prompt a quick toggle dialog
+    if (extras.length > 0 || hasGWM || hasSavageAttacker || hasPiercer || isVersatile || hasExtraAbility || hasExtraDamageAbility || hasSaveRider) {
       let versatileHtml = "";
       if (isVersatile) {
         const vDie = rollConfig.versatileDie || "10";
@@ -109,6 +114,76 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
           <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #a34848; padding: 4px 6px; background: rgba(163,72,72,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
             <span>GWM / Sharpshooter (-5 / +10)</span>
             <input type="checkbox" id="hud-prompt-gwm" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let savageAttackerHtml = "";
+      if (hasSavageAttacker) {
+        savageAttackerHtml = `
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #8c3b2d; padding: 4px 6px; background: rgba(140,59,45,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+            <span>Savage Attacker (Keep Highest)</span>
+            <input type="checkbox" id="hud-prompt-savage-attacker" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let piercerHtml = "";
+      if (hasPiercer) {
+        const pLabel = rollConfig.piercerLabel || "Piercer";
+        piercerHtml = `
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #873e23; padding: 4px 6px; background: rgba(184,91,53,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+            <span>${pLabel} (Reroll Lowest Die)</span>
+            <input type="checkbox" id="hud-prompt-piercer" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let extraAbilityHtml = "";
+      if (hasExtraAbility) {
+        const abil = rollConfig.extraAttackAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = rollConfig.extraAttackAbilityLabel || "Secondary Atk Bonus";
+        extraAbilityHtml = `
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #4b5d88; padding: 4px 6px; background: rgba(75,93,136,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="hud-prompt-extra-ability" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let extraDamageAbilityHtml = "";
+      if (hasExtraDamageAbility) {
+        const abil = rollConfig.extraDamageAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = rollConfig.extraDamageAbilityLabel || "Secondary Dmg Bonus";
+        extraDamageAbilityHtml = `
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #82442d; padding: 4px 6px; background: rgba(130,68,45,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="hud-prompt-extra-dmg-ability" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let saveRiderHtml = "";
+      if (hasSaveRider) {
+        let computedDC = 10;
+        if (rollConfig.saveRiderDcType === "ability") {
+          const dcAbil = rollConfig.saveRiderDcAbility || "str";
+          const dcAbilMod = Number(actor.system?.abilities?.[dcAbil]?.mod) || 0;
+          const pb = Number(actor.system?.attributes?.prof) || 2;
+          computedDC = 8 + pb + dcAbilMod;
+        } else {
+          computedDC = Number(rollConfig.saveRiderDcFixed) || 13;
+        }
+        const saveAbil = (rollConfig.saveRiderAbility || "con").toUpperCase();
+        const riderLabel = rollConfig.saveRiderLabel || "Save Rider";
+        saveRiderHtml = `
+          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #502772; padding: 4px 6px; background: rgba(107,63,148,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
+            <span>${riderLabel} (DC ${computedDC} ${saveAbil})</span>
+            <input type="checkbox" id="hud-prompt-save-rider" style="margin: 0;">
           </label>
         `;
       }
@@ -134,6 +209,11 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
         <div style="font-family: inherit; padding: 4px 2px;">
           ${versatileHtml}
           ${gwmHtml}
+          ${savageAttackerHtml}
+          ${piercerHtml}
+          ${extraAbilityHtml}
+          ${extraDamageAbilityHtml}
+          ${saveRiderHtml}
           ${extrasHtml}
         </div>
       `;
@@ -156,6 +236,45 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
                 rollConfig.attackCircumstanceModifier = (Number(rollConfig.attackCircumstanceModifier) || 0) - 5;
                 rollConfig.damageModifier = (Number(rollConfig.damageModifier) || 0) + 10;
                 rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [GWM/SS]`;
+              }
+
+              if (hasSavageAttacker && html.find("#hud-prompt-savage-attacker").is(":checked")) {
+                rollConfig.isSavageAttackerActive = true;
+                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [Savage Attacker]`;
+              }
+
+              if (hasPiercer && html.find("#hud-prompt-piercer").is(":checked")) {
+                rollConfig.isPiercerActive = true;
+                const pLabel = (rollConfig.piercerLabel || "Piercer").trim();
+                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [${pLabel}]`;
+              }
+
+              if (hasExtraAbility && html.find("#hud-prompt-extra-ability").is(":checked")) {
+                const abil = rollConfig.extraAttackAbility;
+                const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+                rollConfig.secondaryAbilityMod = abilMod;
+                rollConfig.secondaryAbilityKey = abil;
+                rollConfig.secondaryAbilityLabel = rollConfig.extraAttackAbilityLabel;
+                const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+                const tag = rollConfig.extraAttackAbilityLabel || `${sign} ${abil.toUpperCase()}`;
+                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [${tag}]`;
+              }
+
+              if (hasExtraDamageAbility && html.find("#hud-prompt-extra-dmg-ability").is(":checked")) {
+                const abil = rollConfig.extraDamageAbility;
+                const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+                rollConfig.secondaryDamageAbilityMod = abilMod;
+                rollConfig.secondaryDamageAbilityKey = abil;
+                rollConfig.secondaryDamageAbilityLabel = rollConfig.extraDamageAbilityLabel;
+                const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+                const tag = rollConfig.extraDamageAbilityLabel || `${sign} ${abil.toUpperCase()} Dmg`;
+                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [${tag}]`;
+              }
+
+              if (hasSaveRider && html.find("#hud-prompt-save-rider").is(":checked")) {
+                rollConfig.isSaveRiderActive = true;
+                const tag = rollConfig.saveRiderLabel || "Save";
+                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [${tag}]`;
               }
 
               if (rollConfig.additionalDamageComponents) {
@@ -625,12 +744,33 @@ export function initTokenHud() {
           const actor = token.actor;
           if (!actor) return;
 
-          const currentHp = Number(actor.system.attributes?.hp?.value ?? 0);
+          let currentHp = Number(actor.system.attributes?.hp?.value ?? 0);
           const maxHp = Number(actor.system.attributes?.hp?.max ?? 0);
-          const newHp = Math.clamp(currentHp + delta, 0, maxHp);
+          let currentTemp = Number(actor.system.attributes?.hp?.temp ?? 0);
 
-          await actor.update({ "system.attributes.hp.value": newHp });
-          if (bottomInput) bottomInput.value = newHp;
+          const actorUpdates = {};
+
+          if (delta < 0) {
+            let dmg = Math.abs(delta);
+            if (currentTemp > 0) {
+              const absorbed = Math.min(currentTemp, dmg);
+              currentTemp -= absorbed;
+              dmg -= absorbed;
+              actorUpdates["system.attributes.hp.temp"] = currentTemp;
+            }
+            if (dmg > 0) {
+              currentHp = Math.max(0, currentHp - dmg);
+              actorUpdates["system.attributes.hp.value"] = currentHp;
+            }
+          } else if (delta > 0) {
+            currentHp = Math.clamp(currentHp + delta, 0, maxHp);
+            actorUpdates["system.attributes.hp.value"] = currentHp;
+          }
+
+          if (Object.keys(actorUpdates).length > 0) {
+            await actor.update(actorUpdates);
+          }
+          if (bottomInput) bottomInput.value = currentHp;
         };
 
         btn.addEventListener("mousedown", (e) => e.stopPropagation());

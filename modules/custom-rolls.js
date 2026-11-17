@@ -1,5 +1,14 @@
 import { MODULE_ID, SETTINGS } from "../src/constants.js";
 import { getButtonInfo, runHudButtonSlot } from "./token-hud.js";
+import {
+  getChatTextareaValue,
+  writeToChatTextarea,
+  appendDieToChatText,
+  removeDieFromChatText,
+  swapD20ModeInText,
+  updateFlatModifierInChatText,
+  parseFormulaStateFromChatText
+} from "./dice-tray-copycat.js";
 
 // Helper: Resolve Module Socket
 export function getSocket() {
@@ -445,7 +454,7 @@ export function isSpellPrepared(item, actor) {
 export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
   if (!actor) return false;
 
-  const currentSpells = foundry.utils.deepClone(
+  let currentSpells = foundry.utils.deepClone(
     getProfileData(actor, "spellConfigs") ||
     actor.getFlag?.("world", "spellConfigs") || {}
   );
@@ -646,15 +655,6 @@ export function initCustomRolls() {
     mod.api.syncSpellsWithSheet = syncSpellsWithSheet;
     mod.api.buildSpellConfigFromItem = buildSpellConfigFromItem;
   }
-
-  // Hook into D&D 5e rest completion to auto-recharge tracking stuff
-  Hooks.on("dnd5e.restCompleted", async (actor, data) => {
-    if (!actor || !actor.isOwner) return;
-    const restType = (data?.longRest || data?.restType === "long") ? "lr" : "sr";
-    if (typeof window.CustomRolls?.rechargeActorTrackers === "function") {
-      await window.CustomRolls.rechargeActorTrackers(actor, restType);
-    }
-  });
 
   // Support interactive click buttons on Spell Save DC cards (works across v12/v13/v14)
   const hookName = (foundry.utils.isNewerVersion?.(game.version, "13") || Number(game.release?.generation ?? 12) >= 13)
@@ -887,7 +887,7 @@ export function initCustomRolls() {
 
     const dexMod = getNumericValue(actor.system.abilities?.dex?.mod, 0);
     const dexScore = getNumericValue(actor.system.abilities?.dex?.value, 10);
-    const initBonus = getNumericValue(actor.system.attributes?.init?.bonus, 0);
+    const initBonus = getNumericValue(actor.system.attributes?.init?.roll?.bonus ?? actor.system.attributes?.init?.bonus, 0);
     const alertBonus = actor.items.some(i => i.name?.toLowerCase().includes("alert")) ? 5 : 0;
     const totalInitMod = dexMod + initBonus + alertBonus;
 
@@ -1338,7 +1338,7 @@ export function initCustomRolls() {
 
     const dexMod = getNumericValue(actor.system.abilities?.dex?.mod, 0);
     const dexScore = getNumericValue(actor.system.abilities?.dex?.value, 10);
-    const initBonus = getNumericValue(actor.system.attributes?.init?.bonus, 0);
+    const initBonus = getNumericValue(actor.system.attributes?.init?.roll?.bonus ?? actor.system.attributes?.init?.bonus, 0);
     const alertBonus = actor.items.some(i => i.name?.toLowerCase().includes("alert")) ? 5 : 0;
     const totalInitMod = dexMod + initBonus + alertBonus;
 
@@ -1816,6 +1816,86 @@ Click a numbered modifier badge to execute a roll.</div>
       `;
       }
 
+      let savageAttackerHtml = "";
+      if (config.hasSavageAttacker) {
+        savageAttackerHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #8c3b2d; cursor: pointer; padding: 2px 4px; background: rgba(140, 59, 45, 0.08); border-radius: 3px;">
+            <span>Savage Attacker (Keep Highest)</span>
+            <input type="checkbox" id="savage-attacker-toggle">
+          </label>
+        </div>
+      `;
+      }
+
+      let piercerHtml = "";
+      if (config.hasPiercer) {
+        const pLabel = config.piercerLabel || "Piercer";
+        piercerHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #873e23; cursor: pointer; padding: 2px 4px; background: rgba(184, 91, 53, 0.08); border-radius: 3px;">
+            <span>${pLabel} (Reroll Lowest Die)</span>
+            <input type="checkbox" id="piercer-toggle">
+          </label>
+        </div>
+      `;
+      }
+
+      let extraAbilityHtml = "";
+      if (config.hasExtraAttackAbility && config.extraAttackAbility) {
+        const abil = config.extraAttackAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = config.extraAttackAbilityLabel || "Secondary Atk Bonus";
+        extraAbilityHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #4b5d88; cursor: pointer; padding: 2px 4px; background: rgba(75, 93, 136, 0.08); border-radius: 3px;">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="extra-ability-atk-toggle">
+          </label>
+        </div>
+      `;
+      }
+
+      let extraDamageAbilityHtml = "";
+      if (config.hasExtraDamageAbility && config.extraDamageAbility) {
+        const abil = config.extraDamageAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = config.extraDamageAbilityLabel || "Secondary Dmg Bonus";
+        extraDamageAbilityHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #82442d; cursor: pointer; padding: 2px 4px; background: rgba(130, 68, 45, 0.08); border-radius: 3px;">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="extra-ability-dmg-toggle">
+          </label>
+        </div>
+      `;
+      }
+
+      let saveRiderHtml = "";
+      if (config.hasSaveRider) {
+        let computedDC = 10;
+        if (config.saveRiderDcType === "ability") {
+          const dcAbil = config.saveRiderDcAbility || "str";
+          const dcAbilMod = Number(actor.system?.abilities?.[dcAbil]?.mod) || 0;
+          const pb = Number(actor.system?.attributes?.prof) || 2;
+          computedDC = 8 + pb + dcAbilMod;
+        } else {
+          computedDC = Number(config.saveRiderDcFixed) || 13;
+        }
+        const saveAbil = (config.saveRiderAbility || "con").toUpperCase();
+        const riderLabel = config.saveRiderLabel || "Save Rider";
+        saveRiderHtml = `
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 6px; margin-top: 6px;">
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85em; font-weight: bold; color: #502772; cursor: pointer; padding: 2px 4px; background: rgba(107, 63, 148, 0.08); border-radius: 3px;">
+            <span>${riderLabel} (DC ${computedDC} ${saveAbil})</span>
+            <input type="checkbox" id="save-rider-toggle">
+          </label>
+        </div>
+      `;
+      }
+
       const extras = config.additionalDamageComponents || [];
       let extrasHtml = "";
       if (extras.length > 0) {
@@ -1852,7 +1932,12 @@ Click a numbered modifier badge to execute a roll.</div>
       <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-bottom: 6px;">
         ${tagsHtml}
       </div>
+      ${extraAbilityHtml}
+      ${extraDamageAbilityHtml}
+      ${saveRiderHtml}
       ${gwmHtml}
+      ${savageAttackerHtml}
+      ${piercerHtml}
       ${extrasHtml}
     `;
     }
@@ -1897,6 +1982,45 @@ Click a numbered modifier badge to execute a roll.</div>
               config.attackCircumstanceModifier = (Number(config.attackCircumstanceModifier) || 0) - 5;
               config.damageModifier = (Number(config.damageModifier) || 0) + 10;
               config.chatCardTitle = `${config.chatCardTitle || choice} [GWM/SS -5/+10]`;
+            }
+
+            if (config.hasSavageAttacker && html.find("#savage-attacker-toggle").is(":checked")) {
+              config.isSavageAttackerActive = true;
+              config.chatCardTitle = `${config.chatCardTitle || choice} [Savage Attacker]`;
+            }
+
+            if (config.hasPiercer && html.find("#piercer-toggle").is(":checked")) {
+              config.isPiercerActive = true;
+              const pLabel = (config.piercerLabel || "Piercer").trim();
+              config.chatCardTitle = `${config.chatCardTitle || choice} [${pLabel}]`;
+            }
+
+            if (config.hasExtraAttackAbility && config.extraAttackAbility && html.find("#extra-ability-atk-toggle").is(":checked")) {
+              const abil = config.extraAttackAbility;
+              const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+              config.secondaryAbilityMod = abilMod;
+              config.secondaryAbilityKey = abil;
+              config.secondaryAbilityLabel = config.extraAttackAbilityLabel;
+              const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+              const tag = config.extraAttackAbilityLabel || `${sign} ${abil.toUpperCase()}`;
+              config.chatCardTitle = `${config.chatCardTitle || choice} [${tag}]`;
+            }
+
+            if (config.hasExtraDamageAbility && config.extraDamageAbility && html.find("#extra-ability-dmg-toggle").is(":checked")) {
+              const abil = config.extraDamageAbility;
+              const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+              config.secondaryDamageAbilityMod = abilMod;
+              config.secondaryDamageAbilityKey = abil;
+              config.secondaryDamageAbilityLabel = config.extraDamageAbilityLabel;
+              const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+              const tag = config.extraDamageAbilityLabel || `${sign} ${abil.toUpperCase()} Dmg`;
+              config.chatCardTitle = `${config.chatCardTitle || choice} [${tag}]`;
+            }
+
+            if (config.hasSaveRider && html.find("#save-rider-toggle").is(":checked")) {
+              config.isSaveRiderActive = true;
+              const tag = config.saveRiderLabel || "Save";
+              config.chatCardTitle = `${config.chatCardTitle || choice} [${tag}]`;
             }
 
             if (config.additionalDamageComponents) {
@@ -2366,17 +2490,14 @@ Click a numbered modifier badge to execute a roll.</div>
     const isSR = restType === "sr";
     const isDawn = restType === "dawn";
 
-    const updates = {};
-    const itemUpdates = [];
     const rechargeChatLines = [];
-
     const trackers = actor.getFlag("world", "trackingStuff") || [];
     let trackersModified = false;
-    const handledItemIds = new Set();
-    const handledResourceSlots = new Set();
 
-    // 1. Process all active Trackers configured in trackingStuff
+    // Process custom counters (ignores any sheet items)
     for (const t of trackers) {
+      if (t.type === "item") continue;
+
       const reset = String(t.resetOn || "lr").toLowerCase();
       let shouldRecharge = false;
       const isReset1 = reset.includes("reset_1");
@@ -2392,190 +2513,36 @@ Click a numbered modifier badge to execute a roll.</div>
 
       if (!shouldRecharge) continue;
 
-      const trackerLabel = t.label || t.name || (t.resourceSlot ? `Resource: ${t.resourceSlot}` : "Tracker");
+      const trackerLabel = t.label || t.name || "Custom Counter";
+      const max = Number(t.max ?? 0);
+      let cur = Number(t.value ?? 0);
 
-      if (t.type === "item" && t.itemRefId) {
-        handledItemIds.add(t.itemRefId);
-        const item = actor.items.get(t.itemRefId);
-        if (item) {
-          const uses = item.system.uses;
-          const max = Number(uses?.max ?? t.max ?? 0);
-          const cur = uses?.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses?.value ?? t.value ?? 0);
-          if (isReset1 || isReset0) {
-            const targetVal = isReset1 ? 1 : 0;
-            if (cur !== targetVal) {
-              itemUpdates.push({
-                _id: item.id,
-                "system.uses.spent": Math.max(0, max - targetVal),
-                "system.uses.value": targetVal
-              });
-              t.value = targetVal;
-              trackersModified = true;
-              rechargeChatLines.push(`• <strong>${item.name}</strong>: Reset to ${targetVal}/${max}`);
-            }
-          } else if (cur < max) {
-            const formula = (t.rechargeFormula || "").trim();
-            if (formula) {
-              try {
-                const roll = new Roll(formula);
-                await roll.evaluate();
-                const newVal = Math.min(max, cur + roll.total);
-                itemUpdates.push({
-                  _id: item.id,
-                  "system.uses.spent": Math.max(0, max - newVal),
-                  "system.uses.value": newVal
-                });
-                t.value = newVal;
-                trackersModified = true;
-                rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-              } catch (err) {
-                console.error("Recharge formula error", err);
-              }
-            } else {
-              itemUpdates.push({
-                _id: item.id,
-                "system.uses.spent": 0,
-                "system.uses.value": max
-              });
-              t.value = max;
-              trackersModified = true;
-              rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
-            }
-          }
+      if (isReset1 || isReset0) {
+        const targetVal = isReset1 ? 1 : 0;
+        if (cur !== targetVal) {
+          t.value = targetVal;
+          trackersModified = true;
+          rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Reset to ${targetVal}/${max}`);
         }
-      } else if (t.type === "resource" && t.resourceSlot) {
-        handledResourceSlots.add(t.resourceSlot);
-        const res = actor.system.resources?.[t.resourceSlot];
-        const cur = Number(res?.value ?? t.value ?? 0);
-        const max = Number(res?.max ?? t.max ?? 0);
-        if (isReset1 || isReset0) {
-          const targetVal = isReset1 ? 1 : 0;
-          if (cur !== targetVal) {
-            updates[`system.resources.${t.resourceSlot}.value`] = targetVal;
-            t.value = targetVal;
+      } else if (cur < max) {
+        const formula = (t.rechargeFormula || "").trim();
+        if (formula) {
+          try {
+            const roll = new Roll(formula);
+            await roll.evaluate();
+            const newVal = Math.min(max, cur + roll.total);
+            t.value = newVal;
             trackersModified = true;
-            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Reset to ${targetVal}/${max}`);
-          }
-        } else if (cur < max) {
-          const formula = (t.rechargeFormula || "").trim();
-          if (formula) {
-            try {
-              const roll = new Roll(formula);
-              await roll.evaluate();
-              const newVal = Math.min(max, cur + roll.total);
-              updates[`system.resources.${t.resourceSlot}.value`] = newVal;
-              t.value = newVal;
-              trackersModified = true;
-              rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-            } catch (e) {}
-          } else {
-            updates[`system.resources.${t.resourceSlot}.value`] = max;
-            t.value = max;
-            trackersModified = true;
-            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Restored to ${max}/${max}`);
-          }
-        }
-      } else if (t.type === "custom") {
-        const cur = Number(t.value ?? 0);
-        const max = Number(t.max ?? 0);
-        if (isReset1 || isReset0) {
-          const targetVal = isReset1 ? 1 : 0;
-          if (cur !== targetVal) {
-            t.value = targetVal;
-            trackersModified = true;
-            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Reset to ${targetVal}/${max}`);
-          }
-        } else if (cur < max) {
-          const formula = (t.rechargeFormula || "").trim();
-          if (formula) {
-            try {
-              const roll = new Roll(formula);
-              await roll.evaluate();
-              const newVal = Math.min(max, cur + roll.total);
-              t.value = newVal;
-              trackersModified = true;
-              rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-            } catch (e) {}
-          } else {
-            t.value = max;
-            trackersModified = true;
-            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Restored to ${max}/${max}`);
-          }
+            rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
+          } catch (e) { }
+        } else {
+          t.value = max;
+          trackersModified = true;
+          rechargeChatLines.push(`• <strong>${trackerLabel}</strong>: Restored to ${max}/${max}`);
         }
       }
     }
 
-    // 2. Also check any actor items not explicitly in trackers
-    for (const item of actor.items) {
-      if (handledItemIds.has(item.id)) continue;
-      const uses = item.system.uses;
-      if (uses && typeof uses.max === "number" && uses.max > 0) {
-        const per = String(uses.per || "").toLowerCase();
-        let shouldRecharge = false;
-        if (isLR) {
-          shouldRecharge = (per === "lr" || per === "sr" || per === "day" || per === "dawn" || per === "charges");
-        } else if (isSR) {
-          shouldRecharge = (per === "sr");
-        } else if (isDawn) {
-          shouldRecharge = (per === "day" || per === "dawn" || per === "charges");
-        }
-        const max = Number(uses.max) || 0;
-        const cur = uses.spent !== undefined ? Math.max(0, max - Number(uses.spent)) : Number(uses.value ?? 0);
-        if (shouldRecharge && cur < max) {
-          let formula = "";
-          if (uses.recovery && Array.isArray(uses.recovery)) {
-            const formRec = uses.recovery.find(r => r.formula);
-            if (formRec) formula = formRec.formula;
-          }
-          if (!formula && item.system.description?.value) {
-            const m = item.system.description.value.match(/regains?\s+(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+expended\s+charges/i);
-            if (m) formula = m[1].trim();
-          }
-          if (formula) {
-            try {
-              const roll = new Roll(formula);
-              await roll.evaluate();
-              const newVal = Math.min(max, cur + roll.total);
-              itemUpdates.push({
-                _id: item.id,
-                "system.uses.spent": Math.max(0, max - newVal),
-                "system.uses.value": newVal
-              });
-              rechargeChatLines.push(`• <strong>${item.name}</strong>: Regained ${roll.total} charges via <code>${formula}</code> (now ${newVal}/${max})`);
-            } catch (err) {}
-          } else {
-            itemUpdates.push({
-              _id: item.id,
-              "system.uses.spent": 0,
-              "system.uses.value": max
-            });
-            rechargeChatLines.push(`• <strong>${item.name}</strong>: Restored to ${max}/${max}`);
-          }
-        }
-      }
-    }
-
-    // 3. Class resources not explicitly in trackers
-    for (const slot of ["primary", "secondary", "tertiary"]) {
-      if (handledResourceSlots.has(slot)) continue;
-      const res = actor.system.resources?.[slot];
-      if (res && res.label && typeof res.max === "number" && res.max > 0) {
-        let shouldReset = false;
-        if (isLR) shouldReset = (res.lr || res.sr || (!res.lr && !res.sr));
-        else if (isSR) shouldReset = Boolean(res.sr);
-        if (shouldReset && res.value < res.max) {
-          updates[`system.resources.${slot}.value`] = res.max;
-          rechargeChatLines.push(`• <strong>${res.label}</strong>: Reset to ${res.max}/${res.max}`);
-        }
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      await actor.update(updates);
-    }
-    if (itemUpdates.length > 0) {
-      await actor.updateEmbeddedDocuments("Item", itemUpdates);
-    }
     if (trackersModified) {
       await actor.setFlag("world", "trackingStuff", trackers);
     }
@@ -2906,47 +2873,7 @@ Click a numbered modifier badge to execute a roll.</div>
             }
           }
 
-          const syncResources = async () => {
-            const slots = ["primary", "secondary", "tertiary"];
-            const prevSlots = new Set(trackers.filter(t => t.type === "resource" && t.resourceSlot).map(t => t.resourceSlot));
-            const nonItemTrackers = trackers.filter(t => t.type !== "item");
-            const updateData = {};
-            const newOccupiedSlots = new Set();
-
-            for (let i = 0; i < slots.length; i++) {
-              const slot = slots[i];
-              const cand = nonItemTrackers[i];
-              if (cand) {
-                cand.type = "resource";
-                cand.resourceSlot = slot;
-                newOccupiedSlots.add(slot);
-                updateData[`system.resources.${slot}.label`] = cand.label || "";
-                updateData[`system.resources.${slot}.value`] = Number(cand.value) || 0;
-                updateData[`system.resources.${slot}.max`] = Number(cand.max) || 1;
-                updateData[`system.resources.${slot}.sr`] = (cand.resetOn || "").startsWith("sr");
-                updateData[`system.resources.${slot}.lr`] = (cand.resetOn || "").startsWith("lr");
-              }
-            }
-
-            for (const prevSlot of prevSlots) {
-              if (!newOccupiedSlots.has(prevSlot)) {
-                updateData[`system.resources.${prevSlot}.label`] = "";
-                updateData[`system.resources.${prevSlot}.value`] = 0;
-                updateData[`system.resources.${prevSlot}.max`] = 0;
-                updateData[`system.resources.${prevSlot}.sr`] = false;
-                updateData[`system.resources.${prevSlot}.lr`] = false;
-              }
-            }
-
-            for (let i = slots.length; i < nonItemTrackers.length; i++) {
-              nonItemTrackers[i].type = "custom";
-              nonItemTrackers[i].resourceSlot = null;
-            }
-
-            if (Object.keys(updateData).length > 0) {
-              await actor.update(updateData);
-            }
-          };
+          const syncResources = async () => { };
 
           function renderActiveTrackersList() {
             if (!trackers || trackers.length === 0) {
@@ -3285,7 +3212,7 @@ Click a numbered modifier badge to execute a roll.</div>
   }
 
   // --- 3.4 Unified Action Client-Side Dialog Launcher (Card/List View) ---
-  window.CustomRolls.openActionDialog = async function (initialMode = "d20", explicitActor = null) {
+  window.CustomRolls.openActionDialog = async function (initialMode = "d20", explicitActor = null, dialogOptions = {}) {
     if (!getSetting("featureCustomRolls")) return;
 
     let token = null;
@@ -3329,6 +3256,35 @@ Click a numbered modifier badge to execute a roll.</div>
 
     // Portrait for Persistent Sidebar
     const portraitSrc = token?.document?.texture?.src || actor.img || "icons/svg/mystery-man.svg";
+
+    // Vitals: HP and Hit Dice Extraction
+    const hpData = actor.system?.attributes?.hp || { value: 0, max: 0, temp: 0 };
+    const curHp = Number(hpData.value) || 0;
+    const maxHp = Number(hpData.effectiveMax ?? hpData.max) || 0;
+    const tempHp = Number(hpData.temp) || 0;
+    const curAc = actor.system?.attributes?.ac?.value ?? actor.system?.attributes?.ac ?? "--";
+    const hpPct = Math.min(100, Math.max(0, Math.round((curHp / (maxHp || 1)) * 100)));
+    const thpPct = Math.min(100, Math.round((tempHp / (maxHp || 1)) * 100));
+
+    // Hit Dice: System aggregate (dnd5e 3+/4+) or computed from class items
+    let hdCurrent = 0;
+    let hdMax = 0;
+    let hdDenom = "";
+    if (actor.system?.attributes?.hd && typeof actor.system.attributes.hd.value === "number") {
+      hdCurrent = Number(actor.system.attributes.hd.value) || 0;
+      hdMax = Number(actor.system.attributes.hd.max) || 0;
+    } else if (actor.itemTypes?.class && actor.itemTypes.class.length > 0) {
+      actor.itemTypes.class.forEach(c => {
+        const levels = Number(c.system?.levels) || 0;
+        const used = Number(c.system?.hitDiceUsed) || 0;
+        hdCurrent += Math.max(0, levels - used);
+        hdMax += levels;
+        if (!hdDenom && c.system?.hitDice) hdDenom = c.system.hitDice;
+      });
+    }
+    if (!hdDenom && actor.itemTypes?.class?.[0]?.system?.hitDice) {
+      hdDenom = actor.itemTypes.class[0].system.hitDice;
+    }
 
     // --- Helper Calculations ---
     function getWeaponDetails(config) {
@@ -3651,7 +3607,7 @@ Click a numbered modifier badge to execute a roll.</div>
             </div>
           </div>
           ${srcInfo && srcInfo.hasItemUses ? (
-            srcInfo.chargeCost > 0 ? `
+          srcInfo.chargeCost > 0 ? `
               <div id="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed; font-size: 0.8em; opacity: ${chargeDeductDisabled ? '0.5' : '1'};">
                 <label style="display: flex; align-items: center; gap: 4px; cursor: ${chargeDeductDisabled ? 'not-allowed' : 'pointer'}; flex: 1; min-width: 0;" title="${chargeDeductDisabled ? 'No charges remaining on item' : 'Deduct charge/use from item on character sheet'}">
                   <input type="checkbox" id="deductChargeToggle" data-item-id="${srcInfo.itemId}" ${chargeDeductChecked ? 'checked' : ''} ${chargeDeductDisabled ? 'disabled' : ''} style="margin: 0;" />
@@ -3667,7 +3623,7 @@ Click a numbered modifier badge to execute a roll.</div>
                 <i class="fas fa-check-circle"></i> Cast at will via ${srcInfo.name} (0 charge cost)
               </div>
             `
-          ) : ''}
+        ) : ''}
         </div>
       </div>
     `;
@@ -4001,6 +3957,27 @@ Click a numbered modifier badge to execute a roll.</div>
         `;
       }
 
+      let savageAttackerHtml = "";
+      if (config?.hasSavageAttacker) {
+        savageAttackerHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #8c3b2d; cursor: pointer; padding: 3px 6px; background: rgba(140, 59, 45, 0.08); border-radius: 3px; border: 1px solid rgba(140, 59, 45, 0.25);">
+            <span>Savage Attacker (Keep Highest)</span>
+            <input type="checkbox" id="savage-attacker-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let piercerHtml = "";
+      if (config?.hasPiercer) {
+        const pLabel = config.piercerLabel || "Piercer";
+        piercerHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #873e23; cursor: pointer; padding: 3px 6px; background: rgba(184, 91, 53, 0.08); border-radius: 3px; border: 1px solid rgba(184, 91, 53, 0.25);">
+            <span>${pLabel} (Reroll Lowest Die)</span>
+            <input type="checkbox" id="piercer-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
       let versatileHtml = "";
       if (config?.isVersatile) {
         const vDie = config.versatileDie || "10";
@@ -4008,6 +3985,55 @@ Click a numbered modifier badge to execute a roll.</div>
           <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #2b7489; cursor: pointer; padding: 3px 6px; background: rgba(43, 116, 137, 0.08); border-radius: 3px; border: 1px solid rgba(43, 116, 137, 0.25);">
             <span>Two-Handed / Versatile (d${vDie})</span>
             <input type="checkbox" id="versatile-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let extraAbilityHtml = "";
+      if (config?.hasExtraAttackAbility && config?.extraAttackAbility) {
+        const abil = config.extraAttackAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = config.extraAttackAbilityLabel || "Secondary Atk Bonus";
+        extraAbilityHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #4b5d88; cursor: pointer; padding: 3px 6px; background: rgba(75, 93, 136, 0.08); border-radius: 3px; border: 1px solid rgba(75, 93, 136, 0.25);">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="extra-ability-atk-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let extraDamageAbilityHtml = "";
+      if (config?.hasExtraDamageAbility && config?.extraDamageAbility) {
+        const abil = config.extraDamageAbility;
+        const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+        const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+        const lbl = config.extraDamageAbilityLabel || "Secondary Dmg Bonus";
+        extraDamageAbilityHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #82442d; cursor: pointer; padding: 3px 6px; background: rgba(130, 68, 45, 0.08); border-radius: 3px; border: 1px solid rgba(130, 68, 45, 0.25);">
+            <span>${lbl} (${sign} ${abil.toUpperCase()})</span>
+            <input type="checkbox" id="extra-ability-dmg-toggle" style="margin: 0;">
+          </label>
+        `;
+      }
+
+      let saveRiderHtml = "";
+      if (config?.hasSaveRider) {
+        let computedDC = 10;
+        if (config.saveRiderDcType === "ability") {
+          const dcAbil = config.saveRiderDcAbility || "str";
+          const dcAbilMod = Number(actor.system?.abilities?.[dcAbil]?.mod) || 0;
+          const pb = Number(actor.system?.attributes?.prof) || 2;
+          computedDC = 8 + pb + dcAbilMod;
+        } else {
+          computedDC = Number(config.saveRiderDcFixed) || 13;
+        }
+        const saveAbil = (config.saveRiderAbility || "con").toUpperCase();
+        const riderLabel = config.saveRiderLabel || "Save Rider";
+        saveRiderHtml = `
+          <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.78em; font-weight: bold; color: #502772; cursor: pointer; padding: 3px 6px; background: rgba(107, 63, 148, 0.08); border-radius: 3px; border: 1px solid rgba(107, 63, 148, 0.25);">
+            <span>${riderLabel} (DC ${computedDC} ${saveAbil})</span>
+            <input type="checkbox" id="save-rider-toggle" style="margin: 0;">
           </label>
         `;
       }
@@ -4108,11 +4134,16 @@ Click a numbered modifier badge to execute a roll.</div>
           </div>
         </div>
 
-        <!-- Optional Damage & GWM / Versatile Card -->
-        ${(gwmHtml || versatileHtml || extrasHtml) ? `
+        <!-- Optional Damage & GWM / Versatile / Secondary Ability / Save Rider Card -->
+        ${(gwmHtml || savageAttackerHtml || piercerHtml || versatileHtml || extraAbilityHtml || extraDamageAbilityHtml || saveRiderHtml || extrasHtml) ? `
           <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
             ${versatileHtml}
             ${gwmHtml}
+            ${savageAttackerHtml}
+            ${piercerHtml}
+            ${extraAbilityHtml}
+            ${extraDamageAbilityHtml}
+            ${saveRiderHtml}
             ${extrasHtml}
           </div>
         ` : ''}
@@ -4131,7 +4162,7 @@ Click a numbered modifier badge to execute a roll.</div>
       const pb = Number(sys.attributes?.prof ?? 0);
       const spellcastingAbility = sys.attributes?.spellcasting;
       const hasSpellcasting = Boolean(spellcastingAbility && spellcastingAbility !== "" && spellcastingAbility !== "none");
-      
+
       const abilLabel = hasSpellcasting ? String(spellcastingAbility).toUpperCase() : "—";
       const abilModVal = hasSpellcasting ? Number(sys.abilities?.[spellcastingAbility]?.mod ?? 0) : null;
       const abilModDisplay = abilModVal !== null ? (abilModVal >= 0 ? `+${abilModVal}` : `${abilModVal}`) : "—";
@@ -4424,22 +4455,94 @@ Click a numbered modifier badge to execute a roll.</div>
       <!-- COLUMN 1: LEFT SIDEBAR: Persistent (~275px) -->
       <div id="dialog-sidebar-left" style="width: 275px; min-width: 275px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #bcc5d3; padding-right: 8px; height: 100%;">
         
-        <!-- Actor Portrait (Left) & Stacked Init/Conc (Right) -->
-        <div style="display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0;">
-          <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
-          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
-            <div class="sheet-entry-row" data-key="init" data-type="init" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
-              <span class="entry-label" style="font-size: 1.05em; font-weight: 700; color: #235d6e; white-space: nowrap;">Initiative</span>
-              <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 52px; height: 20px; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-                ${d20Data.formattedInit}
+        <!-- Actor Portrait & Vitals Card (Top Row) -->
+        <div id="dice-stuff-vitals-card" style="display: flex; flex-direction: column; gap: 6px; background: #f8fafc; border: 1px solid #bcc5d3; border-radius: 5px; padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; box-sizing: border-box; width: 100%;">
+          
+          <!-- Top Row: Portrait + HP Stats & Progress Bar + AC Shield Card -->
+          <div style="display: flex; gap: 8px; align-items: stretch; width: 100%;">
+            <!-- Full-Size Portrait (58x58px) -->
+            <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
+
+            <!-- HP Column with Visual Bar (Fills Center Space) -->
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 1px 0;">
+              <!-- HP Numbers & Action Buttons Row -->
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 3px;">
+                <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
+                  <span style="font-size: 0.85em; font-weight: 800; color: #b91c1c; display: flex; align-items: center; gap: 2px; flex-shrink: 0;">
+                    <i class="fas fa-heart"></i>
+                  </span>
+                  <input type="text" id="dice-stuff-hp-input" value="${curHp}" title="Current HP (Supports 3 digits, absolute or deltas like -15, +10)" style="width: 38px; min-width: 38px; height: 22px; font-size: 0.88em; font-weight: 800; text-align: center; border-radius: 3px; border: 1px solid #cbd5e1; background: #fff; padding: 0 1px; flex-shrink: 0;" />
+                  <span id="dice-stuff-hp-max-label" style="font-size: 0.82em; color: #555; font-weight: 700; white-space: nowrap; flex-shrink: 0;">/ ${maxHp}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 3px; flex-shrink: 0;">
+                  <button type="button" id="dice-stuff-hp-config-btn" title="Configure Hit Points" style="width: 22px; min-width: 22px; max-width: 22px; height: 22px; font-size: 0.78em; padding: 0; border-radius: 3px; border: 1px solid #cbd5e1; background: #fff; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <i class="fas fa-cog" style="margin: 0;"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Visual HP Progress Bar -->
+              <div id="dice-stuff-hp-bar-track" style="width: 100%; height: 7px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: flex; position: relative; margin: 3px 0; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
+                <div id="dice-stuff-hp-bar-fill" style="width: ${hpPct}%; height: 100%; background: ${curHp <= 0 ? 'transparent' : (curHp <= maxHp * 0.25 ? '#ef4444' : (curHp <= maxHp * 0.5 ? '#f59e0b' : '#10b981'))}; transition: width 0.3s ease, background-color 0.3s ease;"></div>
+                <div id="dice-stuff-thp-bar-fill" style="width: ${thpPct}%; height: 100%; background: #38bdf8; opacity: 0.9; transition: width 0.3s ease;"></div>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700; color: #64748b; padding: 0 1px; min-height: 18px;">
+                <span id="dice-stuff-hp-pct-label">${hpPct}% HP</span>
+                <button type="button" id="dice-stuff-thp-btn" title="Click to set or adjust Temporary HP" style="min-width: 36px !important; width: auto !important; max-width: 48px !important; height: 18px; font-size: 11px; font-weight: 700; padding: 0 4px !important; margin: 0 !important; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 3px; white-space: nowrap; flex-shrink: 0; line-height: 16px; box-sizing: border-box; ${tempHp > 0 ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #7dd3fc;' : 'background: #fff; color: #64748b; border: 1px dashed #cbd5e1;'}">
+                  ${tempHp > 0 ? `<i class="fas fa-heart" style="color: #0284c7; font-size: 11px;"></i><span style="font-size: 12px; font-weight: 800;">${tempHp}</span>` : `<i class="fas fa-plus" style="font-size: 10px;"></i>THP`}
+                </button>
+              </div>
+            </div>
+
+            <!-- AC Shield Button (Right side, 48px wide x 58px high) -->
+            <div id="dice-stuff-armor-class-slot" style="width: 48px; min-width: 48px; display: flex; align-items: stretch; justify-content: center; flex-shrink: 0;">
+              <button type="button" id="dice-stuff-ac-btn" title="Armor Class: ${curAc} (Click to open AC Configuration)" style="height: 100%; min-height: 58px; width: 100%; border: 1px solid #bcc5d3; background: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 2px 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                <i class="fas fa-shield-halved" style="color: #4b5d88; font-size: 1.25em;"></i>
+                <span style="font-size: 1.15em; font-weight: 800; color: #1e293b; line-height: 1;">${curAc}</span>
               </button>
             </div>
-            <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
-              <span class="entry-label" style="font-size: 1.05em; font-weight: 700; color: #a34848; white-space: nowrap;">Concentration</span>
-              <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 34px; height: 20px; font-size: 0.80em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center;">
-                ${d20Data.formattedConc}
+          </div>
+
+          <!-- Bottom Half: Full-Width HD & Rest Action Bar Underneath Portrait -->
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding-top: 4px; border-top: 1px solid #e2e8f0;">
+            <!-- Hit Dice Tracker Pill -->
+            <div id="dice-stuff-hd-pill" style="display: flex; align-items: center; gap: 5px; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 6px; height: 26px; flex-shrink: 0;">
+              <span style="font-size: 0.78em; font-weight: 800; color: #4b5d88; display: flex; align-items: center; gap: 3px; white-space: nowrap;">
+                <i class="fas fa-dice-d6"></i> HD
+              </span>
+              <span id="dice-stuff-hd-label" style="font-size: 0.82em; font-weight: 800; color: #2b3a4a; white-space: nowrap;">${hdCurrent}/${hdMax}${hdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${hdDenom})</small>` : ''}</span>
+              <button type="button" id="dice-stuff-roll-hd-btn" title="Roll 1 Hit Die" style="height: 19px; font-size: 0.72em; font-weight: 800; padding: 0 5px; border: 1px solid #7289da; background: rgba(114, 137, 218, 0.1); color: #7289da; border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;">
+                Roll
               </button>
             </div>
+
+            <!-- Rest Triggers -->
+            <div style="display: flex; gap: 4px; flex: 1; min-width: 0;">
+              <button type="button" id="dice-stuff-short-rest-btn" title="Take Short Rest" style="flex: 1; height: 26px; font-size: 0.78em; font-weight: 800; border: 1px solid #d97706; background: #fff; color: #d97706; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 4px; white-space: nowrap; overflow: hidden;">
+                <i class="fas fa-mug-hot"></i> Short
+              </button>
+              <button type="button" id="dice-stuff-long-rest-btn" title="Take Long Rest" style="flex: 1; height: 26px; font-size: 0.78em; font-weight: 800; border: 1px solid #4338ca; background: #fff; color: #4338ca; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 4px; white-space: nowrap; overflow: hidden;">
+                <i class="fas fa-moon"></i> Long
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Initiative & Concentration Side-by-Side (Second Row) -->
+        <div style="display: flex; gap: 4px; flex-shrink: 0; width: 100%; box-sizing: border-box;">
+          <div class="sheet-entry-row" data-key="init" data-type="init" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(43, 116, 137, 0.08); border: 1px solid rgba(43, 116, 137, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Initiative">
+            <span class="entry-label" style="font-size: 0.78em; font-weight: 700; color: #235d6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Initiative</span>
+            <button type="button" class="roll-btn-v2" data-type="init" data-key="init" style="width: 44px; min-width: 44px; height: 19px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #235d6e; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
+              ${d20Data.formattedInit}
+            </button>
+          </div>
+          <div class="sheet-entry-row" data-key="concentration" data-type="concentration" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: rgba(163, 72, 72, 0.08); border: 1px solid rgba(163, 72, 72, 0.35); border-radius: 3px; cursor: pointer;" title="Roll Concentration">
+            <span class="entry-label" style="font-size: 0.78em; font-weight: 700; color: #a34848; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Concentration</span>
+            <button type="button" class="roll-btn-v2" data-type="concentration" data-key="concentration" style="width: 30px; min-width: 30px; height: 19px; font-size: 0.74em; font-weight: 700; padding: 0; border: 1px solid #a34848; background: #fff; border-radius: 2px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-align: center; flex-shrink: 0;">
+              ${d20Data.formattedConc}
+            </button>
           </div>
         </div>
 
@@ -4515,10 +4618,23 @@ Click a numbered modifier badge to execute a roll.</div>
     </div>
   `;
 
+    let liveActorHookId = null;
+    let liveItemHookId = null;
+
     const dlg = new Dialog({
       title: `Dice Stuff: ${actor.name}`,
       content: content,
       buttons: {},
+      close: () => {
+        if (liveActorHookId !== null) {
+          Hooks.off("updateActor", liveActorHookId);
+          liveActorHookId = null;
+        }
+        if (liveItemHookId !== null) {
+          Hooks.off("updateItem", liveItemHookId);
+          liveItemHookId = null;
+        }
+      },
       render: (html) => {
         html.closest(".dialog").find(".dialog-buttons").remove();
 
@@ -4545,7 +4661,7 @@ Click a numbered modifier badge to execute a roll.</div>
           }
           try {
             localStorage.setItem(THEME_STORAGE_KEY, themeKey);
-          } catch (e) {}
+          } catch (e) { }
         }
 
         const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) || "default";
@@ -5073,7 +5189,7 @@ Click a numbered modifier badge to execute a roll.</div>
             /* 3. TACTICAL GLASS THEME                                   */
             /* ========================================================= */
             .app.dialog.cheapdice-theme-glass {
-              background: rgba(15, 23, 42, 0.72) !important;
+              background: rgba(15, 23, 42, 0.5) !important;
               backdrop-filter: blur(16px) !important;
               -webkit-backdrop-filter: blur(16px) !important;
               border: 1px solid rgba(255, 255, 255, 0.18) !important;
@@ -5283,6 +5399,209 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-glass #desc-body-v2 {
               color: #f1f5f9 !important;
             }
+            /* Vitals Card in Glass Theme */
+            .app.dialog.cheapdice-theme-glass #dice-stuff-vitals-card {
+              background: rgba(255, 255, 255, 0.05) !important;
+              border-color: rgba(255, 255, 255, 0.12) !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-max-label {
+              color: #f1f5f9 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-pct-label {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill > span:first-child {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill i {
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-label {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-label small {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-thp-btn {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-config-btn {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-config-btn:hover {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-roll-hd-btn {
+              background: rgba(114, 137, 218, 0.2) !important;
+              border-color: #7289da !important;
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-roll-hd-btn:hover {
+              background: rgba(114, 137, 218, 0.35) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-short-rest-btn {
+              background: rgba(217, 119, 6, 0.18) !important;
+              border-color: #d97706 !important;
+              color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-short-rest-btn:hover {
+              background: rgba(217, 119, 6, 0.32) !important;
+              color: #fde68a !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-long-rest-btn {
+              background: rgba(67, 56, 202, 0.22) !important;
+              border-color: #6366f1 !important;
+              color: #a5b4fc !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-long-rest-btn:hover {
+              background: rgba(67, 56, 202, 0.38) !important;
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-ac-btn {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-ac-btn i {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-ac-btn span {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-ac-btn:hover {
+              background: rgba(56, 189, 248, 0.25) !important;
+              border-color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hp-bar-track {
+              background: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass #dice-stuff-hd-pill {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.2) !important;
+            }
+
+            /* Slate Vitals Card */
+            .app.dialog.cheapdice-theme-slate #dice-stuff-vitals-card {
+              background: #1e293b !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-max-label,
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-label small {
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-label {
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-thp-btn,
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-config-btn {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-config-btn:hover {
+              border-color: #38bdf8 !important;
+              color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-roll-hd-btn {
+              background: #0f172a !important;
+              border-color: #475569 !important;
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-short-rest-btn {
+              background: #271a0c !important;
+              border-color: #b45309 !important;
+              color: #f59e0b !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-long-rest-btn {
+              background: #1e1b4b !important;
+              border-color: #4338ca !important;
+              color: #a5b4fc !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn i {
+              color: #93c5fd !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn span {
+              color: #f8fafc !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-ac-btn:hover {
+              border-color: #38bdf8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hp-bar-track {
+              background: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate #dice-stuff-hd-pill {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+            }
+
+            /* Arcane Vitals Card */
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-vitals-card {
+              background: #18152e !important;
+              border-color: #4a3e75 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-max-label,
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-label small {
+              color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-label {
+              color: #e0d8f7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-thp-btn,
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-config-btn {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
+              color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-config-btn:hover {
+              border-color: #a78bfa !important;
+              color: #a78bfa !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-roll-hd-btn {
+              background: #100d20 !important;
+              border-color: #4a3e75 !important;
+              color: #c4b5fd !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-short-rest-btn {
+              background: #2a1b0a !important;
+              border-color: #b45309 !important;
+              color: #fbbf24 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-long-rest-btn {
+              background: #17113a !important;
+              border-color: #6366f1 !important;
+              color: #c7d2fe !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn i {
+              color: #c4b5fd !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn span {
+              color: #ffffff !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-ac-btn:hover {
+              border-color: #a78bfa !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hp-bar-track {
+              background: #3b3060 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane #dice-stuff-hd-pill {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
+            }
+
             .app.dialog.cheapdice-theme-glass input,
             .app.dialog.cheapdice-theme-glass select,
             .app.dialog.cheapdice-theme-glass textarea {
@@ -5565,6 +5884,50 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: #f87171;
               color: #dc2626;
             }
+            .app.dialog .dice-stuff-flyout-mod-wrapper {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 46px;
+              height: 22px;
+              background: #fff;
+              border: 1px solid #b0b8c4;
+              border-radius: 4px;
+              padding: 0 2px;
+              box-sizing: border-box;
+              position: relative;
+            }
+            .app.dialog .dice-stuff-flyout-mod-label {
+              font-size: 0.75em;
+              font-weight: 800;
+              color: #64748b;
+              margin-right: 1px;
+              user-select: none;
+            }
+            .app.dialog .dice-stuff-flyout-mod-input {
+              width: 100%;
+              height: 100%;
+              border: none !important;
+              background: transparent !important;
+              text-align: center;
+              font-size: 0.8em;
+              font-weight: 700;
+              color: #1e293b;
+              padding: 0 !important;
+              margin: 0 !important;
+              box-shadow: none !important;
+              outline: none !important;
+              -moz-appearance: textfield;
+            }
+            .app.dialog .dice-stuff-flyout-mod-input::-webkit-outer-spin-button,
+            .app.dialog .dice-stuff-flyout-mod-input::-webkit-inner-spin-button {
+              -webkit-appearance: none;
+              margin: 0;
+            }
+            .app.dialog .dice-stuff-flyout-mod-wrapper:focus-within {
+              border-color: #2563eb;
+              background: #ffffff;
+            }
 
             /* Tactical Glass Flyout */
             .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-tray {
@@ -5589,6 +5952,16 @@ Click a numbered modifier badge to execute a roll.</div>
               border-color: rgba(255, 255, 255, 0.15) !important;
               color: #94a3b8 !important;
             }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-mod-wrapper {
+              background: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.15) !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-mod-input {
+              color: #e0e7ff !important;
+            }
+            .app.dialog.cheapdice-theme-glass .dice-stuff-flyout-mod-label {
+              color: #94a3b8 !important;
+            }
 
             /* Slate Flyout */
             .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-tray {
@@ -5608,6 +5981,16 @@ Click a numbered modifier badge to execute a roll.</div>
             .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-clear-btn {
               background: #0f172a !important;
               border-color: #334155 !important;
+              color: #94a3b8 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-mod-wrapper {
+              background: #0f172a !important;
+              border-color: #334155 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-mod-input {
+              color: #e2e8f0 !important;
+            }
+            .app.dialog.cheapdice-theme-slate .dice-stuff-flyout-mod-label {
               color: #94a3b8 !important;
             }
 
@@ -5630,6 +6013,16 @@ Click a numbered modifier badge to execute a roll.</div>
               background: #100d20 !important;
               border-color: #3b3060 !important;
               color: #7c729c !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-mod-wrapper {
+              background: #100d20 !important;
+              border-color: #3b3060 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-mod-input {
+              color: #e0d8f7 !important;
+            }
+            .app.dialog.cheapdice-theme-arcane .dice-stuff-flyout-mod-label {
+              color: #a78bfa !important;
             }
 
             /* Spell Filter Bar Themes */
@@ -5705,52 +6098,89 @@ Click a numbered modifier badge to execute a roll.</div>
           document.head.appendChild(styleTag);
         }
 
-        // Header Theme Button Injection (Works reliably with window dragging)
+        // Header Settings Menu Button Injection (Unified Settings, Theme & Help menu)
         const header = dialogApp.find(".window-header");
-        let themeBtnElem = null;
-        if (header.find(".dice-stuff-theme-btn").length === 0) {
-          const currentThemeObj = THEMES.find(t => t.key === savedTheme) || THEMES[0];
-          themeBtnElem = $(`
-            <a class="header-button dice-stuff-theme-btn" title="Current Theme: ${currentThemeObj.label} (Click to switch)" style="cursor: pointer; margin-right: 4px;">
-              <i class="fas fa-palette"></i> <span class="theme-label-text">${currentThemeObj.label}</span>
+        let menuBtnElem = null;
+        if (header.find(".dice-stuff-menu-btn").length === 0) {
+          menuBtnElem = $(`
+            <a class="header-button dice-stuff-menu-btn" title="Settings" style="cursor: pointer; margin-right: 4px;">
+              <i class="fas fa-cog"></i>
             </a>
           `);
+          menuBtnElem[0].onclick = () => { };
 
-          themeBtnElem.on("click", (e) => {
+          menuBtnElem.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
 
             const cur = localStorage.getItem(THEME_STORAGE_KEY) || "default";
             new Dialog({
-              title: "Choose Dice Stuff Theme",
+              title: `Dice Stuff: Settings (${actor.name})`,
               content: `
                 <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
-                  <button type="button" class="btn-select-theme ${cur === 'default' ? 'active-theme' : ''}" data-theme="default" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: ${cur === 'default' ? '#e2e8f0' : '#fff'}; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
-                    Default (Foundry Standard)
+                  <button type="button" id="ds-menu-theme" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 12px;">
+                    <i class="fas fa-palette" style="color: #6366f1; width: 16px;"></i> Choose Theme
                   </button>
-                  <button type="button" class="btn-select-theme ${cur === 'slate' ? 'active-theme' : ''}" data-theme="slate" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #334155; background: ${cur === 'slate' ? '#1e293b' : '#0f172a'}; color: #f8fafc; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
-                    Slate & Obsidian
+                  <button type="button" id="ds-menu-guide" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 12px;">
+                    <i class="fas fa-book-open" style="color: #0284c7; width: 16px;"></i> Dice Stuff Guide
                   </button>
-                  <button type="button" class="btn-select-theme ${cur === 'arcane' ? 'active-theme' : ''}" data-theme="arcane" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #78350f; background: ${cur === 'arcane' ? '#252026' : '#121216'}; color: #fef3c7; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
-                    Arcane Midnight
-                  </button>
-                  <button type="button" class="btn-select-theme ${cur === 'glass' ? 'active-theme' : ''}" data-theme="glass" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid rgba(255,255,255,0.2); background: ${cur === 'glass' ? 'rgba(56,189,248,0.2)' : 'rgba(15,23,42,0.9)'}; color: #ffffff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
-                    Tactical Glass
+                  <button type="button" id="ds-menu-quickref" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 12px;">
+                    <i class="fas fa-shield-halved" style="color: #16a34a; width: 16px;"></i> 5e Combat Reference
                   </button>
                 </div>
               `,
               buttons: {
-                close: { label: "Cancel" }
+                close: { label: "Close" }
               },
               default: "close",
-              render: (themeHtml) => {
-                themeHtml.find(".btn-select-theme").on("click", function() {
-                  const selectedKey = $(this).data("theme");
-                  applyTheme(selectedKey);
-                  const matched = THEMES.find(t => t.key === selectedKey) || THEMES[0];
-                  themeBtnElem.find(".theme-label-text").text(matched.label);
-                  themeBtnElem.attr("title", `Current Theme: ${matched.label} (Click to switch)`);
-                  themeHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+              render: (menuHtml) => {
+                const menuApp = menuHtml.closest(".dialog");
+                if (cur && cur !== "default") {
+                  menuApp.addClass(`cheapdice-theme-${cur}`);
+                }
+                menuHtml.find("#ds-menu-theme").on("click", () => {
+                  menuHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                  new Dialog({
+                    title: "Choose Dice Stuff Theme",
+                    content: `
+                      <div style="display: flex; flex-direction: column; gap: 6px; padding: 6px 2px;">
+                        <button type="button" class="btn-select-theme ${cur === 'default' ? 'active-theme' : ''}" data-theme="default" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #c0c6ce; background: ${cur === 'default' ? '#e2e8f0' : '#fff'}; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                          Default (Foundry Standard)
+                        </button>
+                        <button type="button" class="btn-select-theme ${cur === 'slate' ? 'active-theme' : ''}" data-theme="slate" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #334155; background: ${cur === 'slate' ? '#1e293b' : '#0f172a'}; color: #f8fafc; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                          Slate & Obsidian
+                        </button>
+                        <button type="button" class="btn-select-theme ${cur === 'arcane' ? 'active-theme' : ''}" data-theme="arcane" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid #78350f; background: ${cur === 'arcane' ? '#252026' : '#121216'}; color: #fef3c7; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                          Arcane Midnight
+                        </button>
+                        <button type="button" class="btn-select-theme ${cur === 'glass' ? 'active-theme' : ''}" data-theme="glass" style="height: 32px; font-weight: 700; font-size: 0.85em; border: 1px solid rgba(255,255,255,0.2); background: ${cur === 'glass' ? 'rgba(56,189,248,0.2)' : 'rgba(15,23,42,0.9)'}; color: #ffffff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; padding: 0 12px;">
+                          Tactical Glass
+                        </button>
+                      </div>
+                    `,
+                    buttons: {
+                      close: { label: "Cancel" }
+                    },
+                    default: "close",
+                    render: (themeHtml) => {
+                      themeHtml.find(".btn-select-theme").on("click", function () {
+                        const selectedKey = $(this).data("theme");
+                        applyTheme(selectedKey);
+                        themeHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                      });
+                    }
+                  }, { width: 260 }).render(true);
+                });
+
+                menuHtml.find("#ds-menu-guide").on("click", () => {
+                  menuHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                  window.CustomRolls?.openDiceStuffGuide?.(actor);
+                });
+
+                menuHtml.find("#ds-menu-quickref").on("click", () => {
+                  menuHtml.closest(".dialog").find(".dialog-buttons button").trigger("click");
+                  window.CustomRolls?.openCombatQuickRef?.();
                 });
               }
             }, { width: 260 }).render(true);
@@ -5765,10 +6195,12 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas fa-sync-alt"></i> <span class="refresh-label-text">Refresh</span>
             </a>
           `);
+          refreshBtnElem[0].onclick = () => { };
 
           refreshBtnElem.on("click", async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
 
             // Run spell synchronization check with confirmation dialog
             try {
@@ -5777,8 +6209,12 @@ Click a numbered modifier badge to execute a roll.</div>
               console.error("[Dice Stuff] Error during spell synchronization:", err);
             }
 
+            const currentPos = {
+              top: dlg.position?.top,
+              left: dlg.position?.left
+            };
             dlg.close();
-            await window.CustomRolls.openActionDialog(currentMode, actor);
+            await window.CustomRolls.openActionDialog(currentMode, actor, currentPos);
           });
         }
 
@@ -5790,10 +6226,12 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas ${isInitiallyCompact ? 'fa-expand-alt' : 'fa-compress-alt'}"></i> <span class="collapse-label-text">${isInitiallyCompact ? 'Expand' : 'Compact'}</span>
             </a>
           `);
+          collapseBtnElem[0].onclick = () => { };
 
           collapseBtnElem.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
             toggleCompactMode();
           });
         }
@@ -5806,8 +6244,12 @@ Click a numbered modifier badge to execute a roll.</div>
               <i class="fas fa-crown" style="color: #d97706;"></i> <span class="gm-label-text">GM Tools</span>
             </a>
           `);
+          gmBtnElem[0].onclick = () => { };
+
           gmBtnElem.on("click", (ev) => {
             ev.preventDefault();
+            ev.stopPropagation();
+            ev.stopImmediatePropagation();
             new Dialog({
               title: `Dice Stuff: GM Tools (${actor.name})`,
               content: `
@@ -5841,17 +6283,17 @@ Click a numbered modifier badge to execute a roll.</div>
         }
 
         // Ordered Header Button Injection:
-        // Left-to-right order: [GM Tools] [Compact/Expand] [Theme] [Refresh] [Close]
+        // Left-to-right order: [GM Tools] [Refresh] [Compact/Expand] [Options / Gear] [Close]
         // Inserted backwards before .close:
-        // 1. refreshBtn before close
-        // 2. themeBtn before refreshBtn
-        // 3. collapseBtn before themeBtn
-        // 4. gmBtn before collapseBtn
+        // 1. menuBtn before close
+        // 2. collapseBtn before menuBtn
+        // 3. refreshBtn before collapseBtn
+        // 4. gmBtn before refreshBtn
         const closeBtnElem = header.find(".close");
-        if (refreshBtnElem) closeBtnElem.before(refreshBtnElem);
-        if (themeBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : closeBtnElem).before(themeBtnElem);
-        if (collapseBtnElem) (header.find(".dice-stuff-theme-btn").length ? header.find(".dice-stuff-theme-btn") : closeBtnElem).before(collapseBtnElem);
-        if (gmBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : closeBtnElem).before(gmBtnElem);
+        if (menuBtnElem) closeBtnElem.before(menuBtnElem);
+        if (collapseBtnElem) (header.find(".dice-stuff-menu-btn").length ? header.find(".dice-stuff-menu-btn") : closeBtnElem).before(collapseBtnElem);
+        if (refreshBtnElem) (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : (header.find(".dice-stuff-menu-btn").length ? header.find(".dice-stuff-menu-btn") : closeBtnElem)).before(refreshBtnElem);
+        if (gmBtnElem) (header.find(".dice-stuff-refresh-btn").length ? header.find(".dice-stuff-refresh-btn") : (header.find(".dice-stuff-collapse-btn").length ? header.find(".dice-stuff-collapse-btn") : (header.find(".dice-stuff-menu-btn").length ? header.find(".dice-stuff-menu-btn") : closeBtnElem))).before(gmBtnElem);
 
         const btnWeapon = html.find("#tab-btn-weapon");
         const btnSpell = html.find("#tab-btn-spell");
@@ -5867,6 +6309,340 @@ Click a numbered modifier badge to execute a roll.</div>
         d20Data.setupEvents(html);
         trackingHelper.setupEvents(html);
 
+        // Vitals Handlers: HP Quick-Update, Hit Dice Roll, Rest Triggers
+        const hpInput = html.find("#dice-stuff-hp-input");
+        const thpBtn = html.find("#dice-stuff-thp-btn");
+
+        const applyHpInput = async function (el) {
+          const rawVal = $(el).val().trim();
+          if (!rawVal) return;
+
+          let currentVal = Number(actor.system?.attributes?.hp?.value) || 0;
+          const maxVal = Number(actor.system?.attributes?.hp?.effectiveMax ?? actor.system?.attributes?.hp?.max) || 0;
+          let currentTemp = Number(actor.system?.attributes?.hp?.temp) || 0;
+
+          const actorUpdates = {};
+
+          if (rawVal.startsWith("-") || rawVal.startsWith("+")) {
+            const delta = Number(rawVal);
+            if (!isNaN(delta)) {
+              if (delta < 0) {
+                let dmg = Math.abs(delta);
+                if (currentTemp > 0) {
+                  const absorbed = Math.min(currentTemp, dmg);
+                  currentTemp -= absorbed;
+                  dmg -= absorbed;
+                  actorUpdates["system.attributes.hp.temp"] = currentTemp;
+                }
+                if (dmg > 0) {
+                  currentVal = Math.max(0, currentVal - dmg);
+                  actorUpdates["system.attributes.hp.value"] = currentVal;
+                }
+              } else if (delta > 0) {
+                currentVal = Math.clamp(currentVal + delta, 0, maxVal);
+                actorUpdates["system.attributes.hp.value"] = currentVal;
+              }
+            }
+          } else {
+            // Absolute direct value
+            const num = Number(rawVal);
+            if (!isNaN(num)) {
+              currentVal = Math.max(0, num);
+              actorUpdates["system.attributes.hp.value"] = currentVal;
+            }
+          }
+
+          $(el).val(currentVal);
+          if (Object.keys(actorUpdates).length > 0) {
+            await actor.update(actorUpdates);
+          }
+        };
+
+        // Single-click auto-select all text for effortless delta typing (matching Token HUD)
+        hpInput.on("focus click", function () {
+          this.select();
+        });
+
+        // Universal Enter Key Guard across ALL text/number inputs in Dice Stuff
+        html.on("keydown", "input[type='text'], input[type='number']", function (e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.id === "dice-stuff-hp-input") {
+              applyHpInput(this);
+            } else {
+              $(this).trigger("change");
+            }
+            $(this).blur();
+          }
+        });
+
+        hpInput.on("change", function () {
+          applyHpInput(this);
+        });
+
+        // Clickable [+THP] / [💙 THP] Pill Handler
+        thpBtn.on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const currentTemp = Number(actor.system?.attributes?.hp?.temp) || 0;
+          new Dialog({
+            title: `Temporary HP: ${actor.name}`,
+            content: `
+              <div style="padding: 6px 4px; display: flex; flex-direction: column; gap: 6px;">
+                <label style="font-weight: 700; font-size: 0.85em; color: #0284c7;">
+                  <i class="fas fa-heart" style="color: #0284c7;"></i> Enter Temporary HP (or 0 to clear):
+                </label>
+                <input type="number" id="thp-prompt-input" value="${currentTemp > 0 ? currentTemp : ''}" placeholder="0" min="0" autofocus style="width: 100%; height: 28px; text-align: center; font-size: 1.1em; font-weight: 700; border-radius: 4px; border: 1px solid #7dd3fc;" />
+              </div>
+            `,
+            buttons: {
+              save: {
+                icon: '<i class="fas fa-check"></i>',
+                label: "Set THP",
+                callback: async (dHtml) => {
+                  const inputVal = dHtml.find("#thp-prompt-input").val().trim();
+                  const newThp = Math.max(0, Number(inputVal) || 0);
+                  await actor.update({ "system.attributes.hp.temp": newThp });
+                }
+              },
+              clear: {
+                icon: '<i class="fas fa-trash"></i>',
+                label: "Clear",
+                callback: async () => {
+                  await actor.update({ "system.attributes.hp.temp": 0 });
+                }
+              }
+            },
+            default: "save"
+          }, { width: 260 }).render(true);
+        });
+
+        // HP Settings Cog Button Handler (Opens native dnd5e HitPointsConfig dialog)
+        html.find("#dice-stuff-hp-config-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const HpConfigClass =
+              globalThis.dnd5e?.applications?.actor?.HitPointsConfig ||
+              globalThis.dnd5e?.applications?.actor?.ActorHitPointsConfig ||
+              globalThis.CONFIG?.DND5E?.applications?.actor?.HitPointsConfig;
+
+            if (HpConfigClass) {
+              const isAppV2 =
+                Boolean(HpConfigClass.DEFAULT_OPTIONS) ||
+                Boolean(
+                  globalThis.foundry?.applications?.api?.ApplicationV2 &&
+                  HpConfigClass.prototype instanceof globalThis.foundry.applications.api.ApplicationV2
+                );
+              if (isAppV2) {
+                new HpConfigClass({ document: actor }).render({ force: true });
+              } else {
+                new HpConfigClass(actor).render(true);
+              }
+            } else if (typeof actor.sheet?._onConfigMenu === "function") {
+              actor.sheet._onConfigMenu({
+                preventDefault: () => { },
+                currentTarget: { dataset: { action: "hit-points", config: "hit-points" } }
+              });
+            } else {
+              ui.notifications.warn("Hit Points Configuration is not available in this system version.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error opening Hit Points Config:", err);
+          }
+        });
+
+        // AC Settings Button Handler (Opens native dnd5e ArmorClassConfig dialog)
+        html.find("#dice-stuff-ac-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const AcConfigClass =
+              globalThis.dnd5e?.applications?.actor?.ArmorClassConfig ||
+              globalThis.dnd5e?.applications?.actor?.ActorArmorClassConfig ||
+              globalThis.CONFIG?.DND5E?.applications?.actor?.ArmorClassConfig;
+
+            if (AcConfigClass) {
+              const isAppV2 =
+                Boolean(AcConfigClass.DEFAULT_OPTIONS) ||
+                Boolean(
+                  globalThis.foundry?.applications?.api?.ApplicationV2 &&
+                  AcConfigClass.prototype instanceof globalThis.foundry.applications.api.ApplicationV2
+                );
+              if (isAppV2) {
+                new AcConfigClass({ document: actor }).render({ force: true });
+              } else {
+                new AcConfigClass(actor).render(true);
+              }
+            } else if (typeof actor.sheet?._onConfigMenu === "function") {
+              actor.sheet._onConfigMenu({
+                preventDefault: () => { },
+                currentTarget: { dataset: { action: "armor", config: "armor" } }
+              });
+            } else {
+              ui.notifications.warn("Armor Class Configuration is not available in this system version.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error opening Armor Class Config:", err);
+          }
+        });
+
+        // Helper to update Hit Dice fraction display
+        const refreshHitDiceLabel = (targetActor) => {
+          let liveHdCur = 0;
+          let liveHdMax = 0;
+          let liveHdDenom = "";
+          if (targetActor.system?.attributes?.hd && typeof targetActor.system.attributes.hd.value === "number") {
+            liveHdCur = Number(targetActor.system.attributes.hd.value) || 0;
+            liveHdMax = Number(targetActor.system.attributes.hd.max) || 0;
+          } else if (targetActor.itemTypes?.class && targetActor.itemTypes.class.length > 0) {
+            targetActor.itemTypes.class.forEach(c => {
+              const levels = Number(c.system?.levels) || 0;
+              const used = Number(c.system?.hitDiceUsed) || 0;
+              liveHdCur += Math.max(0, levels - used);
+              liveHdMax += levels;
+              if (!liveHdDenom && c.system?.hitDice) liveHdDenom = c.system.hitDice;
+            });
+          }
+          if (!liveHdDenom && targetActor.itemTypes?.class?.[0]?.system?.hitDice) {
+            liveHdDenom = targetActor.itemTypes.class[0].system.hitDice;
+          }
+          html.find("#dice-stuff-hd-label").html(`${liveHdCur}/${liveHdMax}${liveHdDenom ? ` <small style="color: #666; font-size: 0.85em;">(${liveHdDenom})</small>` : ''}`);
+        };
+
+        // Live Actor Updates Hook (HP, Max HP, Temp HP, Hit Dice)
+        if (liveActorHookId === null) {
+          liveActorHookId = Hooks.on("updateActor", (updatedActor, changes) => {
+            if (updatedActor.id !== actor.id) return;
+
+            // Live update HP, Max HP, and Temp HP
+            if (foundry.utils.hasProperty(changes, "system.attributes.hp")) {
+              const liveHp = updatedActor.system?.attributes?.hp || {};
+              const liveCur = Number(liveHp.value) ?? 0;
+              const liveMax = Number(liveHp.effectiveMax ?? liveHp.max) ?? 0;
+              const liveTemp = Number(liveHp.temp) ?? 0;
+
+              // Only update input if user is not currently actively typing inside it
+              if (!hpInput.is(":focus")) {
+                hpInput.val(liveCur);
+              }
+              html.find("#dice-stuff-hp-max-label").text(`/ ${liveMax}`);
+
+              const thpBtnElem = html.find("#dice-stuff-thp-btn");
+              if (liveTemp > 0) {
+                thpBtnElem
+                  .html(`<i class="fas fa-heart" style="color: #0284c7; font-size: 11px;"></i><span style="font-size: 12px; font-weight: 800;">${liveTemp}</span>`)
+                  .css({ background: "#e0f2fe", color: "#0284c7", border: "1px solid #7dd3fc" });
+              } else {
+                thpBtnElem
+                  .html(`<i class="fas fa-plus" style="font-size: 10px;"></i>THP`)
+                  .css({ background: "#fff", color: "#64748b", border: "1px dashed #cbd5e1" });
+              }
+
+              const liveHpPct = Math.min(100, Math.max(0, Math.round((liveCur / (liveMax || 1)) * 100)));
+              const liveThpPct = Math.min(100, Math.round((liveTemp / (liveMax || 1)) * 100));
+              html.find("#dice-stuff-hp-bar-fill").css({
+                width: `${liveHpPct}%`,
+                background: liveCur <= 0 ? "transparent" : (liveCur <= liveMax * 0.25 ? "#ef4444" : (liveCur <= liveMax * 0.5 ? "#f59e0b" : "#10b981"))
+              });
+              html.find("#dice-stuff-thp-bar-fill").css({ width: `${liveThpPct}%` });
+              html.find("#dice-stuff-hp-pct-label").text(`${liveHpPct}% HP`);
+              html.find("#dice-stuff-thp-status-label").text(liveTemp > 0 ? `+${liveTemp} THP` : "");
+            }
+
+            if (foundry.utils.hasProperty(changes, "system.attributes.hd") || foundry.utils.hasProperty(changes, "items")) {
+              refreshHitDiceLabel(updatedActor);
+            }
+
+            // Live update AC value
+            if (foundry.utils.hasProperty(changes, "system.attributes.ac")) {
+              const liveAc = updatedActor.system?.attributes?.ac?.value ?? updatedActor.system?.attributes?.ac ?? "--";
+              html.find("#dice-stuff-ac-btn").attr("title", `Armor Class: ${liveAc} (Click to open AC Configuration)`);
+              html.find("#dice-stuff-ac-btn span").text(liveAc);
+            }
+          });
+        }
+
+        // Live update on embedded item updates (e.g. rolling Hit Die updates class item hitDiceUsed, equipping shield/armor updates AC)
+        if (liveItemHookId === null) {
+          liveItemHookId = Hooks.on("updateItem", (item, changes) => {
+            if (item.parent?.id !== actor.id) return;
+            if (item.type === "class" && (foundry.utils.hasProperty(changes, "system.hitDiceUsed") || foundry.utils.hasProperty(changes, "system.levels") || foundry.utils.hasProperty(changes, "system.hd"))) {
+              refreshHitDiceLabel(item.parent || actor);
+            }
+            if (item.type === "equipment" || foundry.utils.hasProperty(changes, "system.equipped") || foundry.utils.hasProperty(changes, "system.armor")) {
+              const liveAc = actor.system?.attributes?.ac?.value ?? actor.system?.attributes?.ac ?? "--";
+              html.find("#dice-stuff-ac-btn").attr("title", `Armor Class: ${liveAc} (Click to open AC Configuration)`);
+              html.find("#dice-stuff-ac-btn span").text(liveAc);
+            }
+          });
+        }
+
+        // Hit Die Roll Handler
+        html.find("#dice-stuff-roll-hd-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            if (typeof actor.rollHitDie === "function") {
+              const rollRes = await actor.rollHitDie();
+              if (rollRes) {
+                refreshHitDiceLabel(actor);
+              }
+            } else {
+              ui.notifications.warn("Native rollHitDie is not supported on this actor type.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error rolling hit die:", err);
+          }
+        });
+
+        // Short Rest Handler
+        html.find("#dice-stuff-short-rest-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            if (typeof actor.shortRest === "function") {
+              const res = await actor.shortRest();
+              if (res) {
+                const currentPos = {
+                  top: dlg.position?.top,
+                  left: dlg.position?.left
+                };
+                dlg.close();
+                await window.CustomRolls.openActionDialog(currentMode, actor, currentPos);
+              }
+            } else {
+              ui.notifications.warn("Native short rest is not available for this actor.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error during short rest:", err);
+          }
+        });
+
+        // Long Rest Handler
+        html.find("#dice-stuff-long-rest-btn").on("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            if (typeof actor.longRest === "function") {
+              const res = await actor.longRest();
+              if (res) {
+                const currentPos = {
+                  top: dlg.position?.top,
+                  left: dlg.position?.left
+                };
+                dlg.close();
+                await window.CustomRolls.openActionDialog(currentMode, actor, currentPos);
+              }
+            } else {
+              ui.notifications.warn("Native long rest is not available for this actor.");
+            }
+          } catch (err) {
+            console.error("Dice Stuff | Error during long rest:", err);
+          }
+        });
+
         // Persistent Weapon Roll Handler (Keeps dialog open)
         html.on("click", "#btn-roll-weapon-now", async () => {
           const rawConfig = attacks[selectedWeaponKey];
@@ -5877,6 +6653,45 @@ Click a numbered modifier badge to execute a roll.</div>
             config.attackCircumstanceModifier = (Number(config.attackCircumstanceModifier) || 0) - 5;
             config.damageModifier = (Number(config.damageModifier) || 0) + 10;
             config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [GWM/SS -5/+10]`;
+          }
+
+          if (config.hasSavageAttacker && html.find("#savage-attacker-toggle").is(":checked")) {
+            config.isSavageAttackerActive = true;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [Savage Attacker]`;
+          }
+
+          if (config.hasPiercer && html.find("#piercer-toggle").is(":checked")) {
+            config.isPiercerActive = true;
+            const pLabel = (config.piercerLabel || "Piercer").trim();
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [${pLabel}]`;
+          }
+
+          if (config.hasExtraAttackAbility && config.extraAttackAbility && html.find("#extra-ability-atk-toggle").is(":checked")) {
+            const abil = config.extraAttackAbility;
+            const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+            config.secondaryAbilityMod = abilMod;
+            config.secondaryAbilityKey = abil;
+            config.secondaryAbilityLabel = config.extraAttackAbilityLabel;
+            const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+            const tag = config.extraAttackAbilityLabel || `${sign} ${abil.toUpperCase()}`;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [${tag}]`;
+          }
+
+          if (config.hasExtraDamageAbility && config.extraDamageAbility && html.find("#extra-ability-dmg-toggle").is(":checked")) {
+            const abil = config.extraDamageAbility;
+            const abilMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
+            config.secondaryDamageAbilityMod = abilMod;
+            config.secondaryDamageAbilityKey = abil;
+            config.secondaryDamageAbilityLabel = config.extraDamageAbilityLabel;
+            const sign = abilMod >= 0 ? `+${abilMod}` : `${abilMod}`;
+            const tag = config.extraDamageAbilityLabel || `${sign} ${abil.toUpperCase()} Dmg`;
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [${tag}]`;
+          }
+
+          if (config.hasSaveRider && html.find("#save-rider-toggle").is(":checked")) {
+            config.isSaveRiderActive = true;
+            const tag = config.saveRiderLabel || "Save";
+            config.chatCardTitle = `${config.chatCardTitle || selectedWeaponKey} [${tag}]`;
           }
 
           if (config.isVersatile && html.find("#versatile-toggle").is(":checked")) {
@@ -6155,7 +6970,7 @@ Click a numbered modifier badge to execute a roll.</div>
           spellSlotDisplayMode = mode;
           try {
             localStorage.setItem(SPELL_SLOT_MODE_STORAGE_KEY, mode);
-          } catch (_err) {}
+          } catch (_err) { }
           html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
         });
 
@@ -6304,7 +7119,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
         function updateCompactView() {
           const collapseBtn = dialogApp.find(".dice-stuff-collapse-btn");
-          const themeBtn = dialogApp.find(".dice-stuff-theme-btn");
+          const menuBtn = dialogApp.find(".dice-stuff-menu-btn");
           const gmBtn = dialogApp.find(".gm-tools-header-btn");
           const refreshBtn = dialogApp.find(".dice-stuff-refresh-btn");
           const closeBtn = dialogApp.find(".header-button.close");
@@ -6315,13 +7130,13 @@ Click a numbered modifier badge to execute a roll.</div>
             collapseBtn.attr("title", "Expand to Full View");
 
             // Hide text labels in header buttons in compact mode (icons only)
-            themeBtn.find(".theme-label-text").hide();
+            menuBtn.find(".menu-label-text").hide();
             refreshBtn.find(".refresh-label-text").hide();
             gmBtn.find(".gm-label-text").hide();
-            gmBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
+            gmBtn.contents().filter(function () { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="gm-label-text" style="display: none;"></span>');
             dialogApp.find(".gm-label-text").hide();
 
-            closeBtn.contents().filter(function() { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="close-label-text" style="display: none;"></span>');
+            closeBtn.contents().filter(function () { return this.nodeType === 3 && this.textContent.trim().length > 0; }).wrap('<span class="close-label-text" style="display: none;"></span>');
             dialogApp.find(".close-label-text").hide();
 
             compactNav.css("display", "flex");
@@ -6372,8 +7187,7 @@ Click a numbered modifier badge to execute a roll.</div>
             collapseBtn.find(".collapse-label-text").show().text("Compact");
             collapseBtn.attr("title", "Collapse to Compact View");
 
-            // Restore text labels in header buttons in expanded mode
-            themeBtn.find(".theme-label-text").show();
+            // Restore text labels in header buttons in expanded mode (Options remains icon-only)
             refreshBtn.find(".refresh-label-text").show();
             dialogApp.find(".gm-label-text").show();
             dialogApp.find(".close-label-text").show();
@@ -6398,7 +7212,7 @@ Click a numbered modifier badge to execute a roll.</div>
           isCompact = !isCompact;
           try {
             localStorage.setItem(COMPACT_STORAGE_KEY, String(isCompact));
-          } catch (e) {}
+          } catch (e) { }
           updateCompactView();
         }
 
@@ -6408,7 +7222,7 @@ Click a numbered modifier badge to execute a roll.</div>
           compactTab = $(this).data("tab");
           try {
             localStorage.setItem(COMPACT_TAB_STORAGE_KEY, compactTab);
-          } catch (e) {}
+          } catch (e) { }
           if (compactTab !== "abilities") {
             currentMode = compactTab;
           }
@@ -6590,6 +7404,20 @@ Click a numbered modifier badge to execute a roll.</div>
             dmgMod += 10;
           }
 
+          // Check Secondary Ability Atk toggle
+          const isExtraAbility = html.find("#extra-ability-atk-toggle").is(":checked");
+          if (config.hasExtraAttackAbility && config.extraAttackAbility && isExtraAbility) {
+            const abilMod = Number(actor.system?.abilities?.[config.extraAttackAbility]?.mod) || 0;
+            atkMod += abilMod;
+          }
+
+          // Check Secondary Ability Damage toggle
+          const isExtraDmgAbility = html.find("#extra-ability-dmg-toggle").is(":checked");
+          if (config.hasExtraDamageAbility && config.extraDamageAbility && isExtraDmgAbility) {
+            const abilMod = Number(actor.system?.abilities?.[config.extraDamageAbility]?.mod) || 0;
+            dmgMod += abilMod;
+          }
+
           // Check Versatile toggle
           let baseDieSize = d.dieSize;
           const isVersatileChecked = html.find("#versatile-toggle").is(":checked");
@@ -6653,7 +7481,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
         // Live formula updates on keystroke and checkbox changes
         html.on("input", "#weapon-extra-atk, #weapon-extra-dmg", updateWeaponOverviewTotals);
-        html.on("change", "#gwm-toggle, #versatile-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
+        html.on("change", "#gwm-toggle, #versatile-toggle, #extra-ability-atk-toggle, #extra-ability-dmg-toggle, .extra-dmg-toggle", updateWeaponOverviewTotals);
 
         html.on("click", ".weapon-card", function () {
           selectedWeaponKey = $(this).data("key");
@@ -6864,14 +7692,14 @@ Click a numbered modifier badge to execute a roll.</div>
             let plainText = "";
             try {
               plainText = e.originalEvent.dataTransfer.getData("text/plain");
-            } catch (err) {}
+            } catch (err) { }
 
             // Check if this was an Item drop from character sheet
             let isItemDrop = false;
             try {
               const parsed = JSON.parse(plainText);
               if (parsed?.type === "Item") isItemDrop = true;
-            } catch (err) {}
+            } catch (err) { }
 
             if (isItemDrop) {
               // Defer to container drop handler
@@ -7118,7 +7946,14 @@ Click a numbered modifier badge to execute a roll.</div>
         // --- Render Right-Side Action Tabs & Dice Tray Flyout ---
         let flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
         let flyoutRollMode = "norm"; // "norm" | "adv" | "dis"
+        let flyoutModifier = 0;
         let isDiceFlyoutOpen = false;
+
+        const onResetHook = Hooks.on("gpDiceResetAll", () => {
+          flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+          flyoutModifier = 0;
+          renderSideTabs();
+        });
 
         function getFlyoutFormula() {
           const parts = [];
@@ -7139,7 +7974,15 @@ Click a numbered modifier badge to execute a roll.</div>
               }
             }
           }
-          return parts.length > 0 ? parts.join(" + ") : "";
+          let formula = parts.join(" + ");
+          if (flyoutModifier !== 0) {
+            if (formula) {
+              formula += flyoutModifier > 0 ? ` + ${flyoutModifier}` : ` - ${Math.abs(flyoutModifier)}`;
+            } else {
+              formula = `${flyoutModifier}`;
+            }
+          }
+          return formula;
         }
 
         function renderSideTabs() {
@@ -7223,27 +8066,35 @@ Click a numbered modifier badge to execute a roll.</div>
           rollBtn.on("click", async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const formula = getFlyoutFormula();
-            if (!formula) return;
+            const formula = getChatTextareaValue() || getFlyoutFormula();
+            if (!formula || !formula.trim()) return;
 
-            try {
-              const roll = new Roll(formula);
-              await roll.evaluate();
-              const speaker = ChatMessage.getSpeaker({ actor });
-              await roll.toMessage({ speaker });
-            } catch (err) {
-              console.error("Dice Stuff | Error rolling formula:", err);
+            writeToChatTextarea("");
+            if (typeof ui !== "undefined" && ui.chat?.processMessage) {
+              await ui.chat.processMessage(formula).catch((err) => {
+                console.error("Dice Stuff | Error rolling formula:", err);
+              });
+            } else {
+              try {
+                const roll = new Roll(formula.replace(/^\/r(?:oll)?\s*/i, ""));
+                await roll.evaluate();
+                const speaker = ChatMessage.getSpeaker({ actor });
+                await roll.toMessage({ speaker });
+              } catch (err) {
+                console.error("Dice Stuff | Error rolling formula:", err);
+              }
             }
 
-            // Reset after rolling
             flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+            flyoutModifier = 0;
+            Hooks.callAll("gpDiceResetAll");
             renderSideTabs();
           });
           flyoutTray.append(rollBtn);
 
           // 2) Clear Button
           const clearBtn = $(`
-            <button type="button" class="dice-stuff-flyout-clear-btn" title="Reset all dice counts">
+            <button type="button" class="dice-stuff-flyout-clear-btn" title="Reset all dice counts and modifier">
               Clear
             </button>
           `);
@@ -7251,6 +8102,9 @@ Click a numbered modifier badge to execute a roll.</div>
             e.preventDefault();
             e.stopPropagation();
             flyoutDiceCounts = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+            flyoutModifier = 0;
+            writeToChatTextarea("");
+            Hooks.callAll("gpDiceResetAll");
             renderSideTabs();
           });
           flyoutTray.append(clearBtn);
@@ -7266,14 +8120,59 @@ Click a numbered modifier badge to execute a roll.</div>
           modeBtn.on("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (flyoutRollMode === "norm") flyoutRollMode = "adv";
-            else if (flyoutRollMode === "adv") flyoutRollMode = "dis";
-            else flyoutRollMode = "norm";
+            let newMode = "norm";
+            if (flyoutRollMode === "norm") newMode = "adv";
+            else if (flyoutRollMode === "adv") newMode = "dis";
+            else newMode = "norm";
+
+            const current = getChatTextareaValue();
+            if (current) {
+              const swapped = swapD20ModeInText(current, newMode);
+              writeToChatTextarea(swapped);
+            }
             renderSideTabs();
           });
           flyoutTray.append(modeBtn);
 
-          // 4) Dice Buttons (Vertical Stack with Dice Icons)
+          // 4) Flat Modifier Control (Direct edit + scroll)
+          const modWrapper = $(`
+            <div class="dice-stuff-flyout-mod-wrapper" title="Flat Modifier (type or scroll)">
+              <span class="dice-stuff-flyout-mod-label">±</span>
+              <input type="number" class="dice-stuff-flyout-mod-input" placeholder="0" value="${flyoutModifier !== 0 ? flyoutModifier : ''}" />
+            </div>
+          `);
+          const modInput = modWrapper.find(".dice-stuff-flyout-mod-input");
+
+          modInput.on("input change", (e) => {
+            const val = parseInt(e.target.value, 10);
+            const newMod = isNaN(val) ? 0 : val;
+            const current = getChatTextareaValue();
+            const updated = updateFlatModifierInChatText(current, newMod);
+            writeToChatTextarea(updated);
+            renderSideTabs();
+          });
+
+          modInput.on("wheel", (e) => {
+            e.preventDefault();
+            const delta = e.originalEvent.deltaY < 0 ? 1 : -1;
+            const current = getChatTextareaValue();
+            const parsedCurrent = parseFormulaStateFromChatText(current);
+            const newMod = parsedCurrent.modifier + delta;
+            const updated = updateFlatModifierInChatText(current, newMod);
+            writeToChatTextarea(updated);
+            renderSideTabs();
+          });
+
+          modInput.on("keydown", (e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              rollBtn.trigger("click");
+            }
+          });
+          flyoutTray.append(modWrapper);
+
+          // 5) Dice Buttons (Vertical Stack with Dice Icons)
           const diceDefs = [
             { id: "d4", label: "d4", icon: "fas fa-dice-d4" },
             { id: "d6", label: "d6", icon: "fas fa-dice-d6" },
@@ -7299,6 +8198,9 @@ Click a numbered modifier badge to execute a roll.</div>
               e.preventDefault();
               e.stopPropagation();
               flyoutDiceCounts[d.id] = (flyoutDiceCounts[d.id] || 0) + 1;
+              const current = getChatTextareaValue();
+              const updated = appendDieToChatText(current, d.id, flyoutRollMode);
+              writeToChatTextarea(updated);
               renderSideTabs();
             });
 
@@ -7308,8 +8210,11 @@ Click a numbered modifier badge to execute a roll.</div>
               e.stopPropagation();
               if ((flyoutDiceCounts[d.id] || 0) > 0) {
                 flyoutDiceCounts[d.id] -= 1;
-                renderSideTabs();
               }
+              const current = getChatTextareaValue();
+              const updated = removeDieFromChatText(current, d.id);
+              writeToChatTextarea(updated);
+              renderSideTabs();
             });
 
             flyoutTray.append(dieBtn);
@@ -7321,7 +8226,13 @@ Click a numbered modifier badge to execute a roll.</div>
     }, {
       width: isInitiallyCompact ? 310 : 980,
       height: "auto",
-      resizable: true
+      resizable: true,
+      ...(dialogOptions?.top !== undefined ? { top: dialogOptions.top } : {}),
+      ...(dialogOptions?.left !== undefined ? { left: dialogOptions.left } : {}),
+      close: (html) => {
+        if (typeof onResetHook === "number") Hooks.off("gpDiceResetAll", onResetHook);
+        if (typeof dialogOptions?.close === "function") dialogOptions.close(html);
+      }
     }).render(true);
   };
 
@@ -7416,6 +8327,649 @@ Click a numbered modifier badge to execute a roll.</div>
       d.render(true);
     }
     renderInspector();
+  };
+
+  // Dice Stuff User Guide Dialog
+  window.CustomRolls.openDiceStuffGuide = function (actor) {
+    const actorName = actor?.name || "your character";
+    new Dialog({
+      title: `Dice Stuff Guide (${actorName})`,
+      content: `
+        <div class="dice-stuff-guide-container" style="max-height: 520px; overflow-y: auto; padding: 4px 8px; font-size: 0.88em; line-height: 1.45; color: #1e293b;">
+          <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+            <h3 style="margin: 0 0 4px 0; font-size: 1.15em; color: #fff; border: none; font-weight: 700;">
+              <i class="fas fa-dice-d20" style="margin-right: 6px;"></i> This is Dice Stuff
+            </h3>
+            <div style="font-size: 0.9em; opacity: 0.95;">Rather than a character sheet replacement, consider this a character sheet supplement that ideally serves as a one stop shop for rolling dice and other useful functions.</div>
+          </div>
+
+          <div style="margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
+            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-sync-alt" style="color: #2563eb;"></i> Syncing with Character Sheet
+            </h4>
+            <p style="margin: 0 0 6px 0;">Weapons, features, and prepared spells are automatically read from your character sheet.</p>
+            <ul style="margin: 0; padding-left: 18px;">
+              <li><strong>Equipped Items:</strong> Weapons must be equipped on your character sheet to appear in the Weapons tab.</li>
+              <li><strong>Prepared Spells:</strong> Spells marked prepared (or cantrips / rituals) are pulled automatically.</li>
+              <li><strong>Sheet Changed?</strong> Click <i class="fas fa-sync-alt"></i> <strong>Refresh</strong> in the window header to instantly resynchronize with your sheet.</li>
+            </ul>
+          </div>
+
+          <div style="margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
+            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-heart-pulse" style="color: #dc2626;"></i> Vitals, AC & Trackers
+            </h4>
+            <ul style="margin: 0; padding-left: 18px;">
+              <li><strong>Hit Points:</strong> Click the HP bar or numbers to open the HP editor to apply damage, healing, or temp HP.</li>
+              <li><strong>Armor Class:</strong> Displays current AC. Clicking opens the Armor Class configuration.</li>
+              <li><strong>Spell Slots:</strong> Click circular slot pips to spend or restore available spell slots.</li>
+              <li><strong>Rests:</strong> Use <em>Short Rest</em> (spend Hit Dice) or <em>Long Rest</em> to reset HP and features cleanly.</li>
+            </ul>
+          </div>
+
+          <div style="margin-bottom: 6px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
+            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-mouse-pointer" style="color: #16a34a;"></i> Clicking & Rolling Shortcuts
+            </h4>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 0.92em;">
+              <tr style="border-bottom: 1px solid #cbd5e1;">
+                <td style="padding: 4px 6px; font-weight: 700; width: 35%;">Left-Click</td>
+                <td style="padding: 4px 6px;">Normal attack / damage roll or trigger action.</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #cbd5e1;">
+                <td style="padding: 4px 6px; font-weight: 700;">Right-Click</td>
+                <td style="padding: 4px 6px;">Advantage / Disadvantage prompt or card options.</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 6px; font-weight: 700;">Shift + Click</td>
+                <td style="padding: 4px 6px;">Fast-forward roll directly to chat (bypasses dialogs).</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      `,
+      buttons: {
+        close: { label: "Close" }
+      },
+      default: "close"
+    }, { width: 440, height: "auto" }).render(true);
+  };
+
+  // 5e Combat Quick Reference Dialog (Crobi style, Interactive & Themed)
+  window.CustomRolls.openCombatQuickRef = function () {
+    const curTheme = localStorage.getItem("cheapdice_dice_stuff_theme") || "default";
+
+    const quickrefData = [
+      {
+        category: "Movement",
+        icon: "fa-person-running",
+        color: "#2563eb",
+        items: [
+          { name: "Move", desc: "You can move up to your speed on your turn. You can break up movement before and after actions.", tag: "Speed / Break up" },
+          { name: "Difficult Terrain", desc: "Moving 1 foot in difficult terrain costs 1 extra foot (2 feet total per foot moved).", tag: "+1 ft per foot" },
+          { name: "Climbing, Swimming & Crawling", desc: "Each foot of movement costs 1 extra foot unless you have a climbing or swimming speed.", tag: "+1 ft per foot" },
+          { name: "Dropping Prone", desc: "Dropping prone costs 0 movement. You can drop prone freely on your turn.", tag: "0 ft cost" },
+          { name: "Standing Up", desc: "Standing up from prone costs half your movement speed for the turn.", tag: "Costs half speed" }
+        ]
+      },
+      {
+        category: "Action (1 / turn)",
+        icon: "fa-hand-fist",
+        color: "#dc2626",
+        items: [
+          { name: "Attack", desc: "Make one melee or ranged weapon attack (or multiple if you have Extra Attack).", tag: "d20 + Stat + Prof" },
+          { name: "Cast a Spell", desc: "Cast a spell with a casting time of 1 action. Check V, S, M components and concentration.", tag: "1 Action / V, S, M" },
+          { name: "Dash", desc: "Gain extra movement equal to your speed for the current turn.", tag: "+Speed for turn" },
+          { name: "Disengage", desc: "Your movement doesn't provoke opportunity attacks for the rest of the turn.", tag: "No opportunity attacks" },
+          { name: "Dodge", desc: "Attacks against you have disadvantage if you can see the attacker; Dex saves have advantage.", tag: "Disadv to hit / Adv Dex" },
+          { name: "Help", desc: "Feint or distract to give an ally advantage on their next ability check or attack roll.", tag: "Advantage to ally" },
+          { name: "Hide", desc: "Make a Dexterity (Stealth) check to become hidden from creatures that cannot see you.", tag: "Dex (Stealth) check" },
+          { name: "Ready", desc: "Wait for a specific trigger to take an action using your reaction, or hold a spell (requires concentration).", tag: "Reaction trigger" },
+          { name: "Search", desc: "Devote your attention to find something (Wisdom/Perception or Intelligence/Investigation check).", tag: "Wis / Int check" },
+          { name: "Use Object", desc: "Interact with a second object, or use a complex item requiring an action.", tag: "Item interaction" },
+          { name: "Grapple / Shove", desc: "Contested Strength (Athletics) check vs target's Athletics or Acrobatics to grapple or push 5ft / knock prone.", tag: "Contested Athletics" }
+        ]
+      },
+      {
+        category: "Bonus Action (Max 1 / turn)",
+        icon: "fa-bolt",
+        color: "#d97706",
+        items: [
+          { name: "Off-Hand Attack", desc: "Attack with a different light melee weapon after attacking with a light weapon in your main hand (no ability mod to damage unless negative).", tag: "No stat mod to damage" },
+          { name: "Cast a Bonus Action Spell", desc: "If you cast a bonus action spell, you cannot cast another spell this turn except a cantrip with a casting time of 1 action.", tag: "Action = Cantrip only" },
+          { name: "Class Features", desc: "Features specified as bonus actions (e.g., Cunning Action, Second Wind, Rage, Bardic Inspiration).", tag: "Class / Feat specific" }
+        ]
+      },
+      {
+        category: "Reaction (1 / round)",
+        icon: "fa-shield-halved",
+        color: "#7c3aed",
+        items: [
+          { name: "Opportunity Attack", desc: "Make one melee attack when a hostile creature moves out of your reach without Disengaging.", tag: "Interrupts movement" },
+          { name: "Readied Action", desc: "Execute the action you prepared with the Ready action when its trigger occurs.", tag: "Triggered response" },
+          { name: "Reaction Spells", desc: "Cast spells triggered by specific events (e.g., Shield on attack, Absorb Elements on elemental damage, Counterspell).", tag: "Shield / Absorb / Counter" }
+        ]
+      },
+      {
+        category: "Cover & Environment",
+        icon: "fa-mountain-sun",
+        color: "#059669",
+        items: [
+          { name: "Half Cover (+2)", desc: "+2 bonus to AC and Dexterity saving throws against attacks and effects from behind cover.", tag: "+2 AC & Dex saves" },
+          { name: "Three-Quarters Cover (+5)", desc: "+5 bonus to AC and Dexterity saving throws against attacks and effects originating from behind cover.", tag: "+5 AC & Dex saves" },
+          { name: "Total Cover", desc: "Target cannot be targeted directly by an attack or spell (though area effects may reach around corners).", tag: "Cannot target directly" }
+        ]
+      },
+      {
+        category: "Conditions",
+        icon: "fa-triangle-exclamation",
+        color: "#475569",
+        items: [
+          { name: "Blinded", desc: "Fails ability checks requiring sight. Attack rolls against you have adv; your attacks have disadv.", tag: "Attacks adv / disadv" },
+          { name: "Charmed", desc: "Cannot attack the charmer. Charmer has adv on social interaction checks against you.", tag: "Cannot attack charmer" },
+          { name: "Frightened", desc: "Disadvantage on ability checks and attack rolls while source of fear is in line of sight. Can't move closer.", tag: "Disadv / Can't move closer" },
+          { name: "Grappled", desc: "Speed becomes 0. Condition ends if grappler is incapacitated or moved out of reach.", tag: "Speed = 0" },
+          { name: "Incapacitated", desc: "Cannot take actions or reactions.", tag: "No actions / reactions" },
+          { name: "Invisible", desc: "Impossible to see without magic or special senses. Attacks against you have disadv; your attacks have adv.", tag: "Adv on attacks / Disadv vs" },
+          { name: "Paralyzed", desc: "Incapacitated, cannot move or speak. Auto-fails Str/Dex saves. Attacks have adv; hits within 5ft are critical hits.", tag: "Auto-crit within 5ft" },
+          { name: "Poisoned", desc: "Disadvantage on attack rolls and ability checks.", tag: "Disadvantage" },
+          { name: "Prone", desc: "Only movement is crawl. Disadv on attacks. Attacks against you have adv within 5ft, disadv if further.", tag: "Adv within 5ft / Disadv away" },
+          { name: "Restrained", desc: "Speed 0. Attacks against you have adv; your attacks have disadv. Disadv on Dex saves.", tag: "Speed 0 / Adv against" },
+          { name: "Stunned", desc: "Incapacitated, cannot move, speaks falteringly. Auto-fails Str/Dex saves. Attacks against you have adv.", tag: "Auto-fail Str/Dex" },
+          { name: "Unconscious", desc: "Incapacitated, drops held items, falls prone. Auto-fails Str/Dex saves. Attacks have adv; hits within 5ft are crits.", tag: "Incapacitated / Auto-crit" }
+        ]
+      }
+    ];
+
+    let sectionsHtml = "";
+    for (const cat of quickrefData) {
+      const itemsHtml = cat.items.map(it => `
+        <div class="quickref-card" data-name="${it.name}" data-desc="${it.desc}">
+          <div class="quickref-card-header">
+            <span class="quickref-card-title" style="color: ${cat.color};">
+              <i class="fas ${cat.icon}" style="margin-right: 4px; opacity: 0.9;"></i> ${it.name}
+            </span>
+            <a class="quickref-chat-btn" data-name="${it.name}" data-cat="${cat.category}" data-color="${cat.color}" data-icon="${cat.icon}" data-desc="${it.desc}" data-tag="${it.tag || ''}" title="Send '${it.name}' rule to Chat">
+              <i class="fas fa-comment-dots"></i>
+            </a>
+          </div>
+          <div class="quickref-desc">${it.desc}</div>
+          ${it.tag ? `<div class="quickref-tag"><i class="fas fa-tag" style="font-size: 0.85em; opacity: 0.7; margin-right: 3px;"></i>${it.tag}</div>` : ""}
+        </div>
+      `).join("");
+
+      sectionsHtml += `
+        <div class="quickref-section" data-cat="${cat.category}">
+          <div class="quickref-section-header" style="border-left-color: ${cat.color};">
+            <span style="display: flex; align-items: center; gap: 6px; color: ${cat.color};">
+              <i class="fas ${cat.icon}"></i> ${cat.category}
+            </span>
+            <span class="quickref-section-count">(${cat.items.length})</span>
+          </div>
+          <div class="quickref-grid">
+            ${itemsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    new Dialog({
+      title: "5e Combat Quick Reference",
+      content: `
+        <style>
+          .cheapdice-quickref-dialog .window-content {
+            padding: 8px 10px;
+          }
+          .cheapdice-quickref-dialog .dialog-buttons {
+            display: none !important;
+          }
+          .cheapdice-quickref-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.88em;
+          }
+          .quickref-search-row {
+            position: relative;
+            display: flex;
+            align-items: center;
+          }
+          .quickref-search-row i.search-icon {
+            position: absolute;
+            left: 8px;
+            color: #94a3b8;
+            font-size: 0.85em;
+            pointer-events: none;
+          }
+          .quickref-search-input {
+            width: 100%;
+            height: 28px;
+            padding: 0 26px 0 28px;
+            font-size: 0.84em;
+            border-radius: 4px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #0f172a;
+            outline: none;
+            box-sizing: border-box;
+          }
+          .quickref-search-input:focus {
+            border-color: #3b82f6;
+          }
+          .quickref-clear-btn {
+            display: none;
+            position: absolute;
+            right: 8px;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 0.85em;
+          }
+          .quickref-clear-btn:hover {
+            color: #64748b;
+          }
+          .cheapdice-quickref-dialog .quickref-filter-bar {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 4px !important;
+            align-items: center !important;
+          }
+          .cheapdice-quickref-dialog button.quickref-filter-btn {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 4px !important;
+            width: auto !important;
+            flex: 0 0 auto !important;
+            margin: 0 !important;
+            height: 24px !important;
+            line-height: 22px !important;
+            padding: 0 8px !important;
+            font-size: 0.78em !important;
+            font-weight: 700 !important;
+            background: #ffffff !important;
+            color: #475569 !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
+            transition: all 0.15s ease !important;
+          }
+          .cheapdice-quickref-dialog button.quickref-filter-btn.active {
+            background: #1e293b !important;
+            color: #ffffff !important;
+            border-color: #1e293b !important;
+          }
+          .quickref-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+            gap: 6px;
+          }
+          .quickref-section {
+            margin-bottom: 10px;
+          }
+          .quickref-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 3px 6px;
+            background: #f1f5f9;
+            border-left: 3px solid #2563eb;
+            border-radius: 0 4px 4px 0;
+            font-weight: 700;
+            font-size: 0.86em;
+            color: #1e293b;
+            margin-bottom: 6px;
+          }
+          .quickref-section-count {
+            font-size: 0.78em;
+            font-weight: 600;
+            color: #64748b;
+          }
+          .quickref-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 5px;
+            padding: 6px 8px;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 4px;
+            transition: transform 0.1s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+          }
+          .quickref-card:hover {
+            border-color: #94a3b8;
+            box-shadow: 0 3px 6px -1px rgba(0,0,0,0.08);
+          }
+          .quickref-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+          }
+          .quickref-card-title {
+            font-weight: 700;
+            font-size: 0.88em;
+            display: flex;
+            align-items: center;
+          }
+          .quickref-chat-btn {
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            transition: color 0.15s ease, background 0.15s ease;
+          }
+          .quickref-chat-btn:hover {
+            color: #2563eb;
+            background: rgba(37, 99, 235, 0.08);
+          }
+          .quickref-desc {
+            font-size: 0.81em;
+            color: #475569;
+            line-height: 1.35;
+          }
+          .quickref-tag {
+            font-size: 0.74em;
+            font-weight: 600;
+            color: #64748b;
+            border-top: 1px dashed #e2e8f0;
+            padding-top: 3px;
+            margin-top: 2px;
+          }
+
+          /* --- Slate & Obsidian Theme Styling --- */
+          .cheapdice-theme-slate.cheapdice-quickref-dialog {
+            background: #131722 !important;
+            border: 1px solid #334155 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .window-header {
+            background: #1e2536 !important;
+            border-bottom: 1px solid #334155 !important;
+            color: #f8fafc !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .window-content {
+            background: #131722 !important;
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-search-input {
+            background: #1b212f !important;
+            border-color: #334155 !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog button.quickref-filter-btn {
+            background: #1b212f !important;
+            border-color: #334155 !important;
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog button.quickref-filter-btn.active {
+            background: #2563eb !important;
+            border-color: #38bdf8 !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-section-header {
+            background: #1e2536 !important;
+            color: #38bdf8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-section-count {
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-card {
+            background: #1b212f !important;
+            border-color: #2e3b52 !important;
+            color: #e2e8f0 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-card:hover {
+            border-color: #38bdf8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-desc {
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-tag {
+            color: #38bdf8 !important;
+            border-top-color: #2e3b52 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-chat-btn {
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-quickref-dialog .quickref-chat-btn:hover {
+            color: #38bdf8 !important;
+            background: rgba(56, 189, 248, 0.15) !important;
+          }
+
+          /* --- Arcane Midnight Theme Styling --- */
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog {
+            background: #121216 !important;
+            border: 1px solid #78350f !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .window-header {
+            background: #1c1a21 !important;
+            border-bottom: 1px solid #78350f !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .window-content {
+            background: #121216 !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-search-input {
+            background: #1c1a21 !important;
+            border-color: #78350f !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog button.quickref-filter-btn {
+            background: #1c1a21 !important;
+            border-color: #78350f !important;
+            color: #a8a29e !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog button.quickref-filter-btn.active {
+            background: #d97706 !important;
+            border-color: #fbbf24 !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-section-header {
+            background: #252026 !important;
+            color: #fbbf24 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-section-count {
+            color: #d97706 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-card {
+            background: #1c1a21 !important;
+            border-color: #38312e !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-card:hover {
+            border-color: #d97706 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-desc {
+            color: #d4cfc5 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-tag {
+            color: #fbbf24 !important;
+            border-top-color: #38312e !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-chat-btn {
+            color: #a8a29e !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-quickref-dialog .quickref-chat-btn:hover {
+            color: #fbbf24 !important;
+            background: rgba(251, 191, 36, 0.15) !important;
+          }
+
+          /* --- Tactical Glass Theme Styling --- */
+          .cheapdice-theme-glass.cheapdice-quickref-dialog {
+            background: rgba(15, 23, 42, 0.9) !important;
+            border: 1px solid rgba(56, 189, 248, 0.4) !important;
+            backdrop-filter: blur(12px) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .window-header {
+            background: rgba(30, 41, 59, 0.75) !important;
+            border-bottom: 1px solid rgba(56, 189, 248, 0.3) !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .window-content {
+            background: transparent !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-search-input {
+            background: rgba(15, 23, 42, 0.7) !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog button.quickref-filter-btn {
+            background: rgba(30, 41, 59, 0.7) !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog button.quickref-filter-btn.active {
+            background: rgba(56, 189, 248, 0.4) !important;
+            border-color: rgba(56, 189, 248, 0.8) !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-section-header {
+            background: rgba(56, 189, 248, 0.15) !important;
+            color: #38bdf8 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-section-count {
+            color: #94a3b8 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-card {
+            background: rgba(30, 41, 59, 0.7) !important;
+            border-color: rgba(255, 255, 255, 0.15) !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-card:hover {
+            border-color: rgba(56, 189, 248, 0.7) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-desc {
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-tag {
+            color: #38bdf8 !important;
+            border-top-color: rgba(255, 255, 255, 0.12) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-chat-btn {
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-quickref-dialog .quickref-chat-btn:hover {
+            color: #38bdf8 !important;
+            background: rgba(56, 189, 248, 0.2) !important;
+          }
+        </style>
+
+        <div class="cheapdice-quickref-container">
+          <div class="quickref-search-row">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" id="quickref-search-input" class="quickref-search-input" placeholder="Search rules, actions, conditions (e.g. grapple, cover, spell)..." />
+            <i class="fas fa-times-circle quickref-clear-btn" id="quickref-clear-btn" title="Clear search"></i>
+          </div>
+
+          <div class="quickref-filter-bar">
+            <button type="button" class="quickref-filter-btn active" data-filter="all">All (${quickrefData.reduce((acc, c) => acc + c.items.length, 0)})</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Movement"><i class="fas fa-person-running"></i> Movement</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Action"><i class="fas fa-hand-fist"></i> Action</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Bonus Action"><i class="fas fa-bolt"></i> Bonus Action</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Reaction"><i class="fas fa-shield-halved"></i> Reaction</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Cover"><i class="fas fa-mountain-sun"></i> Cover</button>
+            <button type="button" class="quickref-filter-btn" data-filter="Conditions"><i class="fas fa-triangle-exclamation"></i> Conditions</button>
+          </div>
+
+          <div id="quickref-scroll-container" style="max-height: 520px; overflow-y: auto; padding-right: 4px;">
+            ${sectionsHtml}
+          </div>
+        </div>
+      `,
+      buttons: {},
+      render: (dlgHtml) => {
+        const dialogApp = dlgHtml.closest(".dialog");
+        dialogApp.addClass("cheapdice-quickref-dialog");
+        if (curTheme && curTheme !== "default") {
+          dialogApp.addClass(`cheapdice-theme-${curTheme}`);
+        }
+
+        const filterQuickRef = () => {
+          const query = dlgHtml.find("#quickref-search-input").val().toLowerCase().trim();
+          const activeFilter = dlgHtml.find(".quickref-filter-btn.active").data("filter") || "all";
+
+          if (query.length > 0) {
+            dlgHtml.find("#quickref-clear-btn").show();
+          } else {
+            dlgHtml.find("#quickref-clear-btn").hide();
+          }
+
+          dlgHtml.find(".quickref-section").each(function () {
+            const section = $(this);
+            const cat = (section.data("cat") || "").toLowerCase();
+            const matchesCat = activeFilter === "all" || cat.includes(activeFilter.toLowerCase());
+
+            let hasMatchingCard = false;
+            section.find(".quickref-card").each(function () {
+              const card = $(this);
+              const name = (card.data("name") || "").toLowerCase();
+              const desc = (card.data("desc") || "").toLowerCase();
+              const matchesSearch = !query || name.includes(query) || desc.includes(query);
+              card.toggle(matchesSearch);
+              if (matchesSearch) hasMatchingCard = true;
+            });
+
+            section.toggle(matchesCat && hasMatchingCard);
+          });
+        };
+
+        // Real-time search handler
+        dlgHtml.find("#quickref-search-input").on("input", filterQuickRef);
+
+        // Clear search button
+        dlgHtml.find("#quickref-clear-btn").on("click", function () {
+          dlgHtml.find("#quickref-search-input").val("").focus();
+          filterQuickRef();
+        });
+
+        // Filter button click handler
+        dlgHtml.find(".quickref-filter-btn").on("click", function () {
+          dlgHtml.find(".quickref-filter-btn").removeClass("active");
+          $(this).addClass("active");
+          filterQuickRef();
+        });
+
+        // Send to Chat Button Handler
+        dlgHtml.find(".quickref-chat-btn").on("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const btn = $(this);
+          const name = btn.data("name");
+          const cat = btn.data("cat");
+          const color = btn.data("color");
+          const icon = btn.data("icon");
+          const desc = btn.data("desc");
+          const tag = btn.data("tag");
+
+          ChatMessage.create({
+            user: game.user.id,
+            speaker: ChatMessage.getSpeaker(),
+            content: `
+              <div style="border-left: 4px solid ${color}; padding: 6px 10px; background: rgba(0, 0, 0, 0.04); border-radius: 0 4px 4px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px;">
+                  <span style="font-weight: 700; font-size: 1.05em; color: ${color}; display: flex; align-items: center; gap: 6px;">
+                    <i class="fas ${icon}"></i> ${name}
+                  </span>
+                  <span style="font-size: 0.72em; text-transform: uppercase; font-weight: 700; color: #64748b; background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 3px;">
+                    ${cat}
+                  </span>
+                </div>
+                <div style="font-size: 0.88em; line-height: 1.4; color: #1e293b; margin-bottom: 4px;">
+                  ${desc}
+                </div>
+                ${tag ? `<div style="font-size: 0.76em; font-weight: 600; color: ${color}; border-top: 1px dashed rgba(0,0,0,0.12); padding-top: 3px;"><i class="fas fa-tag" style="margin-right: 3px; font-size: 0.85em;"></i>${tag}</div>` : ""}
+              </div>
+            `
+          });
+          ui.notifications?.info?.(`Sent "${name}" rule to chat.`);
+        });
+      }
+    }, { width: 580, height: "auto" }).render(true);
   };
 
 

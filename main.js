@@ -14,6 +14,8 @@ import { initCustomRolls } from "./modules/custom-rolls.js";
 import { initActionEditors } from "./modules/action-editors.js";
 import { initMacroGenerator } from "./modules/macro-generator.js";
 import { initCoreSettings } from "./modules/core-settings.js";
+import { initChatControls } from "./modules/chat-controls.js";
+import { initDiceTrayCopycat } from "./modules/dice-tray-copycat.js";
 
 // Global namespace with backwards compatibility for existing hotbar macros
 window.CustomRolls = window.CustomRolls || {};
@@ -85,6 +87,8 @@ function initializeFeatures() {
   if (getSetting(SETTINGS.FEATURES.TOKEN_AC)) initTokenAc();
   if (getSetting(SETTINGS.FEATURES.TOKEN_HUD)) initTokenHud();
   if (getSetting(SETTINGS.FEATURES.ELEVATION_CONTROL)) initElevation();
+  if (getSetting(SETTINGS.FEATURES.CHAT_CONTROLS)) initChatControls();
+  if (getSetting(SETTINGS.FEATURES.DICE_TRAY)) initDiceTrayCopycat();
 }
 
 // -----------------------------------------------------------------------------
