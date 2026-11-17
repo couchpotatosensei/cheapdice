@@ -30,6 +30,60 @@ export function registerSettings() {
   registerFeature(SETTINGS.FEATURES.ANIMATIONS, "Automated Animations & Sequencer", "Enables Sequencer and Automated Animations integrations.");
   registerFeature(SETTINGS.FEATURES.CHAT_CONTROLS, "Chat Mode Controls (IC / EM)", "Adds In-Character (/ic) and Emote (/em) toggles above the chat box.");
   registerFeature(SETTINGS.FEATURES.DICE_TRAY, "Dice Tray Copycat", "Adds a dedicated dice tray below the chat input with advantage/disadvantage, modifiers, and recent rolls.");
+  registerFeature(SETTINGS.FEATURES.DDB_LISTENER, "D&D Beyond Game Log Listener", "Connects to your D&D Beyond campaign Game Log and renders rolls using Cheap Dice custom chat cards.");
+
+  // ---------------------------------------------------------------------------
+  // D&D Beyond Game Log Configuration (GM Only)
+  // ---------------------------------------------------------------------------
+  game.settings.register(MODULE_ID, SETTINGS.DDB_CAMPAIGN_ID, {
+    name: "DDB Campaign ID",
+    hint: "Numeric Campaign ID from your D&D Beyond campaign URL (e.g. 1234567).",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+    requiresReload: false
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.DDB_USER_ID, {
+    name: "DDB User ID",
+    hint: "Your numeric D&D Beyond User ID (optional unless required by direct WebSocket auth).",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+    requiresReload: false
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.DDB_COBALT_TOKEN, {
+    name: "DDB Cobalt Token / STT",
+    hint: "Your D&D Beyond CobaltSession cookie or Short-Term Token (used by the GM client to authenticate).",
+    scope: "client",
+    config: true,
+    type: String,
+    default: "",
+    requiresReload: false
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.DDB_PROXY_URL, {
+    name: "DDB Auth Proxy URL (Optional)",
+    hint: "Optional proxy URL for exchanging CobaltSession cookies into short-term JWTs (e.g. Cloudflare Worker or local proxy).",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+    requiresReload: false
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.DDB_AUTO_DAMAGE, {
+    name: "DDB Auto-Roll Damage on Attack",
+    hint: "When an attack roll arrives from D&D Beyond, automatically look up and roll the matching item's damage in Foundry.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    requiresReload: false
+  });
 
   // Master Token AC Visibility Toggle (Internal State)
   game.settings.register(MODULE_ID, SETTINGS.GLOBAL_SHOW_AC, {
