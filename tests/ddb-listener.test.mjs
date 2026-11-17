@@ -160,10 +160,9 @@ describe("D&D Beyond Game Log Listener", () => {
     };
 
     const html = buildDdbCustomChatCardHtml(parsedAdv, { name: "Legolas" });
-    assert.ok(html.includes("KEPT (ADVANTAGE)"));
-    assert.ok(html.includes("DROPPED"));
+    assert.ok(html.includes("Attack Roll"));
+    assert.ok(html.includes("+/- Adv."));
     assert.ok(html.includes("26"));
-    assert.ok(html.includes("line-through"));
   });
 
   it("DdbGameLogClient deduplicates repeated message IDs and builds valid socket URLs", () => {

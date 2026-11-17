@@ -81,7 +81,7 @@ export function parseDdbGameLogEvent(rawEvent) {
   const characterName = evt.context?.name || data.context?.name || data.characterName || "D&D Beyond Character";
   const ddbCharacterId = String(evt.entityId || data.entityId || "");
   const actionName = data.action || evt.context?.action || "Roll";
-  const messageId = evt.id || evt.messageId || `${ddbCharacterId}-${Date.now()}`;
+  const rawId = data.id || data.rollId || evt.id || evt.messageId || `${ddbCharacterId}_${actionName}_${rolls[0]?.result?.total ?? ""}`;
 
   return rolls.map((r, index) => {
     const rollType = normalizeDdbRollType(r.rollType);
@@ -144,8 +144,8 @@ export function parseDdbGameLogEvent(rawEvent) {
     const formula = `${formulaParts.join(" + ") || "1d20"}${modStr}`;
 
     return {
-      id: `${messageId}-${index}`,
-      messageId,
+      id: `${rawId}-${index}`,
+      messageId: rawId,
       characterName,
       ddbCharacterId,
       actionName,
@@ -203,19 +203,48 @@ export function matchDdbActor(characterName, ddbCharacterId, actorsCollection = 
  * @param {object} [options]
  * @returns {string}
  */
+/**
+ * Safely extracts a damage formula from an actor item (modern dnd5e or legacy).
+ * @param {object|null} item
+ * @returns {string}
+ */
+export function getItemDamageFormula(item) {
+  if (!item?.system) return "";
+  // Check modern dnd5e activities
+  const activities = item.system.activities;
+  if (activities && typeof activities.values === "function") {
+    for (const act of activities.values()) {
+      if (Array.isArray(act.damage?.parts) && act.damage.parts.length > 0) {
+        const parts = act.damage.parts.map((p) => p.formula || p[0] || "").filter(Boolean);
+        if (parts.length > 0) return parts.join(" + ");
+      }
+    }
+  }
+  // Check classic dnd5e damage.parts
+  const parts = item.system.damage?.parts;
+  if (Array.isArray(parts) && parts.length > 0) {
+    const fList = parts.map((p) => (Array.isArray(p) ? p[0] : (p.formula || String(p)))).filter(Boolean);
+    if (fList.length > 0) return fList.join(" + ");
+  }
+  if (item.system.damage?.base?.formula) {
+    return item.system.damage.base.formula;
+  }
+  return "";
+}
+
+/**
+ * Builds the Cheap Dice custom chat card HTML + Audit breakdown for a parsed DDB roll.
+ *
+ * @param {object} parsedRoll
+ * @param {object|null} actor
+ * @param {object} [options]
+ * @returns {string}
+ */
 export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {}) {
   const actorName = escapeHtml(actor?.name || parsedRoll.characterName);
   const actionName = escapeHtml(parsedRoll.actionName);
 
-  // 1. Cheap Dice Header
-  const headerHtml = `
-    <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #343a40; padding-bottom: 3px; margin-bottom: 6px;">
-      <span style="font-size: 1.05em; font-weight: bold; color: #2b3a4a;">${actionName}</span>
-      <span style="font-size: 0.8em; color: #777;">${actorName}</span>
-    </div>
-  `;
-
-  // 2. Cheap Dice Style Tags
+  // Tags
   const tags = [];
   if (parsedRoll.rollType === "attack") {
     tags.push('<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: #4b5d88;">Attack Roll</span>');
@@ -249,86 +278,61 @@ export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {
     ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;">${tags.join("")}</div>`
     : "";
 
-  // 3. Dice Roll Box (Dual-column for Advantage/Disadvantage, single-column for normal)
+  // Dual D20 rolls (Roll 1 from DDB, Roll 2 companion roll or second DDB die)
+  const d20_1 = parsedRoll.keptD20 ?? parsedRoll.d20Values?.[0] ?? parsedRoll.total;
+  const d20_2 = options.d20_2 ?? parsedRoll.d20Values?.[1] ?? (parsedRoll.rollMode === "advantage" ? 18 : 12);
+  const total1 = Number(parsedRoll.total);
+  const total2 = Number(options.total2 ?? (d20_2 + parsedRoll.modifier));
+
+  const critClass1 = d20_1 === 20 ? " critical" : d20_1 === 1 ? " fumble" : "";
+  const critClass2 = d20_2 === 20 ? " critical" : d20_2 === 1 ? " fumble" : "";
+
+  const rollBox1 = `
+    <div class="dice-roll">
+      <div class="dice-result">
+        <h4 class="dice-formula" style="display: none;">${escapeHtml(parsedRoll.formula)}</h4>
+        <div class="dice-tooltip"></div>
+        <h4 class="dice-total${critClass1}">${total1}</h4>
+      </div>
+    </div>
+  `;
+
+  const rollBox2 = `
+    <div class="dice-roll">
+      <div class="dice-result">
+        <h4 class="dice-formula" style="display: none;">${escapeHtml(parsedRoll.formula)}</h4>
+        <div class="dice-tooltip"></div>
+        <h4 class="dice-total${critClass2}">${total2}</h4>
+      </div>
+    </div>
+  `;
+
   const modDisplay = parsedRoll.modifier > 0
     ? `+ ${parsedRoll.modifier}`
     : parsedRoll.modifier < 0
       ? `- ${Math.abs(parsedRoll.modifier)}`
-      : "";
+      : "0";
 
-  let rollsRowHtml = "";
-  if ((parsedRoll.rollMode === "advantage" || parsedRoll.rollMode === "disadvantage") && parsedRoll.d20Values.length > 1) {
-    const keptVal = parsedRoll.keptD20 ?? parsedRoll.d20Values[0];
-    const droppedVal = parsedRoll.d20Values.find((v, idx) => {
-      const isKept = v === keptVal;
-      // return the first non-kept or the alternate duplicate
-      return parsedRoll.dice[idx]?.dropped ?? !isKept;
-    }) ?? parsedRoll.d20Values[1];
-
-    const totalKept = Number(parsedRoll.total);
-    const totalDropped = droppedVal + parsedRoll.modifier;
-
-    const keptClass = keptVal === 20 ? " critical" : keptVal === 1 ? " fumble" : "";
-    const droppedClass = droppedVal === 20 ? " critical" : droppedVal === 1 ? " fumble" : "";
-
-    const diceBoxKept = `
+  // Damage block (auto-rolled or interactive button)
+  let damageSectionHtml = "";
+  if (options.damage) {
+    const dmg = options.damage;
+    const dmgCritClass = dmg.isCrit ? " critical" : "";
+    damageSectionHtml = `
+      <p style="text-align: center; font-weight: bold; margin: 5px 0;">Normal Damage: ${escapeHtml(dmg.formula)}</p>
       <div class="dice-roll">
         <div class="dice-result">
-          <div class="dice-formula" style="font-size: 0.8em; color: #666;">1d20 ${modDisplay}</div>
-          <h4 class="dice-total${keptClass}" style="margin: 2px 0;">${totalKept}</h4>
+          <h4 class="dice-formula" style="display: none;">${escapeHtml(dmg.formula)}</h4>
+          <div class="dice-tooltip"></div>
+          <h4 class="dice-total${dmgCritClass}">${dmg.total}</h4>
         </div>
       </div>
     `;
-
-    const diceBoxDropped = `
-      <div class="dice-roll">
-        <div class="dice-result">
-          <div class="dice-formula" style="font-size: 0.8em; color: #666;">1d20 ${modDisplay}</div>
-          <h4 class="dice-total${droppedClass}" style="margin: 2px 0; opacity: 0.6; text-decoration: line-through;">${totalDropped}</h4>
-        </div>
-      </div>
-    `;
-
-    rollsRowHtml = `
-      <div style="display: flex; justify-content: space-around; gap: 8px; margin-bottom: 6px;">
-        <div style="flex: 1; text-align: center;">
-          <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">KEPT (${parsedRoll.rollMode.toUpperCase()})</div>
-          <div style="transform: scale(0.96); margin: -2px 0;">${diceBoxKept}</div>
-        </div>
-        <div style="flex: 1; text-align: center;">
-          <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">DROPPED</div>
-          <div style="transform: scale(0.96); margin: -2px 0;">${diceBoxDropped}</div>
-        </div>
-      </div>
-    `;
-  } else {
-    const critClass = parsedRoll.isCrit ? " critical" : parsedRoll.isFumble ? " fumble" : "";
-    const singleDiceBox = `
-      <div class="dice-roll">
-        <div class="dice-result">
-          <div class="dice-formula" style="font-size: 0.8em; color: #666;">${escapeHtml(parsedRoll.formula)}</div>
-          <h4 class="dice-total${critClass}" style="margin: 2px 0;">${parsedRoll.total}</h4>
-        </div>
-      </div>
-    `;
-
-    rollsRowHtml = `
-      <div style="display: flex; justify-content: center; margin-bottom: 6px;">
-        <div style="max-width: 200px; width: 100%; text-align: center;">
-          <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">TOTAL RESULT</div>
-          <div style="transform: scale(0.96); margin: -2px 0;">${singleDiceBox}</div>
-        </div>
-      </div>
-    `;
-  }
-
-  // 4. Interactive Action Buttons (Roll Damage)
-  let actionButtonsHtml = "";
-  if (parsedRoll.rollType === "attack" && actor && options.matchingItem) {
+  } else if (parsedRoll.rollType === "attack" && actor && options.matchingItem) {
     const itemId = escapeHtml(options.matchingItem.id);
     const actorId = escapeHtml(actor.id);
     const critAttr = parsedRoll.isCrit ? "true" : "false";
-    actionButtonsHtml = `
+    damageSectionHtml = `
       <div style="display: flex; gap: 6px; margin: 6px 0;">
         <button type="button" class="cheapdice-ddb-roll-damage" data-actor-id="${actorId}" data-item-id="${itemId}" data-is-crit="${critAttr}"
           style="flex: 1; height: 28px; line-height: 26px; font-size: 0.82em; font-weight: 700; border-radius: 4px; border: 1px solid #7289da; background: #fff; color: #4b5d88; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px;">
@@ -337,28 +341,64 @@ export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {
       </div>`;
   }
 
-  // 5. Modifier Breakdown Accordion
+  // Collapsible Modifier Breakdown
   const breakdownHtml = `
     <details style="margin-top: 6px; padding: 2px 4px;">
       <summary style="font-weight: 600; font-size: 0.82em; color: #666; cursor: pointer;">Modifier Breakdown</summary>
       <div style="padding-top: 4px; border-top: 1px solid #e0e0e0; font-size: 0.8em; color: #555; margin-top: 3px; line-height: 1.45;">
         <div><strong>Source:</strong> D&amp;D Beyond Game Log</div>
         <div><strong>Base Formula:</strong> <code>${escapeHtml(parsedRoll.formula)}</code></div>
-        <div><strong>Modifier:</strong> ${modDisplay || "0"}</div>
+        <div><strong>Modifier:</strong> ${modDisplay}</div>
         <div><strong>Raw Result:</strong> ${escapeHtml(parsedRoll.resultText)} = <strong>${parsedRoll.total}</strong></div>
       </div>
     </details>
   `;
 
-  const innerCardHtml = `
-    <div style="font-family: inherit; color: #333;">
-      ${headerHtml}
+  let innerCardHtml = "";
+
+  if (parsedRoll.rollType === "attack") {
+    // Attack Card Layout (Matches Cheap Dice runAttackRoll)
+    innerCardHtml = `
+      <p style="margin: 0 0 4px 0;"><strong>${actorName}: ${actionName}</strong></p>
       ${tagsBlock}
-      ${rollsRowHtml}
-      ${actionButtonsHtml}
+      <hr style="margin: 4px 0;">
+      <div style="display: flex; justify-content: space-around; align-items: flex-start; gap: 10px;">
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+          <p style="margin: 0; text-align: center; font-size: 0.85em; color: #555;">Attack Roll</p>
+          ${rollBox1}
+        </div>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+          <p style="margin: 0; text-align: center; font-size: 0.85em; color: #555;">+/- Adv.</p>
+          ${rollBox2}
+        </div>
+      </div>
+      <hr style="margin: 5px 0 5px; border-top: 2px solid #343a40;">
+      ${damageSectionHtml}
       ${breakdownHtml}
-    </div>
-  `;
+    `;
+  } else {
+    // D20 Test Card Layout (Matches Cheap Dice runD20TestRoll)
+    innerCardHtml = `
+      <div style="font-family: inherit; color: #333;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #343a40; padding-bottom: 3px; margin-bottom: 6px;">
+          <span style="font-size: 1.05em; font-weight: bold; color: #2b3a4a;">${actionName}</span>
+          <span style="font-size: 0.8em; color: #777;">${actorName}</span>
+        </div>
+        ${tagsBlock}
+        <div style="display: flex; justify-content: space-around; gap: 8px; margin-bottom: 6px;">
+          <div style="flex: 1; text-align: center;">
+            <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">NORMAL ROLL</div>
+            <div style="transform: scale(0.96); margin: -2px 0;">${rollBox1}</div>
+          </div>
+          <div style="flex: 1; text-align: center;">
+            <div style="font-size: 0.75em; font-weight: 600; color: #777; margin-bottom: 2px;">+/- ADV.</div>
+            <div style="transform: scale(0.96); margin: -2px 0;">${rollBox2}</div>
+          </div>
+        </div>
+        ${breakdownHtml}
+      </div>
+    `;
+  }
 
   if (typeof getCardDispositionWrapper === "function") {
     return getCardDispositionWrapper(actor, options.token, options.userId, innerCardHtml);
@@ -372,7 +412,7 @@ export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {
 export class DdbGameLogClient {
   constructor(options = {}) {
     this.ws = null;
-    this.seenMessageIds = new Set();
+    this.seenMessageIds = new Map();
     this.reconnectTimer = null;
     this.pingTimer = null;
     this.reconnectAttempts = 0;
@@ -466,13 +506,23 @@ export class DdbGameLogClient {
 
   handleRawMessage(rawData) {
     const parsedRolls = parseDdbGameLogEvent(rawData);
+    const now = Date.now();
     for (const roll of parsedRolls) {
-      if (this.seenMessageIds.has(roll.id)) continue;
-      this.seenMessageIds.add(roll.id);
-      if (this.seenMessageIds.size > 500) {
-        const first = this.seenMessageIds.values().next().value;
-        this.seenMessageIds.delete(first);
+      const footprint = `${roll.characterName}_${roll.actionName}_${roll.total}_${roll.formula}`;
+      const lastSeenId = this.seenMessageIds.get(roll.id);
+      const lastSeenFootprint = this.seenMessageIds.get(footprint);
+      if ((lastSeenId && (now - lastSeenId) < 5000) || (lastSeenFootprint && (now - lastSeenFootprint) < 5000)) {
+        continue;
       }
+      this.seenMessageIds.set(roll.id, now);
+      this.seenMessageIds.set(footprint, now);
+
+      if (this.seenMessageIds.size > 300) {
+        for (const [k, time] of this.seenMessageIds.entries()) {
+          if (now - time > 15000) this.seenMessageIds.delete(k);
+        }
+      }
+
       if (typeof this.onRollCallback === "function") {
         this.onRollCallback(roll);
       }
@@ -529,41 +579,75 @@ export async function postDdbRollToFoundry(parsedRoll) {
     (i) => String(i.name || "").trim().toLowerCase() === String(parsedRoll.actionName || "").trim().toLowerCase()
   ) || null;
 
+  // Generate companion d20 roll for dual-roll box
+  let d20_2 = Math.floor(Math.random() * 20) + 1;
+  if (parsedRoll.d20Values?.length > 1) {
+    d20_2 = parsedRoll.d20Values[1];
+  }
+  const total2 = d20_2 + parsedRoll.modifier;
+
+  // Auto-roll damage for attacks if matching item exists
+  let damageData = null;
+  const finalRolls = [];
+
+  let evaluatedRoll1 = null;
+  try {
+    if (typeof Roll !== "undefined") {
+      evaluatedRoll1 = await new Roll(parsedRoll.formula).evaluate();
+      finalRolls.push(evaluatedRoll1);
+      if (game.dice3d) {
+        await game.dice3d.showForRoll(evaluatedRoll1, game.user, true);
+      }
+    }
+  } catch (err) {
+    console.warn(`[${MODULE_ID}] Could not render primary 3D roll for DDB:`, err);
+  }
+
+  if (parsedRoll.rollType === "attack" && matchingItem) {
+    const rawDmgFormula = getItemDamageFormula(matchingItem);
+    if (rawDmgFormula) {
+      try {
+        const rollData = typeof actor?.getRollData === "function" ? actor.getRollData() : {};
+        let evalFormula = rawDmgFormula;
+        if (parsedRoll.isCrit) {
+          evalFormula = evalFormula.replace(/(\d+)d(\d+)/gi, (m, c, s) => `${Number(c) * 2}d${s}`);
+        }
+        const dmgRoll = await new Roll(evalFormula, rollData).evaluate();
+        finalRolls.push(dmgRoll);
+        damageData = {
+          formula: rawDmgFormula,
+          total: dmgRoll.total,
+          isCrit: parsedRoll.isCrit
+        };
+        if (game.dice3d) {
+          await game.dice3d.showForRoll(dmgRoll, game.user, true);
+        }
+      } catch (err) {
+        console.warn(`[${MODULE_ID}] Could not evaluate attack damage:`, err);
+      }
+    }
+  }
+
   const content = buildDdbCustomChatCardHtml(parsedRoll, actor, {
     matchingItem,
     token,
-    userId: game.user?.id
+    userId: game.user?.id,
+    d20_2,
+    total2,
+    damage: damageData
   });
 
   const speaker = actor
     ? ChatMessage.getSpeaker({ actor, token })
     : { alias: parsedRoll.characterName };
 
-  let evaluatedRoll = null;
-  try {
-    if (typeof Roll !== "undefined") {
-      evaluatedRoll = await new Roll(parsedRoll.formula).evaluate();
-      if (game.dice3d) {
-        await game.dice3d.showForRoll(evaluatedRoll, game.user, true);
-      }
-    }
-  } catch (err) {
-    console.warn(`[${MODULE_ID}] Could not render 3D roll for DDB:`, err);
-  }
-
   await ChatMessage.create({
     user: game.user.id,
     speaker,
     content,
-    rolls: evaluatedRoll ? [evaluatedRoll] : [],
+    rolls: finalRolls,
     sound: CONFIG.sounds?.dice
   });
-
-  // Optional auto-damage roll when enabled
-  const autoDamage = game.settings.get(MODULE_ID, SETTINGS.DDB_AUTO_DAMAGE);
-  if (autoDamage && parsedRoll.rollType === "attack" && matchingItem && typeof matchingItem.rollDamage === "function") {
-    await matchingItem.rollDamage({ critical: parsedRoll.isCrit });
-  }
 }
 
 let activeClient = null;
