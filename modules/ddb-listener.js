@@ -290,7 +290,7 @@ export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {
   const rollBox1 = `
     <div class="dice-roll">
       <div class="dice-result">
-        <h4 class="dice-formula" style="display: none;">${escapeHtml(parsedRoll.formula)}</h4>
+        <h4 class="dice-formula">${escapeHtml(parsedRoll.formula)}</h4>
         <div class="dice-tooltip"></div>
         <h4 class="dice-total${critClass1}">${total1}</h4>
       </div>
@@ -300,7 +300,7 @@ export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {
   const rollBox2 = `
     <div class="dice-roll">
       <div class="dice-result">
-        <h4 class="dice-formula" style="display: none;">${escapeHtml(parsedRoll.formula)}</h4>
+        <h4 class="dice-formula">${escapeHtml(parsedRoll.formula)}</h4>
         <div class="dice-tooltip"></div>
         <h4 class="dice-total${critClass2}">${total2}</h4>
       </div>
@@ -318,15 +318,28 @@ export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {
   if (options.damage) {
     const dmg = options.damage;
     const dmgCritClass = dmg.isCrit ? " critical" : "";
+    const diceList = Array.isArray(dmg.diceResults) && dmg.diceResults.length > 0 ? dmg.diceResults : [];
+    const baseDieTotal = dmg.baseDiceTotal ?? dmg.total;
+    const mod = dmg.damageMod ?? 0;
+    const modSign = mod >= 0 ? "+" : "";
+    const dicePart = (dmg.evalFormula || dmg.formula).replace(/\s*[+-].*$/, "").trim();
+
     damageSectionHtml = `
-      <p style="text-align: center; font-weight: bold; margin: 5px 0;">Normal Damage: ${escapeHtml(dmg.formula)}</p>
-      <div class="dice-roll">
-        <div class="dice-result">
-          <h4 class="dice-formula" style="display: none;">${escapeHtml(dmg.formula)}</h4>
-          <div class="dice-tooltip"></div>
-          <h4 class="dice-total${dmgCritClass}">${dmg.total}</h4>
+      <p style="text-align: center; font-weight: bold; margin: 5px 0;">Normal Damage (${escapeHtml(dmg.formula)})</p>
+      <div style="display: flex; justify-content: center; text-align: center; font-size: 0.9em; margin-top: 5px;">
+        <div style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; background-color: #f8f9fa; min-width: 140px;">
+          <p style="margin: 0; font-weight: 600; font-size: 0.9em;">Results (${escapeHtml(dicePart)})</p>
+          <span style="font-weight: bold; font-size: 1.5em;">${baseDieTotal}</span>
+          ${diceList.length > 0 ? `<p style="margin: 2px 0 0; font-size: 0.8em; color: #555;">Dice: [${diceList.join(", ")}]</p>` : ""}
         </div>
       </div>
+      <p style="text-align: center; font-weight: 500; font-size: 0.9em; margin: 5px 0 0;">Damage Mods = ${modSign}${mod}</p>
+      <hr style="margin: 5px 0 5px; border-top: 1px solid #ddd;">
+      <div style="display: flex; justify-content: space-around; text-align: center; font-weight: bold; font-size: 1em;">
+        <p style="margin: 0; flex: 1; ${dmg.isCrit ? "border-right: 1px solid #ddd;" : ""} padding: 0 5px;">Damage Total: <span style="font-size: 1.2em; font-weight: bold;">${dmg.total}</span></p>
+        ${dmg.isCrit ? `<p style="margin: 0; flex: 1; padding: 0 5px;">Critical Total: <span style="font-size: 1.2em; font-weight: bold; color: #18520b;">${dmg.total}</span></p>` : ""}
+      </div>
+      <hr style="margin: 5px 0 0; border-top: 2px solid #343a40;">
     `;
   } else if (parsedRoll.rollType === "attack" && actor && options.matchingItem) {
     const itemId = escapeHtml(options.matchingItem.id);
@@ -343,13 +356,25 @@ export function buildDdbCustomChatCardHtml(parsedRoll, actor = null, options = {
 
   // Collapsible Modifier Breakdown
   const breakdownHtml = `
-    <details style="margin-top: 6px; padding: 2px 4px;">
-      <summary style="font-weight: 600; font-size: 0.82em; color: #666; cursor: pointer;">Modifier Breakdown</summary>
-      <div style="padding-top: 4px; border-top: 1px solid #e0e0e0; font-size: 0.8em; color: #555; margin-top: 3px; line-height: 1.45;">
-        <div><strong>Source:</strong> D&amp;D Beyond Game Log</div>
-        <div><strong>Base Formula:</strong> <code>${escapeHtml(parsedRoll.formula)}</code></div>
-        <div><strong>Modifier:</strong> ${modDisplay}</div>
-        <div><strong>Raw Result:</strong> ${escapeHtml(parsedRoll.resultText)} = <strong>${parsedRoll.total}</strong></div>
+    <details style="padding: 0 5px; margin-top: 6px;">
+      <summary style="font-weight: 600; font-size: 1em; text-decoration: underline; margin: 5px 0; cursor: pointer;">
+        <strong>Attack/Damage Breakdown</strong>
+      </summary>
+      <div style="padding-top: 5px; border-top: 1px solid #ccc; font-size: 0.95em; line-height: 1.4;">
+        <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Attack: ${modDisplay}</strong></p>
+        <ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
+          <li style="list-style-type: disc;">Source: <strong>D&amp;D Beyond Game Log</strong></li>
+          <li style="list-style-type: disc;">DDB Formula: <strong><code>${escapeHtml(parsedRoll.formula)}</code></strong></li>
+          <li style="list-style-type: disc;">Modifier: <strong>${modDisplay}</strong></li>
+          <li style="list-style-type: disc;">DDB Result: <strong>${escapeHtml(parsedRoll.resultText)}</strong> = <strong>${parsedRoll.total}</strong></li>
+        </ul>
+        ${options.damage ? `
+        <p style="font-weight: 500; font-size: 0.95em; margin: 5px 0;"><strong>Damage Formula: ${escapeHtml(options.damage.formula)}</strong></p>
+        <ul style="margin: 0 0 5px; padding-left: 15px; font-size: 0.95em; line-height: 1.4;">
+          <li style="list-style-type: disc;">Base Damage Dice: <strong>${escapeHtml(options.damage.evalFormula || options.damage.formula)}</strong></li>
+          <li style="list-style-type: disc;">Damage Mods: <strong>${options.damage.damageMod >= 0 ? "+" : ""}${options.damage.damageMod ?? 0}</strong></li>
+          <li style="list-style-type: disc;">Damage Total: <strong>${options.damage.total}</strong></li>
+        </ul>` : ""}
       </div>
     </details>
   `;
@@ -650,10 +675,17 @@ export async function postDdbRollToFoundry(parsedRoll) {
         }
         const dmgRoll = await new Roll(evalFormula, rollData).evaluate();
         finalRolls.push(dmgRoll);
+        const diceResults = dmgRoll.dice?.flatMap((d) => d.results.map((r) => r.result)) || [];
+        const baseDiceTotal = dmgRoll.dice?.reduce((acc, d) => acc + d.total, 0) || dmgRoll.total;
+        const damageMod = dmgRoll.total - baseDiceTotal;
         damageData = {
           formula: rawDmgFormula,
+          evalFormula,
           total: dmgRoll.total,
-          isCrit: parsedRoll.isCrit
+          isCrit: parsedRoll.isCrit,
+          diceResults,
+          baseDiceTotal,
+          damageMod
         };
         if (game.dice3d) {
           await game.dice3d.showForRoll(dmgRoll, game.user, true);

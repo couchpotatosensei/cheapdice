@@ -133,7 +133,7 @@ describe("D&D Beyond Game Log Listener", () => {
     assert.ok(html.includes("Firebolt"));
     assert.ok(html.includes("Gandalf"));
     assert.ok(html.includes("Critical Hit!"));
-    assert.ok(html.includes("Modifier Breakdown"));
+    assert.ok(html.includes("Attack/Damage Breakdown"));
     assert.ok(html.includes("cheapdice-ddb-roll-damage"));
     assert.ok(html.includes("Roll Crit Damage"));
     assert.equal(html.includes("<script>"), false);
