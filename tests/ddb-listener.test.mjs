@@ -998,8 +998,8 @@ describe("D&D Beyond Game Log Listener", () => {
     assert.ok(executedCall, "executeAsGM should have run");
     assert.equal(executedCall.config.injectedD20_1, 19, "Primary d20 must match DDB kept d20");
     assert.equal(executedCall.config.injectedD20_2, 7, "Companion d20 must match second DDB d20");
-    assert.equal(executedCall.config.additionalDamageComponents[0].isActive, true, "Saved macro components must be activated automatically");
-    assert.equal(executedCall.config.isSavageAttackerActive, true, "Saved macro perks must be activated automatically");
+    assert.equal(executedCall.config.additionalDamageComponents[0].isActive, false, "DDB hijacked attacks must stay base-only without optional extra damage components");
+    assert.ok(!executedCall.config.isSavageAttackerActive, "DDB hijacked attacks must not auto-activate optional perks");
 
     delete globalThis.attackSocket;
     delete globalThis.game;

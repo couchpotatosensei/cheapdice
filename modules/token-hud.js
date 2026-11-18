@@ -585,6 +585,8 @@ export function initTokenHud() {
       '.control-icon[title="Lower Hand"]',
       '.control-icon[title="Measure Distance"]',
       '.control-icon[title="Quick Hotbar"]',
+      '.control-icon[title="Quick Menu"]',
+      ".left-flyout-parent",
       '.control-icon[title^="Hotbar "]',
       '.control-icon[title^="HUD "]',
       '.control-icon[title^="Slot "]'

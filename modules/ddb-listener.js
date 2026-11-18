@@ -1864,42 +1864,11 @@ export async function postDdbRollToFoundry(parsedRoll) {
       const rollUserId = (ownerUser?.targets?.size > 0 ? ownerUser.id : null)
         || (typeof game !== "undefined" ? game.user?.id : null);
 
-      // For base attackConfigs (not pre-baked quickMacroProfiles), activate saved bells & whistles
-      if (matchedAttack) {
-        if (Array.isArray(hijackConfig.additionalDamageComponents)) {
-          hijackConfig.additionalDamageComponents = hijackConfig.additionalDamageComponents.map((comp) =>
-            comp && comp.formula ? { ...comp, isActive: true } : comp
-          );
-        }
-        if (hijackConfig.isVersatile) {
-          const vDie = hijackConfig.versatileDie || "10";
-          hijackConfig.damageDieSize = `d${vDie}`;
-        }
-        if (hijackConfig.hasGWM) {
-          hijackConfig.attackCircumstanceModifier = (Number(hijackConfig.attackCircumstanceModifier) || 0) - 5;
-          hijackConfig.damageModifier = (Number(hijackConfig.damageModifier) || 0) + 10;
-        }
-        if (hijackConfig.hasSavageAttacker) {
-          hijackConfig.isSavageAttackerActive = true;
-        }
-        if (hijackConfig.hasPiercer) {
-          hijackConfig.isPiercerActive = true;
-        }
-        if (hijackConfig.hasSaveRider) {
-          hijackConfig.isSaveRiderActive = true;
-        }
-        if (hijackConfig.hasExtraAttackAbility && hijackConfig.extraAttackAbility) {
-          const abil = hijackConfig.extraAttackAbility;
-          hijackConfig.secondaryAbilityMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
-          hijackConfig.secondaryAbilityKey = abil;
-          hijackConfig.secondaryAbilityLabel = hijackConfig.extraAttackAbilityLabel;
-        }
-        if (hijackConfig.hasExtraDamageAbility && hijackConfig.extraDamageAbility) {
-          const abil = hijackConfig.extraDamageAbility;
-          hijackConfig.secondaryDamageAbilityMod = Number(actor.system?.abilities?.[abil]?.mod) || 0;
-          hijackConfig.secondaryDamageAbilityKey = abil;
-          hijackConfig.secondaryDamageAbilityLabel = hijackConfig.extraDamageAbilityLabel;
-        }
+      // DDB hijacked attacks stay base-only: never auto-enable optional extra damage components
+      if (Array.isArray(hijackConfig.additionalDamageComponents)) {
+        hijackConfig.additionalDamageComponents = hijackConfig.additionalDamageComponents.map((comp) =>
+          comp ? { ...comp, isActive: false } : comp
+        );
       }
 
       console.log(`[${MODULE_ID}] Hijacking DDB attack "${parsedRoll.actionName}" -> ${handlerName} (d20: ${d20_1}${hijackConfig.injectedD20_2 ? `, ${hijackConfig.injectedD20_2}` : ""})`);
