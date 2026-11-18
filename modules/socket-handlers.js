@@ -301,7 +301,14 @@ function registerSocketHandlers() {
       let val1 = Number(d20Term1?.results?.[0]?.result ?? roll1.total);
       let rerollSummary1 = null;
 
-      if (isLucky && val1 <= luckyThreshold) {
+      const hasInjected1 = Number.isFinite(Number(config.injectedD20_1)) && Number(config.injectedD20_1) >= 1 && Number(config.injectedD20_1) <= 20;
+      if (hasInjected1 && d20Term1?.results?.[0]) {
+        const inj1 = Number(config.injectedD20_1);
+        const diff = inj1 - val1;
+        d20Term1.results[0].result = inj1;
+        val1 = inj1;
+        roll1._total = Number(roll1.total) + diff;
+      } else if (isLucky && val1 <= luckyThreshold) {
         let reroll1 = await new Roll(`1d20 ${atkSuffix}`).evaluate();
         let rerolledTerm1 = reroll1.terms.find(t => t.faces === 20) || reroll1.dice[0];
         let newVal1 = Number(rerolledTerm1?.results?.[0]?.result ?? reroll1.total);
@@ -325,7 +332,17 @@ function registerSocketHandlers() {
       let droppedCandidate = null;
       let extraRolls = [];
 
-      if (isSuperAdv) {
+      const hasInjected2 = Number.isFinite(Number(config.injectedD20_2)) && Number(config.injectedD20_2) >= 1 && Number(config.injectedD20_2) <= 20;
+      if (hasInjected2) {
+        const inj2 = Number(config.injectedD20_2);
+        const injRoll2 = await new Roll("1d20").evaluate();
+        if (injRoll2.terms[0]?.results?.[0]) {
+          injRoll2.terms[0].results[0].result = inj2;
+        }
+        injRoll2._total = inj2;
+        slot2D20 = { val: inj2, roll: injRoll2, rerollSummary: null };
+        extraRolls.push(slot2D20.roll);
+      } else if (isSuperAdv) {
         const candA = await _rollSingleD20();
         const candB = await _rollSingleD20();
         extraRolls.push(candA.roll, candB.roll);
@@ -417,33 +434,12 @@ function registerSocketHandlers() {
       let rerollSummary = [];
       let savageAttackerSummary = null;
 
-      if (config.isSavageAttackerActive) {
-        const pass1 = await _rollSinglePass();
-        const pass2 = await _rollSinglePass();
-        allDieRolls = [...pass1.passRolls, ...pass2.passRolls];
-        const kept = pass2.total > pass1.total ? pass2 : pass1;
-        const dropped = pass2.total > pass1.total ? pass1 : pass2;
-        floorAppliedCount = kept.passFloorCount;
-        savageAttackerSummary = {
-          roll1Total: pass1.total,
-          roll2Total: pass2.total,
-          roll1Dice: pass1.passResults,
-          roll2Dice: pass2.passResults,
-          keptTotal: kept.total,
-          keptDice: kept.passResults,
-          droppedTotal: dropped.total
-        };
-        finalCombinedDieResult = kept.total;
-        finalDieResults = [...kept.passResults];
-        rerollSummary = kept.passRerolls;
-      } else {
-        const pass = await _rollSinglePass();
-        allDieRolls = pass.passRolls;
-        floorAppliedCount = pass.passFloorCount;
-        finalCombinedDieResult = pass.total;
-        finalDieResults = [...pass.passResults];
-        rerollSummary = pass.passRerolls;
-      }
+      const pass = await _rollSinglePass();
+      allDieRolls = pass.passRolls;
+      floorAppliedCount = pass.passFloorCount;
+      finalCombinedDieResult = pass.total;
+      finalDieResults = [...pass.passResults];
+      rerollSummary = pass.passRerolls;
 
       // Check Piercer Feat
       let piercerSummary = null;
@@ -559,14 +555,22 @@ function registerSocketHandlers() {
         });
         html += `</ul></div>`;
       }
+      const showSavageButton = Boolean((config.hasSavageAttacker || config.isSavageAttackerActive) && damageDiceCount > 0 && cleanDieSize && maxDieValue > 0);
+      const savageBtnHtml = showSavageButton ? `
+      <div class="cheapdice-sa-container" style="margin-top: 5px; text-align: center;">
+        <button type="button" class="cheapdice-savage-attacker-btn" style="font-size: 0.78em; font-weight: 700; color: #8c3b2d; background: rgba(140, 59, 45, 0.1); border: 1px solid #8c3b2d; border-radius: 4px; padding: 3px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+          Savage Attacker
+        </button>
+      </div>` : "";
       html += `
-      <div style="display: flex; justify-content: center; text-align: center; font-size: 0.9em; margin-top: 5px;">
+      <div style="display: flex; justify-content: center; align-items: center; gap: 8px; text-align: center; font-size: 0.9em; margin-top: 5px;">
         <div style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; background-color: #f8f9fa;">
           <p style="margin: 0; font-weight: 600; font-size: 0.9em;">Results (${damageDiceCount > 0 && cleanDieSize ? `${damageDiceCount}${cleanDieSize}` : 'Flat Dmg'})</p>
-          <span style="font-weight: bold; font-size: 1.5em;">${finalCombinedDieResult}</span>
-          ${finalDieResults.length > 0 ? `<p style="margin: 2px 0 0; font-size: 0.8em; color: #555;">Dice: [${finalDieResults.join(', ')}]</p>` : ''}
+          <span class="cheapdice-dmg-die-total" style="font-weight: bold; font-size: 1.5em;">${finalCombinedDieResult}</span>
+          ${finalDieResults.length > 0 ? `<p class="cheapdice-dmg-die-list" style="margin: 2px 0 0; font-size: 0.8em; color: #555;">Dice: [${finalDieResults.join(', ')}]</p>` : ''}
         </div>
-      </div>`;
+      </div>
+      ${savageBtnHtml}`;
       const totalDamageMods = damageBonus + flatBonus;
       const sign = totalDamageMods >= 0 ? '+' : '';
       html += `<p style="text-align: center; font-weight: 500; font-size: 0.9em; margin: 5px 0 0;">Damage Mods = ${sign}${totalDamageMods}</p>`;
@@ -671,9 +675,9 @@ function registerSocketHandlers() {
       </ul>`;
     }
 
-    let totalBlocks = `<p style="margin: 0; flex: 1; ${isCritical ? 'border-right: 1px solid #ddd;' : ''} padding: 0 5px;">Damage Total: <span style="font-size: 1.2em; font-weight: bold;">${finalGWFTotal}</span></p>`;
+    let totalBlocks = `<p style="margin: 0; flex: 1; ${isCritical ? 'border-right: 1px solid #ddd;' : ''} padding: 0 5px;">Damage Total: <span class="cheapdice-damage-total-val" style="font-size: 1.2em; font-weight: bold;">${finalGWFTotal}</span></p>`;
     if (isCritical) {
-      totalBlocks += `<p style="margin: 0; flex: 1; padding: 0 5px;">Critical Total: <span style="font-size: 1.2em; font-weight: bold; color: #18520b;">${criticalTotal}</span></p>`;
+      totalBlocks += `<p style="margin: 0; flex: 1; padding: 0 5px;">Critical Total: <span class="cheapdice-critical-total-val" style="font-size: 1.2em; font-weight: bold; color: #18520b;">${criticalTotal}</span></p>`;
     }
 
     const finalSummaryHTML = `
@@ -819,7 +823,7 @@ function registerSocketHandlers() {
     for (const [t, amt] of Object.entries(normalDamageByType)) {
       if (amt > 0) {
         const displayType = t.toUpperCase() === 'BPS' ? 'BPS' : (t.charAt(0).toUpperCase() + t.slice(1));
-        normalBreakdownList += `<li style="list-style-type: disc;">${displayType}: <strong>${amt}</strong></li>`;
+        normalBreakdownList += `<li class="cheapdice-breakdown-noncrit" data-dmg-type="${t}" style="list-style-type: disc;">${displayType}: <strong class="cheapdice-type-amt">${amt}</strong></li>`;
       }
     }
 
@@ -827,7 +831,7 @@ function registerSocketHandlers() {
     for (const [t, amt] of Object.entries(critDamageByType)) {
       if (amt > 0) {
         const displayType = t.toUpperCase() === 'BPS' ? 'BPS' : (t.charAt(0).toUpperCase() + t.slice(1));
-        critBreakdownList += `<li style="list-style-type: disc;">${displayType}: <strong>${amt}</strong></li>`;
+        critBreakdownList += `<li class="cheapdice-breakdown-crit" data-dmg-type="${t}" style="list-style-type: disc;">${displayType}: <strong class="cheapdice-type-amt">${amt}</strong></li>`;
       }
     }
 
@@ -865,10 +869,15 @@ function registerSocketHandlers() {
     if (config.isPiercerActive) {
       perkBadges.push((config.piercerLabel || "").trim() || "Piercer");
     }
-    if (config.isSavageAttackerActive) perkBadges.push("Savage Attacker");
+    if (config.hasSavageAttacker || config.isSavageAttackerActive) perkBadges.push("Savage Attacker");
     if (rawCritBonus !== "") perkBadges.push("Crit Bonus Dmg");
 
+    const ddbHijackBadgeHtml = config.isDdbHijacked
+      ? `<span style="background: rgba(227, 25, 55, 0.12); border: 1px solid rgba(227, 25, 55, 0.4); border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 700; color: #c41230;">DDB</span>`
+      : "";
+
     const allBadgesHtml = [
+      ...(ddbHijackBadgeHtml ? [ddbHijackBadgeHtml] : []),
       ...perkBadges.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.35); border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 600; color: #4b5d88;">${t}</span>`),
       ...activeComponents.map(c => `<span style="background: #f1f3f5; border: 1px solid #ced4da; border-radius: 3px; padding: 1px 5px; font-size: 0.74em; font-weight: 600; color: #495057;">${c.label}</span>`)
     ].join("");
@@ -945,23 +954,141 @@ function registerSocketHandlers() {
     ${saveRiderHTML}
     ${contentSummary}`;
 
+    const showSavageButton = Boolean((config.hasSavageAttacker || config.isSavageAttackerActive) && damageDiceCount > 0 && cleanDieSize && maxDieValue > 0);
+    const hasFloorRule = (config.hasDamageFloor === true || String(config.hasDamageFloor) === "true") && Number(config.damageFloorValue) > 0;
+    const msgFlags = {
+      "autoanimations": {
+        item: {
+          name: chatCardTitle || config.macroName
+        },
+        targets: targetIds
+      }
+    };
+    if (showSavageButton) {
+      msgFlags[MODULE_ID] = {
+        savageAttacker: {
+          used: false,
+          actorId: actor.id,
+          damageDiceCount,
+          cleanDieSize,
+          maxDieValue,
+          gwfThreshold,
+          hasFloor: hasFloorRule,
+          floorValue: hasFloorRule ? Number(config.damageFloorValue) : 0,
+          pass1Total: finalCombinedDieResult,
+          pass1Dice: finalDieResults,
+          damageType: (damageType || "slashing").toLowerCase(),
+          damageTotal: finalGWFTotal,
+          criticalTotal,
+          isCritical
+        }
+      };
+    }
+
     await ChatMessage.create({
       user: userId,
       speaker: speaker,
       content: getCardDispositionWrapper(actor, token, userId, chatContent),
       rolls: finalRolls,
       sound: CONFIG.sounds.dice,
-      flags: {
-        "autoanimations": {
-          item: {
-            name: chatCardTitle || config.macroName
-          },
-          targets: targetIds
-        }
-      }
+      flags: msgFlags
     });
 
     triggerSequencerAnimation(actor, config, rollUser, autoTargetedToken);
+  });
+
+  // --- 2.2a Interactive Savage Attacker Reroll Handler ---
+  socket.register("applySavageAttacker", async (messageId, userId) => {
+    const msg = game.messages.get(messageId);
+    if (!msg) return;
+    const saData = msg.getFlag(MODULE_ID, "savageAttacker");
+    if (!saData || saData.used) return;
+
+    const dmgFormula = `1${saData.cleanDieSize}`;
+    const pass2Rolls = [];
+    const pass2Results = [];
+    const pass2Rerolls = [];
+
+    for (let i = 0; i < saData.damageDiceCount; i++) {
+      let initialRoll = await new Roll(dmgFormula).evaluate();
+      let currentResult = Number(initialRoll.total);
+      pass2Rolls.push(initialRoll);
+
+      if (saData.gwfThreshold > 0 && currentResult <= saData.gwfThreshold) {
+        let reroll = await new Roll(dmgFormula).evaluate();
+        pass2Rolls.push(reroll);
+        pass2Rerolls.push({ original: currentResult, reroll: Number(reroll.total) });
+        currentResult = Number(reroll.total);
+      }
+
+      if (saData.hasFloor && currentResult < saData.floorValue) {
+        currentResult = saData.floorValue;
+      }
+
+      pass2Results.push(currentResult);
+    }
+
+    const pass2Total = pass2Results.reduce((a, b) => a + b, 0);
+
+    if (typeof game !== "undefined" && game.dice3d?.showForRoll) {
+      const rollUser = game.users.get(userId) || game.user;
+      for (const r of pass2Rolls) {
+        game.dice3d.showForRoll(r, rollUser, true).catch(() => {});
+      }
+    }
+
+    const pass1Total = Number(saData.pass1Total) || 0;
+    const pass1Dice = Array.isArray(saData.pass1Dice) ? saData.pass1Dice : [];
+    const pass2Wins = pass2Total > pass1Total;
+    const keptTotal = pass2Wins ? pass2Total : pass1Total;
+    const keptDice = pass2Wins ? pass2Results : pass1Dice;
+    const diff = Math.max(0, pass2Total - pass1Total);
+
+    const r1Display = pass1Dice.length > 1 ? `${pass1Total} [${pass1Dice.join('+')}]` : pass1Total;
+    const r2Display = pass2Results.length > 1 ? `${pass2Total} [${pass2Results.join('+')}]` : pass2Total;
+    const keptDisplay = keptDice.length > 1 ? `${keptTotal} [${keptDice.join('+')}]` : keptTotal;
+
+    const comparisonBannerHtml = `
+      <div style="padding: 4px 6px; margin: 4px 0; border: 1px solid #8c3b2d; border-radius: 4px; background-color: rgba(140, 59, 45, 0.08); font-size: 0.85em; text-align: center;">
+        <span style="font-weight: 700; color: #8c3b2d;">Savage Attacker:</span>
+        <span>Rolled <strong>${r1Display}</strong> vs <strong>${r2Display}</strong> &rarr; <strong style="color: #18520b;">Kept ${keptDisplay}</strong></span>
+      </div>`;
+
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = msg.content;
+
+    const saContainer = wrapper.querySelector(".cheapdice-sa-container");
+    if (saContainer) {
+      saContainer.innerHTML = comparisonBannerHtml;
+    }
+
+    if (diff > 0) {
+      const dieTotalEl = wrapper.querySelector(".cheapdice-dmg-die-total");
+      if (dieTotalEl) dieTotalEl.textContent = String(keptTotal);
+
+      const dieListEl = wrapper.querySelector(".cheapdice-dmg-die-list");
+      if (dieListEl) dieListEl.textContent = `Dice: [${keptDice.join(', ')}]`;
+
+      const dmgTotalEl = wrapper.querySelector(".cheapdice-damage-total-val");
+      if (dmgTotalEl) dmgTotalEl.textContent = String(Number(saData.damageTotal) + diff);
+
+      const critTotalEl = wrapper.querySelector(".cheapdice-critical-total-val");
+      if (critTotalEl) critTotalEl.textContent = String(Number(saData.criticalTotal) + diff);
+
+      const dmgTypeKey = (saData.damageType || "slashing").toLowerCase();
+      for (const li of wrapper.querySelectorAll(`.cheapdice-breakdown-noncrit[data-dmg-type="${dmgTypeKey}"], .cheapdice-breakdown-crit[data-dmg-type="${dmgTypeKey}"]`)) {
+        const amtEl = li.querySelector(".cheapdice-type-amt");
+        if (amtEl) {
+          const curVal = Number(amtEl.textContent) || 0;
+          amtEl.textContent = String(curVal + diff);
+        }
+      }
+    }
+
+    await msg.update({
+      content: wrapper.innerHTML,
+      [`flags.${MODULE_ID}.savageAttacker.used`]: true
+    });
   });
 
   // --- 2.2b Unarmed 5.5e Maneuver Handler (Grapple / Shove) ---
@@ -1149,10 +1276,11 @@ function registerSocketHandlers() {
     }
 
     const rawDie = String(damageDieSize || "6").replace(/^d/i, "");
-    const cleanDieSize = `d${rawDie}`;
+    let cleanDieSize = `d${rawDie}`;
     const maxDieVal = Number(rawDie) || 0;
 
-    const abilityMod = actor.system.abilities?.[spellAbility]?.mod ?? 0;
+    const effSpellAbil = spellAbility || actor.system.attributes?.spellcasting || "int";
+    const abilityMod = actor.system.abilities?.[effSpellAbil]?.mod ?? 0;
     const prof = actor.system.attributes?.prof ?? 0;
     const baseDC = actor.system.attributes?.spell?.dc ?? actor.system.attributes?.spelldc ?? (8 + prof + abilityMod);
     const cleanExtraMod = (extraAttackModifier || "").trim();
@@ -1260,14 +1388,16 @@ function registerSocketHandlers() {
     if (explodeModifier && resolutionMethod !== "auto" && !isHealingType) tags.push(`Explode [${explodeModifier}]`);
     if (chaosJump && !isHealingType) tags.push("Chaos Jump");
     if (superAdv && resolutionMethod === "attack") tags.push("Super Adv");
+    if (config.isDdbHijacked) tags.push("DDB");
 
     const tagsHtml = tags.map(t => {
+      const isDdb = t === "DDB";
       const isConc = t === "Concentration";
       const isSlot = t.startsWith("Slot:");
-      const bg = isConc ? "rgba(163, 72, 72, 0.15)" : (isSlot ? "rgba(43, 116, 137, 0.15)" : "rgba(114, 137, 218, 0.18)");
-      const border = isConc ? "rgba(163, 72, 72, 0.4)" : (isSlot ? "rgba(43, 116, 137, 0.4)" : "rgba(114, 137, 218, 0.4)");
-      const color = isConc ? "#a34848" : (isSlot ? "#235d6e" : "#4b5d88");
-      return `<span style="display: inline-block; background: ${bg}; border: 1px solid ${border}; border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: 600; color: ${color};">${t}</span>`;
+      const bg = isDdb ? "rgba(227, 25, 55, 0.12)" : (isConc ? "rgba(163, 72, 72, 0.15)" : (isSlot ? "rgba(43, 116, 137, 0.15)" : "rgba(114, 137, 218, 0.18)"));
+      const border = isDdb ? "rgba(227, 25, 55, 0.4)" : (isConc ? "rgba(163, 72, 72, 0.4)" : (isSlot ? "rgba(43, 116, 137, 0.4)" : "rgba(114, 137, 218, 0.4)"));
+      const color = isDdb ? "#c41230" : (isConc ? "#a34848" : (isSlot ? "#235d6e" : "#4b5d88"));
+      return `<span style="display: inline-block; background: ${bg}; border: 1px solid ${border}; border-radius: 3px; padding: 1px 5px; font-size: 0.75em; font-weight: ${isDdb ? "700" : "600"}; color: ${color};">${t}</span>`;
     }).join("");
 
     const fullSpellDescription = (config.description || config.summary || "").trim();
@@ -1284,14 +1414,60 @@ function registerSocketHandlers() {
 
     // --- Healing Branch ---
     if (isHealingType) {
+      let healDiceCount = diceCount;
+      let healDieSize = cleanDieSize;
+      let includeMod = Boolean(addAbilityModToValue);
       let effectiveFlat = Number(flatDamageBonus) || 0;
-      if (addAbilityModToValue) effectiveFlat += abilityMod;
+
+      // Live fallback for pre-existing zeroed healing configs saved before heal activity parsing fix
+      if (healDiceCount === 0 && effectiveFlat === 0 && !extraDiceFormula) {
+        const sheetSpell = (config.itemId ? actor.items?.get?.(config.itemId) : null)
+          || actor.items?.getName?.(spellName)
+          || actor.items?.find?.(i => String(i.name || "").toLowerCase().trim() === String(spellName || "").toLowerCase().trim());
+        const sSys = sheetSpell?.system;
+        if (sSys) {
+          const acts = sSys.activities ? (typeof sSys.activities.values === "function" ? Array.from(sSys.activities.values()) : Object.values(sSys.activities)) : [];
+          const hAct = acts.find(a => a && (a.type === "heal" || a.healing));
+          const hObj = hAct?.healing;
+          if (hObj && !Array.isArray(hObj.parts)) {
+            if (hObj.custom?.enabled && hObj.custom?.formula) {
+              const cForm = String(hObj.custom.formula);
+              if (/@mod/i.test(cForm)) includeMod = true;
+              const m = cForm.match(/(\d*)d(\d+)/i);
+              if (m) {
+                healDiceCount = parseInt(m[1]) || 1;
+                healDieSize = `d${m[2]}`;
+              }
+            } else {
+              healDiceCount = Number(hObj.number) || 0;
+              if (hObj.denomination) healDieSize = `d${hObj.denomination}`;
+              if (/@mod/i.test(String(hObj.bonus ?? ""))) includeMod = true;
+              else if (Number.isFinite(Number(hObj.bonus))) effectiveFlat += Number(hObj.bonus);
+            }
+          } else {
+            const parts = hObj?.parts || sSys.damage?.parts || [];
+            const fp = parts[0];
+            if (Array.isArray(fp)) {
+              if (/@mod/i.test(String(fp[0] || ""))) includeMod = true;
+              const m = String(fp[0] || "").match(/(\d*)d(\d+)/i);
+              if (m) {
+                healDiceCount = parseInt(m[1]) || 1;
+                healDieSize = `d${m[2]}`;
+              }
+            }
+          }
+          const extraLvls = (Number(config.baseLevel) > 0 && slotLvl > Number(config.baseLevel)) ? (slotLvl - Number(config.baseLevel)) : 0;
+          if (extraLvls > 0 && healDiceCount > 0) healDiceCount += extraLvls;
+        }
+      }
+
+      if (includeMod) effectiveFlat += abilityMod;
 
       let healFormula = "";
       const cleanUserExtra = (extraDamageModifier || "").trim().replace(/^\+/, "").trim();
       const combinedExtraDice = [extraDiceFormula, cleanUserExtra].filter(Boolean).map(s => String(s).trim().replace(/^\+/, "").trim()).filter(Boolean).join(" + ");
-      if (diceCount > 0) {
-        healFormula = `${diceCount}${cleanDieSize}`;
+      if (healDiceCount > 0) {
+        healFormula = `${healDiceCount}${healDieSize}`;
         if (combinedExtraDice) healFormula += ` + ${combinedExtraDice}`;
         if (effectiveFlat !== 0) healFormula += ` + ${effectiveFlat}`;
       } else {
@@ -1300,6 +1476,24 @@ function registerSocketHandlers() {
       }
 
       const rollObj = await new Roll(healFormula).evaluate();
+      if (Array.isArray(config.injectedDamageDice) && config.injectedDamageDice.length > 0) {
+        let dieIdx = 0;
+        for (const term of rollObj.terms || []) {
+          if (Array.isArray(term.results)) {
+            for (const res of term.results) {
+              if (config.injectedDamageDice[dieIdx] !== undefined) {
+                const ddbDie = config.injectedDamageDice[dieIdx];
+                res.result = Number(ddbDie.dieValue ?? ddbDie);
+                if (ddbDie.dropped !== undefined) res.active = !ddbDie.dropped;
+                dieIdx++;
+              }
+            }
+          }
+        }
+        if (Number.isFinite(Number(config.injectedDamageTotal))) {
+          rollObj._total = Number(config.injectedDamageTotal);
+        }
+      }
       const totalValue = rollObj.total;
       const rollRender = await rollObj.render();
 
@@ -1356,7 +1550,7 @@ function registerSocketHandlers() {
             <summary style="font-weight: 600; font-size: 0.82em; color: #666; cursor: pointer;">Formula Breakdown</summary>
             <div style="padding-top: 4px; border-top: 1px solid #e0e0e0; font-size: 0.8em; color: #555; margin-top: 3px;">
               <div><strong>Formula:</strong> ${healFormula}</div>
-              ${addAbilityModToValue ? `<div><strong>Spellcasting Mod:</strong> +${abilityMod} (${spellAbility.toUpperCase()})</div>` : ''}
+              ${includeMod ? `<div><strong>Spellcasting Mod:</strong> +${abilityMod} (${effSpellAbil.toUpperCase()})</div>` : ''}
             </div>
           </details>
         </div>
@@ -1498,9 +1692,48 @@ function registerSocketHandlers() {
 
     // --- Attack Roll Branch (Fire Bolt, Scorching Ray, etc.) ---
     if (resolutionMethod === "attack") {
-      const numAttacks = isMultiAttack
-        ? (Number(effectiveAttacks) || Number(attackCount) || 1)
-        : 1;
+      const normSpell = String(spellName || "").toLowerCase().replace(/\s*\([^)]*\)/g, "").trim();
+      let effIsMulti = Boolean(isMultiAttack && isMultiAttack !== "false");
+      let effAtkCount = Number(attackCount) || 1;
+      let effUpcastAtk = Number(config.upcastAttacks) || 0;
+      let effCantripAtkScale = Boolean(config.cantripAttackScaling);
+
+      // Auto-repair stale pre-existing configs saved before multi-ray auto-detection
+      if (!effIsMulti) {
+        if (normSpell === "scorching ray" || normSpell === "jim's magic missile") {
+          effIsMulti = true;
+          effAtkCount = 3;
+          effUpcastAtk = 1;
+        } else if (normSpell === "steel wind strike") {
+          effIsMulti = true;
+          effAtkCount = 5;
+        } else if (normSpell === "eldritch blast") {
+          effIsMulti = true;
+          effCantripAtkScale = true;
+        }
+      }
+      if ((normSpell === "scorching ray" || normSpell === "jim's magic missile") && effUpcastAtk <= 0) {
+        effUpcastAtk = 1;
+      }
+
+      const baseLvl = Number(config.baseLevel) || 0;
+      const extraLvls = (baseLvl > 0 && slotLvl > baseLvl) ? (slotLvl - baseLvl) : 0;
+      let numAttacks = 1;
+      if (effIsMulti) {
+        if (Number(effectiveAttacks) > 0) {
+          numAttacks = Number(effectiveAttacks);
+        } else if (effCantripAtkScale && baseLvl === 0) {
+          const charLvl = actor.system.details?.level ?? 1;
+          numAttacks = charLvl >= 17 ? 4 : (charLvl >= 11 ? 3 : (charLvl >= 5 ? 2 : 1));
+        } else {
+          numAttacks = Math.max(1, effAtkCount + (extraLvls * effUpcastAtk));
+        }
+      }
+
+      // Guard: if a stale non-multi Scorching Ray config had damageDiceCount scaled by upcasting, keep 2d6 per ray
+      if ((normSpell === "scorching ray") && !isMultiAttack && extraLvls > 0 && diceCount === 2 + extraLvls) {
+        diceCount = 2;
+      }
 
       const cloneTerm = (t) => {
         if (typeof t.clone === "function") return t.clone();
@@ -1531,11 +1764,29 @@ function registerSocketHandlers() {
 
       for (let i = 1; i <= numAttacks; i++) {
         const atkRoll = await new Roll(attackFormula, actor.system).evaluate();
+        if (i === 1 && Number.isFinite(Number(config.injectedD20_1))) {
+          const inj1 = Number(config.injectedD20_1);
+          const d20Term1 = atkRoll.terms.find(t => t.faces === 20) || atkRoll.dice[0];
+          if (inj1 >= 1 && inj1 <= 20 && d20Term1?.results?.[0]) {
+            const origVal = Number(d20Term1.results[0].result ?? atkRoll.total);
+            d20Term1.results[0].result = inj1;
+            atkRoll._total = Number(atkRoll.total) + (inj1 - origVal);
+          }
+        }
 
         // Roll second d20 candidate reusing evaluated modifier terms from atkRoll (so 1d4+2 is only rolled once)
         let slot2D20Val = 0;
         let slot2D20Term = null;
-        if (superAdv) {
+        if (i === 1 && Number.isFinite(Number(config.injectedD20_2)) && Number(config.injectedD20_2) >= 1 && Number(config.injectedD20_2) <= 20) {
+          const inj2 = Number(config.injectedD20_2);
+          const d20Roll = await new Roll("1d20").evaluate();
+          if (d20Roll.terms[0]?.results?.[0]) {
+            d20Roll.terms[0].results[0].result = inj2;
+          }
+          d20Roll._total = inj2;
+          slot2D20Val = inj2;
+          slot2D20Term = d20Roll.terms[0];
+        } else if (superAdv) {
           const d20A = await new Roll("1d20").evaluate();
           const d20B = await new Roll("1d20").evaluate();
           const valA = Number(d20A.terms[0]?.results?.[0]?.result ?? d20A.total);
@@ -1722,6 +1973,24 @@ function registerSocketHandlers() {
     if (Number(flatDamageBonus)) fullDamageFormula += ` + ${flatDamageBonus}`;
 
     const damageRoll = await new Roll(fullDamageFormula).evaluate();
+    if (Array.isArray(config.injectedDamageDice) && config.injectedDamageDice.length > 0) {
+      let dieIdx = 0;
+      for (const term of damageRoll.terms || []) {
+        if (Array.isArray(term.results)) {
+          for (const res of term.results) {
+            if (config.injectedDamageDice[dieIdx] !== undefined) {
+              const ddbDie = config.injectedDamageDice[dieIdx];
+              res.result = Number(ddbDie.dieValue ?? ddbDie);
+              if (ddbDie.dropped !== undefined) res.active = !ddbDie.dropped;
+              dieIdx++;
+            }
+          }
+        }
+      }
+      if (Number.isFinite(Number(config.injectedDamageTotal))) {
+        damageRoll._total = Number(config.injectedDamageTotal);
+      }
+    }
     const normalDamageTotal = damageRoll.total;
     const damageRollHtml = await damageRoll.render();
 
@@ -3157,4 +3426,26 @@ export function initSockets() {
       if (!globalThis.attackSocket) runSocketInit();
     });
   }
+
+  Hooks.on("renderChatLog", (app, html) => {
+    const root = html?.[0] || html;
+    if (!root || root._gpSavageAttackerBound) return;
+    root._gpSavageAttackerBound = true;
+    root.addEventListener("click", async (e) => {
+      const btn = e.target?.closest?.(".cheapdice-savage-attacker-btn");
+      if (!btn || btn.disabled) return;
+      const msgEl = btn.closest(".chat-message, [data-message-id]");
+      const messageId = msgEl?.dataset?.messageId;
+      if (!messageId || !globalThis.attackSocket) return;
+      btn.disabled = true;
+      btn.style.opacity = "0.6";
+      try {
+        await globalThis.attackSocket.executeAsGM("applySavageAttacker", messageId, game.user?.id);
+      } catch (err) {
+        console.error(`[${MODULE_ID}] Failed to apply Savage Attacker:`, err);
+        btn.disabled = false;
+        btn.style.opacity = "1";
+      }
+    });
+  });
 }

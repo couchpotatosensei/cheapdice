@@ -65,6 +65,16 @@ export function registerSettings() {
     requiresReload: false
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.DDB_COBALT_COOKIE, {
+    name: "DDB CobaltSession Cookie (Slot Sync)",
+    hint: "Long-lived CobaltSession cookie from D&D Beyond for Spell Slot Sync (separate from the Game Log STT so Tampermonkey won't overwrite it). Falls back to ddb-importer's cookie if blank.",
+    scope: "client",
+    config: true,
+    type: String,
+    default: "",
+    requiresReload: false
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.DDB_PROXY_URL, {
     name: "DDB Auth Proxy URL (Optional)",
     hint: "Optional proxy URL for exchanging CobaltSession cookies into short-term JWTs (e.g. Cloudflare Worker or local proxy).",
@@ -82,6 +92,16 @@ export function registerSettings() {
     config: true,
     type: Boolean,
     default: false,
+    requiresReload: false
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.DDB_REQUIRE_DDB_IMPORTER, {
+    name: "Require DDB Importer Actor",
+    hint: "Only accept and post rolls for characters in this Foundry world that have been imported via D&D Beyond Importer.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
     requiresReload: false
   });
 

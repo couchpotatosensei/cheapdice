@@ -147,6 +147,32 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(hwCfg.resolutionMethod, "heal");
     assert.equal(hwCfg.damageDiceCount, 1);
     assert.equal(hwCfg.damageDieSize, "d4");
+
+    // 4. Real dnd5e v3/v4/v5+ Heal activity (direct object without healing.parts)
+    const modernCureWounds = {
+      id: "spellCW",
+      name: "Cure Wounds",
+      type: "spell",
+      system: {
+        level: 1,
+        activities: new Map([
+          ["actCW", {
+            type: "heal",
+            healing: {
+              number: 2,
+              denomination: 8,
+              bonus: "@mod",
+              types: new Set(["healing"])
+            }
+          }]
+        ])
+      }
+    };
+    const cwCfg = buildSpellConfigFromItem(modernCureWounds, mockActor);
+    assert.equal(cwCfg.resolutionMethod, "heal");
+    assert.equal(cwCfg.damageDiceCount, 2);
+    assert.equal(cwCfg.damageDieSize, "d8");
+    assert.equal(cwCfg.addAbilityModToValue, true);
   });
 
   it('isSpellPrepared recognizes cantrips, prepared spells, and wizard rituals', () => {

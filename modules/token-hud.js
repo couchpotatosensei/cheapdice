@@ -88,7 +88,6 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     const rollConfig = foundry.utils.deepClone(config);
     const extras = (rollConfig.additionalDamageComponents || []).filter(c => c && c.formula);
     const hasGWM = Boolean(rollConfig.hasGWM);
-    const hasSavageAttacker = Boolean(rollConfig.hasSavageAttacker);
     const hasPiercer = Boolean(rollConfig.hasPiercer);
     const isVersatile = Boolean(rollConfig.isVersatile);
     const hasExtraAbility = Boolean(rollConfig.hasExtraAttackAbility && rollConfig.extraAttackAbility);
@@ -96,7 +95,7 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     const hasSaveRider = Boolean(rollConfig.hasSaveRider);
 
     // If extra damage components, GWM, Versatile, or extra ability are present, prompt a quick toggle dialog
-    if (extras.length > 0 || hasGWM || hasSavageAttacker || hasPiercer || isVersatile || hasExtraAbility || hasExtraDamageAbility || hasSaveRider) {
+    if (extras.length > 0 || hasGWM || hasPiercer || isVersatile || hasExtraAbility || hasExtraDamageAbility || hasSaveRider) {
       let versatileHtml = "";
       if (isVersatile) {
         const vDie = rollConfig.versatileDie || "10";
@@ -114,16 +113,6 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
           <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #a34848; padding: 4px 6px; background: rgba(163,72,72,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
             <span>GWM / Sharpshooter (-5 / +10)</span>
             <input type="checkbox" id="hud-prompt-gwm" style="margin: 0;">
-          </label>
-        `;
-      }
-
-      let savageAttackerHtml = "";
-      if (hasSavageAttacker) {
-        savageAttackerHtml = `
-          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #8c3b2d; padding: 4px 6px; background: rgba(140,59,45,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
-            <span>Savage Attacker (Keep Highest)</span>
-            <input type="checkbox" id="hud-prompt-savage-attacker" style="margin: 0;">
           </label>
         `;
       }
@@ -209,7 +198,6 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
         <div style="font-family: inherit; padding: 4px 2px;">
           ${versatileHtml}
           ${gwmHtml}
-          ${savageAttackerHtml}
           ${piercerHtml}
           ${extraAbilityHtml}
           ${extraDamageAbilityHtml}
@@ -236,11 +224,6 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
                 rollConfig.attackCircumstanceModifier = (Number(rollConfig.attackCircumstanceModifier) || 0) - 5;
                 rollConfig.damageModifier = (Number(rollConfig.damageModifier) || 0) + 10;
                 rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [GWM/SS]`;
-              }
-
-              if (hasSavageAttacker && html.find("#hud-prompt-savage-attacker").is(":checked")) {
-                rollConfig.isSavageAttackerActive = true;
-                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [Savage Attacker]`;
               }
 
               if (hasPiercer && html.find("#hud-prompt-piercer").is(":checked")) {

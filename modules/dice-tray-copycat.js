@@ -127,7 +127,10 @@ export function appendDieToChatText(currentText, die, mode = "norm") {
   const modMatch = raw.match(trailingModRegex);
   if (modMatch && !/[dD]\d+$/i.test(raw)) {
     const base = raw.slice(0, modMatch.index).trim();
-    const modPart = raw.slice(modMatch.index).trim();
+    let modPart = raw.slice(modMatch.index).trim();
+    if (!/^[+-]/.test(modPart)) {
+      modPart = `+ ${modPart}`;
+    }
     const prefix = (base && base !== "/r") ? `${base} + ${dieStr}` : `/r ${dieStr}`;
     return `${prefix} ${modPart}`;
   }
@@ -492,7 +495,7 @@ export function resetTrayDiceCounts() {
 /**
  * Updates DOM elements inside the Dice Tray with current state values.
  */
-export function updateTrayUI() {
+export function updateTrayUI(skipModSync = false) {
   if (typeof document === "undefined") return;
 
   const tray = document.querySelector("#gp-dice-tray-copycat");
@@ -510,7 +513,7 @@ export function updateTrayUI() {
 
   // Update modifier input
   const modInput = tray.querySelector(".gp-dt-mod-input");
-  if (modInput && document.activeElement !== modInput) {
+  if (!skipModSync && modInput && document.activeElement !== modInput) {
     const current = getChatTextareaValue();
     const parsed = parseFormulaStateFromChatText(current);
     modInput.value = parsed.modifier !== 0 ? parsed.modifier : "";
@@ -849,6 +852,7 @@ export function buildDiceTrayElement() {
     const current = getChatTextareaValue();
     const updated = updateFlatModifierInChatText(current, newMod);
     writeToChatTextarea(updated);
+    if (typeof Hooks !== "undefined") Hooks.callAll("gpDiceFormulaSync");
   });
   modInput.addEventListener("wheel", (e) => {
     e.preventDefault();
@@ -859,6 +863,7 @@ export function buildDiceTrayElement() {
     const updated = updateFlatModifierInChatText(current, newMod);
     writeToChatTextarea(updated);
     modInput.value = newMod !== 0 ? newMod : "";
+    if (typeof Hooks !== "undefined") Hooks.callAll("gpDiceFormulaSync");
   });
   modInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -927,6 +932,8 @@ export function buildDiceTrayElement() {
       resetTrayDiceCounts();
       writeToChatTextarea("");
       activeMode = "norm";
+      const rolledModInput = tray.querySelector(".gp-dt-mod-input");
+      if (rolledModInput) rolledModInput.value = "";
       updateTrayUI();
 
       if (typeof Hooks !== "undefined") {
@@ -1064,9 +1071,15 @@ export function initDiceTrayCopycat() {
     Hooks.callAll("gpDiceResetAll");
   });
 
-  // Reset tray badges when reset is triggered from flyout or chat
+  // Reset tray badges and modifier when reset is triggered from flyout or chat
   Hooks.on("gpDiceResetAll", () => {
     resetTrayDiceCounts();
+    const trayModInput = typeof document !== "undefined" ? document.querySelector("#gp-dice-tray-copycat .gp-dt-mod-input") : null;
+    if (trayModInput) trayModInput.value = "";
+    updateTrayUI(true);
+  });
+
+  Hooks.on("gpDiceFormulaSync", () => {
     updateTrayUI();
   });
 

@@ -1883,6 +1883,7 @@ export function initActionEditors() {
             autoGroup.toggle(val === 'auto');
             healGroup.toggle(['heal', 'temp_hp', 'max_hp'].includes(val));
             multiGroup.toggle(val === 'attack');
+            multiDetails.toggle(isMultiCheck.is(':checked'));
             areaGroup.toggle(targetTypeSelect.val() === 'area');
             fixedGroup.toggle(damageModeSelect.val() === 'static');
             materialDetailsGroup.toggle(compMCheck.is(':checked'));
@@ -1997,26 +1998,60 @@ export function initActionEditors() {
               }
 
               const primaryDmgAct = damageAct || saveAct || attackAct || healAct;
-              const parts = primaryDmgAct?.damage?.parts || primaryDmgAct?.healing?.parts || [];
-              if (parts.length > 0) {
-                const firstPart = parts[0];
-                if (typeof firstPart === "object" && (firstPart.number || firstPart.denomination || firstPart.formula)) {
-                  html.find('input[name="damageDiceCount"]').val(Number(firstPart.number) || 1);
-                  html.find('select[name="damageDieSize"]').val(firstPart.denomination ? `d${firstPart.denomination}` : "d6");
-                  if (firstPart.types && firstPart.types.size > 0) {
-                    html.find('select[name="damageType"]').val(Array.from(firstPart.types)[0].toLowerCase());
-                  } else if (primaryDmgAct === healAct) {
-                    html.find('select[name="damageType"]').val("healing");
-                  }
-                } else if (Array.isArray(firstPart)) {
-                  const formula = firstPart[0] || "";
-                  const dmgType = (firstPart[1] || (primaryDmgAct === healAct ? "healing" : "fire")).toLowerCase();
-                  const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
+              const healObj = healAct?.healing;
+              html.find('input[name="addAbilityModToValue"]').prop('checked', false);
+              if (primaryDmgAct === healAct && healObj && !Array.isArray(healObj.parts)) {
+                const rawTypes = healObj.types instanceof Set
+                  ? Array.from(healObj.types)
+                  : (Array.isArray(healObj.types) ? healObj.types : (healObj.type ? [healObj.type] : []));
+                const healType = String(rawTypes[0] || "healing").toLowerCase();
+                if (healType === "temphp") resSelect.val("temp_hp");
+                html.find('select[name="damageType"]').val(healType === "temphp" ? "healing" : healType);
+
+                if (healObj.custom?.enabled && healObj.custom?.formula) {
+                  const cForm = String(healObj.custom.formula);
+                  if (/@mod/i.test(cForm)) html.find('input[name="addAbilityModToValue"]').prop('checked', true);
+                  const diceMatch = cForm.match(/(\d*)d(\d+)/i);
                   if (diceMatch) {
                     html.find('input[name="damageDiceCount"]').val(parseInt(diceMatch[1]) || 1);
                     html.find('select[name="damageDieSize"]').val(`d${diceMatch[2]}`);
                   }
-                  html.find('select[name="damageType"]').val(dmgType);
+                } else {
+                  html.find('input[name="damageDiceCount"]').val(Number(healObj.number) || 0);
+                  html.find('select[name="damageDieSize"]').val(healObj.denomination ? `d${healObj.denomination}` : "d8");
+                  const bonusStr = String(healObj.bonus ?? "");
+                  if (/@mod/i.test(bonusStr)) {
+                    html.find('input[name="addAbilityModToValue"]').prop('checked', true);
+                  } else {
+                    const parsedBonus = Number(bonusStr);
+                    if (Number.isFinite(parsedBonus) && parsedBonus !== 0) {
+                      html.find('input[name="flatDamageBonus"]').val(parsedBonus);
+                    }
+                  }
+                }
+              } else {
+                const parts = primaryDmgAct?.damage?.parts || primaryDmgAct?.healing?.parts || [];
+                if (parts.length > 0) {
+                  const firstPart = parts[0];
+                  if (typeof firstPart === "object" && (firstPart.number || firstPart.denomination || firstPart.formula)) {
+                    html.find('input[name="damageDiceCount"]').val(Number(firstPart.number) || 1);
+                    html.find('select[name="damageDieSize"]').val(firstPart.denomination ? `d${firstPart.denomination}` : "d6");
+                    if (firstPart.types && firstPart.types.size > 0) {
+                      html.find('select[name="damageType"]').val(Array.from(firstPart.types)[0].toLowerCase());
+                    } else if (primaryDmgAct === healAct) {
+                      html.find('select[name="damageType"]').val("healing");
+                    }
+                  } else if (Array.isArray(firstPart)) {
+                    const formula = firstPart[0] || "";
+                    if (/@mod/i.test(String(formula))) html.find('input[name="addAbilityModToValue"]').prop('checked', true);
+                    const dmgType = (firstPart[1] || (primaryDmgAct === healAct ? "healing" : "fire")).toLowerCase();
+                    const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
+                    if (diceMatch) {
+                      html.find('input[name="damageDiceCount"]').val(parseInt(diceMatch[1]) || 1);
+                      html.find('select[name="damageDieSize"]').val(`d${diceMatch[2]}`);
+                    }
+                    html.find('select[name="damageType"]').val(dmgType);
+                  }
                 }
               }
             } else {
@@ -2038,6 +2073,7 @@ export function initActionEditors() {
               if (parts.length > 0) {
                 const firstPart = parts[0];
                 const formula = firstPart[0] || "";
+                if (/@mod/i.test(String(formula))) html.find('input[name="addAbilityModToValue"]').prop('checked', true);
                 const dmgType = (firstPart[1] || "fire").toLowerCase();
 
                 const diceMatch = formula.match(/(\d*)d(\d+)/i);
@@ -2053,6 +2089,31 @@ export function initActionEditors() {
             // Cantrip scaling checkbox
             if (Number(sys.level) === 0 && sys.scaling?.mode === "cantrip") {
               html.find('input[name="isCantripScale"]').prop('checked', true);
+            }
+
+            // Auto-detect common multi-attack / multi-ray spells
+            const normSpellName = String(item.name || "").toLowerCase().replace(/\s*\([^)]*\)/g, "").trim();
+            if (normSpellName === "scorching ray" || normSpellName === "jim's magic missile") {
+              isMultiCheck.prop('checked', true);
+              html.find('input[name="attackCount"]').val(3);
+              html.find('input[name="upcastAttacks"]').val(1);
+              html.find('input[name="cantripAttackScaling"]').prop('checked', false);
+            } else if (normSpellName === "steel wind strike") {
+              isMultiCheck.prop('checked', true);
+              html.find('input[name="attackCount"]').val(5);
+              html.find('input[name="upcastAttacks"]').val(0);
+              html.find('input[name="cantripAttackScaling"]').prop('checked', false);
+            } else if (normSpellName === "eldritch blast") {
+              isMultiCheck.prop('checked', true);
+              html.find('input[name="attackCount"]').val(1);
+              html.find('input[name="upcastAttacks"]').val(0);
+              html.find('input[name="cantripAttackScaling"]').prop('checked', true);
+              html.find('input[name="isCantripScale"]').prop('checked', false);
+            } else {
+              isMultiCheck.prop('checked', false);
+              html.find('input[name="attackCount"]').val(1);
+              html.find('input[name="upcastAttacks"]').val(0);
+              html.find('input[name="cantripAttackScaling"]').prop('checked', false);
             }
 
             updateLayout();
@@ -2332,16 +2393,6 @@ export function initActionEditors() {
               `;
               }
 
-              let savageAttackerToggleHtml = "";
-              if (hasSavageAttacker) {
-                savageAttackerToggleHtml = `
-                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; font-weight: bold; color: #8c3b2d; padding: 3px 6px; background: rgba(140,59,45,0.08); border-radius: 3px; cursor: pointer; margin-top: 6px;">
-                  <span>Savage Attacker (Keep Highest)</span>
-                  <input type="checkbox" id="qm-savage-attacker-toggle" style="margin: 0;">
-                </label>
-              `;
-              }
-
               let piercerToggleHtml = "";
               if (hasPiercer) {
                 const pLabel = rawConfig.piercerLabel || "Piercer";
@@ -2410,7 +2461,6 @@ export function initActionEditors() {
                 ${extraDamageAbilityToggleHtml}
                 ${saveRiderToggleHtml}
                 ${gwmToggleHtml}
-                ${savageAttackerToggleHtml}
                 ${piercerToggleHtml}
                 ${extrasCheckboxesHtml}
               </div>
@@ -2437,11 +2487,6 @@ export function initActionEditors() {
                         targetData.attackCircumstanceModifier = (Number(targetData.attackCircumstanceModifier) || 0) - 5;
                         targetData.damageModifier = (Number(targetData.damageModifier) || 0) + 10;
                         targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [GWM/SS]`;
-                      }
-
-                      if (hasSavageAttacker && promptModal.find("#qm-savage-attacker-toggle").is(":checked")) {
-                        targetData.isSavageAttackerActive = true;
-                        targetData.chatCardTitle = `${targetData.chatCardTitle || choice} [Savage Attacker]`;
                       }
 
                       if (hasPiercer && promptModal.find("#qm-piercer-toggle").is(":checked")) {
