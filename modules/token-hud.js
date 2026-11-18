@@ -292,6 +292,8 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
 
 export function initTokenHud() {
   if (!getSetting("featureTokenHud")) return;
+  if (globalThis.__gpTokenHudInitialized) return;
+  globalThis.__gpTokenHudInitialized = true;
 
   // 3. Token HUD adjustments
   Hooks.on("renderTokenHUD", (app, html, data) => {
@@ -575,7 +577,18 @@ export function initTokenHud() {
     const colMiddle = root.querySelector(".col.middle");
     if (!colLeft || !colRight || !colMiddle) return;
 
-    root.querySelectorAll(".gp-player-hud-item, .quick-hp-row").forEach((el) => el.remove());
+    root.querySelectorAll([
+      ".gp-player-hud-item",
+      ".quick-hp-row",
+      '.control-icon[title="Dice Stuff"]',
+      '.control-icon[title="Raise Hand"]',
+      '.control-icon[title="Lower Hand"]',
+      '.control-icon[title="Measure Distance"]',
+      '.control-icon[title="Quick Hotbar"]',
+      '.control-icon[title^="Hotbar "]',
+      '.control-icon[title^="HUD "]',
+      '.control-icon[title^="Slot "]'
+    ].join(", ")).forEach((el) => el.remove());
     const appendPlayerHudItem = (parent, el) => {
       el.classList.add("gp-player-hud-item");
       parent.appendChild(el);
