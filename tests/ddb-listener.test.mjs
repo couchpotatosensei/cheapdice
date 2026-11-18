@@ -19,7 +19,9 @@ import {
   getActorDdbCharacterUrl,
   computeDdbSpellSlotUpdates,
   computeDdbHpUpdates,
-  DdbGameLogClient
+  DdbGameLogClient,
+  parseDdbCampaignIds,
+  DdbMultiCampaignManager
 } from "../modules/ddb-listener.js";
 
 describe("D&D Beyond Game Log Listener", () => {
@@ -1664,5 +1666,57 @@ describe("D&D Beyond Game Log Listener", () => {
       overrideHitPoints: 0
     });
     assert.deepEqual(noChangeUpdates, {});
+  });
+
+  it("parseDdbCampaignIds parses comma-separated IDs, URLs, and deduplicates", () => {
+    assert.deepEqual(parseDdbCampaignIds(""), []);
+    assert.deepEqual(parseDdbCampaignIds("  ,  ; "), []);
+    assert.deepEqual(parseDdbCampaignIds("1234567"), ["1234567"]);
+    assert.deepEqual(
+      parseDdbCampaignIds("1234567, https://www.dndbeyond.com/campaigns/7654321; 1234567 999888"),
+      ["1234567", "7654321", "999888"]
+    );
+  });
+
+  it("DdbMultiCampaignManager connects and disconnects a client per campaign ID", async () => {
+    const created = [];
+    const manager = new DdbMultiCampaignManager({
+      createClient: ({ onRoll }) => {
+        const fake = {
+          onRoll,
+          connectedConfig: null,
+          disconnected: false,
+          async connect(cfg) {
+            this.connectedConfig = cfg;
+            return cfg.campaignId !== "bad-id";
+          },
+          disconnect() {
+            this.disconnected = true;
+          },
+          handleRawMessage() {}
+        };
+        created.push(fake);
+        return fake;
+      }
+    });
+
+    const ok = await manager.connect({
+      campaignId: "111, 222, bad-id",
+      token: "jwt-token",
+      userId: "42"
+    });
+
+    assert.equal(ok, true);
+    assert.deepEqual(manager.getConnectedCampaignIds(), ["111", "222"]);
+    // created[0] is the fallbackClient; created[1..3] are the 3 campaign attempts
+    assert.equal(created.length, 4);
+    assert.equal(created[1].connectedConfig.campaignId, "111");
+    assert.equal(created[2].connectedConfig.campaignId, "222");
+    assert.equal(created[3].disconnected, true);
+
+    manager.disconnect();
+    assert.deepEqual(manager.getConnectedCampaignIds(), []);
+    assert.equal(created[1].disconnected, true);
+    assert.equal(created[2].disconnected, true);
   });
 });

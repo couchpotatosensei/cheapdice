@@ -36,8 +36,8 @@ export function registerSettings() {
   // D&D Beyond Game Log Configuration (GM Only)
   // ---------------------------------------------------------------------------
   game.settings.register(MODULE_ID, SETTINGS.DDB_CAMPAIGN_ID, {
-    name: "DDB Campaign ID",
-    hint: "Numeric Campaign ID from your D&D Beyond campaign URL (e.g. 1234567).",
+    name: "DDB Campaign ID(s)",
+    hint: "Numeric Campaign ID (or comma-separated list of IDs/URLs, e.g. 1234567, 7654321) from your D&D Beyond campaign URL(s).",
     scope: "world",
     config: true,
     type: String,

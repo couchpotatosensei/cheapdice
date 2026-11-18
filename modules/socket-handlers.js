@@ -15,6 +15,59 @@ function getSetting(key, fallback = true) {
 }
 
 /**
+ * Resolves an actor's effective spell attack bonus and spell save DC across dnd5e 5.x and 6.x.
+ * @param {object} actor
+ * @param {string} [spellAbility]
+ * @returns {{ spellAttackBonus: number, spellSaveDC: number, itemAttackBonus: number, itemDcBonus: number }}
+ */
+export function getActorSpellBonuses(actor, spellAbility) {
+  const sys = actor?.system || {};
+  const parseNumericBonus = (val) => {
+    if (val === null || val === undefined || val === "") return 0;
+    if (typeof val === "number") return Number.isFinite(val) ? val : 0;
+    const compact = String(val).replace(/\s+/g, "");
+    if (!compact || !/^(?:[+-]?\d+(?:\.\d+)?)+$/.test(compact)) return 0;
+    const terms = compact.match(/[+-]?\d+(?:\.\d+)?/g);
+    return terms ? terms.reduce((sum, term) => sum + Number(term), 0) : 0;
+  };
+
+  const abilKey = spellAbility || sys.attributes?.spellcasting || "int";
+  const abilityMod = Number(sys.abilities?.[abilKey]?.mod ?? 0);
+  const prof = Number(sys.attributes?.prof ?? 0);
+
+  const rsakBonus = parseNumericBonus(sys.rolls?.attack?.rsak?.bonus) || parseNumericBonus(sys.bonuses?.rsak?.attack);
+  const msakBonus = parseNumericBonus(sys.rolls?.attack?.msak?.bonus) || parseNumericBonus(sys.bonuses?.msak?.attack);
+  const globalSpellAtkBonus = parseNumericBonus(sys.rolls?.attack?.spell?.bonus) || parseNumericBonus(sys.bonuses?.spell?.attack);
+  const rmakBonus = (rsakBonus !== 0 && rsakBonus === msakBonus) ? rsakBonus : (rsakBonus || msakBonus || 0);
+
+  const baseSpellAtk = prof + abilityMod;
+  const rawAtk = sys.attributes?.spell?.attack;
+  const usesActorSpellcasting = !spellAbility || spellAbility === sys.attributes?.spellcasting;
+  let spellAttackBonus = (usesActorSpellcasting && rawAtk !== undefined && rawAtk !== null) ? Number(rawAtk) : baseSpellAtk;
+  if (!Number.isFinite(spellAttackBonus)) spellAttackBonus = baseSpellAtk;
+  spellAttackBonus += rmakBonus;
+  if (globalSpellAtkBonus !== 0 && (!usesActorSpellcasting || rawAtk === undefined || rawAtk === null || Number(rawAtk) === baseSpellAtk)) {
+    spellAttackBonus += globalSpellAtkBonus;
+  }
+
+  const baseSpellDC = 8 + prof + abilityMod;
+  const rawDC = sys.attributes?.spell?.dc ?? sys.attributes?.spelldc;
+  let spellSaveDC = (usesActorSpellcasting && rawDC !== undefined && rawDC !== null) ? Number(rawDC) : baseSpellDC;
+  if (!Number.isFinite(spellSaveDC)) spellSaveDC = baseSpellDC;
+  const spellBonusDC = parseNumericBonus(sys.bonuses?.spell?.dc);
+  if (spellBonusDC !== 0 && (!usesActorSpellcasting || rawDC === undefined || rawDC === null || Number(rawDC) === baseSpellDC)) {
+    spellSaveDC += spellBonusDC;
+  }
+
+  return {
+    spellAttackBonus,
+    spellSaveDC,
+    itemAttackBonus: spellAttackBonus - baseSpellAtk,
+    itemDcBonus: spellSaveDC - baseSpellDC
+  };
+}
+
+/**
  * Injects an exact d20 face value into an evaluated Foundry Roll without mutating frozen result entries.
  * @param {object} roll
  * @param {number} d20Value
@@ -1325,7 +1378,8 @@ function registerSocketHandlers() {
     const effSpellAbil = spellAbility || actor.system.attributes?.spellcasting || "int";
     const abilityMod = actor.system.abilities?.[effSpellAbil]?.mod ?? 0;
     const prof = actor.system.attributes?.prof ?? 0;
-    const baseDC = actor.system.attributes?.spell?.dc ?? actor.system.attributes?.spelldc ?? (8 + prof + abilityMod);
+    const { spellAttackBonus, spellSaveDC } = getActorSpellBonuses(actor, effSpellAbil);
+    const baseDC = spellSaveDC;
     const cleanExtraMod = (extraAttackModifier || "").trim();
     let dcBonus = 0;
     if (resolutionMethod === "save" && cleanExtraMod) {
@@ -1333,7 +1387,7 @@ function registerSocketHandlers() {
       if (!isNaN(parsedDcBonus)) dcBonus = parsedDcBonus;
     }
     const spellDC = baseDC + dcBonus;
-    const totalAttackMod = abilityMod + prof + (Number(attackModifier) || 0);
+    const totalAttackMod = spellAttackBonus + (Number(attackModifier) || 0);
 
     const actorName = actor.name;
     const speaker = ChatMessage.getSpeaker({ actor });

@@ -382,10 +382,38 @@ export async function postStatCard(targetToken = null) {
   let slotDisplay = [];
 
   if (spellcastingAbility && spellcastingAbility !== "" && spellcastingAbility !== "none") {
+    const parseNumericBonus = (val) => {
+      if (val === null || val === undefined || val === "") return 0;
+      if (typeof val === "number") return Number.isFinite(val) ? val : 0;
+      const compact = String(val).replace(/\s+/g, "");
+      if (!compact || !/^(?:[+-]?\d+(?:\.\d+)?)+$/.test(compact)) return 0;
+      const terms = compact.match(/[+-]?\d+(?:\.\d+)?/g);
+      return terms ? terms.reduce((sum, term) => sum + Number(term), 0) : 0;
+    };
+
     const spellMod = sys.abilities[spellcastingAbility]?.mod ?? 0;
-    const spellAttackBonus = pb + spellMod;
+    const baseSpellAtk = pb + spellMod;
+    const rawAtk = sys.attributes?.spell?.attack;
+    let spellAttackBonus = (rawAtk !== undefined && rawAtk !== null) ? Number(rawAtk) : baseSpellAtk;
+    if (!Number.isFinite(spellAttackBonus)) spellAttackBonus = baseSpellAtk;
+    const rsakBonus = parseNumericBonus(sys.rolls?.attack?.rsak?.bonus) || parseNumericBonus(sys.bonuses?.rsak?.attack);
+    const msakBonus = parseNumericBonus(sys.rolls?.attack?.msak?.bonus) || parseNumericBonus(sys.bonuses?.msak?.attack);
+    const globalSpellAtkBonus = parseNumericBonus(sys.rolls?.attack?.spell?.bonus) || parseNumericBonus(sys.bonuses?.spell?.attack);
+    const rmakBonus = (rsakBonus !== 0 && rsakBonus === msakBonus) ? rsakBonus : (rsakBonus || msakBonus || 0);
+    spellAttackBonus += rmakBonus;
+    if (globalSpellAtkBonus !== 0 && (rawAtk === undefined || rawAtk === null || Number(rawAtk) === baseSpellAtk)) {
+      spellAttackBonus += globalSpellAtkBonus;
+    }
     const spellSign = spellAttackBonus >= 0 ? "+" : "";
-    const spellDC = sys.attributes?.spelldc ?? (8 + pb + spellMod);
+
+    const baseSpellDC = 8 + pb + spellMod;
+    const rawDC = sys.attributes?.spell?.dc ?? sys.attributes?.spelldc;
+    let spellDC = (rawDC !== undefined && rawDC !== null) ? Number(rawDC) : baseSpellDC;
+    if (!Number.isFinite(spellDC)) spellDC = baseSpellDC;
+    const spellBonusDC = parseNumericBonus(sys.bonuses?.spell?.dc);
+    if (spellBonusDC !== 0 && (rawDC === undefined || rawDC === null || Number(rawDC) === baseSpellDC)) {
+      spellDC += spellBonusDC;
+    }
     spellStats = `${spellcastingAbility.toUpperCase()} | Atk: <b>${spellSign}${spellAttackBonus}</b> | DC: <b>${spellDC}</b>`;
 
     if (sys.spells) {

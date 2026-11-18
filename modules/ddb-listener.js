@@ -2359,13 +2359,93 @@ export async function syncDdbHp(actor, { silent = false } = {}) {
   return syncDdbCharacter(actor, { syncSlots: false, syncHp: true, silent });
 }
 
+/**
+ * Parses a single campaign ID, campaign URL, or comma/whitespace-separated list into unique campaign IDs.
+ * @param {string|string[]} raw
+ * @returns {string[]}
+ */
+export function parseDdbCampaignIds(raw) {
+  const parts = Array.isArray(raw)
+    ? raw.map((item) => String(item ?? "").trim())
+    : String(raw ?? "").split(/[\s,;]+/);
+
+  const seen = new Set();
+  const ids = [];
+  for (const part of parts) {
+    if (!part) continue;
+    const urlMatch = part.match(/\/campaigns\/(\d+)/i);
+    const cleanId = urlMatch ? urlMatch[1] : part.trim();
+    if (cleanId && !seen.has(cleanId)) {
+      seen.add(cleanId);
+      ids.push(cleanId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Manages multiple DdbGameLogClient instances so the GM can listen to multiple campaigns simultaneously.
+ */
+export class DdbMultiCampaignManager {
+  constructor(options = {}) {
+    this.onRoll = options.onRoll || null;
+    this.createClient = options.createClient || ((opts) => new DdbGameLogClient(opts));
+    this.clients = new Map();
+    this.fallbackClient = this.createClient({ onRoll: this.onRoll });
+  }
+
+  async connect(config = {}) {
+    this.disconnect();
+
+    const rawCampaigns = config.campaignIds ?? config.campaignId;
+    const campaignIds = parseDdbCampaignIds(rawCampaigns);
+    if (!campaignIds.length || !String(config.token || "").trim()) {
+      return false;
+    }
+
+    let anyConnected = false;
+    for (const campaignId of campaignIds) {
+      const client = this.createClient({ onRoll: this.onRoll });
+      const ok = await client.connect({
+        campaignId,
+        userId: config.userId,
+        token: config.token,
+        proxyUrl: config.proxyUrl
+      });
+      if (ok) {
+        this.clients.set(campaignId, client);
+        anyConnected = true;
+      } else {
+        client.disconnect();
+      }
+    }
+    return anyConnected;
+  }
+
+  disconnect() {
+    for (const client of this.clients.values()) {
+      client.disconnect();
+    }
+    this.clients.clear();
+  }
+
+  handleRawMessage(rawData) {
+    const firstClient = this.clients.values().next().value || this.fallbackClient;
+    return firstClient.handleRawMessage(rawData);
+  }
+
+  getConnectedCampaignIds() {
+    return Array.from(this.clients.keys());
+  }
+}
+
 let activeClient = null;
 
 /**
  * Initializes the DDB Game Log listener on GM login and exposes testing helpers.
  */
 export function initDdbListener() {
-  activeClient = new DdbGameLogClient({
+  activeClient = new DdbMultiCampaignManager({
     onRoll: (parsedRoll) => {
       postDdbRollToFoundry(parsedRoll).catch((err) => {
         console.error(`[${MODULE_ID}] Failed to post DDB roll:`, err);
@@ -2391,6 +2471,7 @@ export function initDdbListener() {
       });
     },
     disconnect: () => activeClient.disconnect(),
+    getConnectedCampaigns: () => activeClient.getConnectedCampaignIds(),
     syncFromClipboard: async () => {
       if (!game.user?.isGM) return false;
       try {
@@ -2484,9 +2565,9 @@ export function initDdbListener() {
 
   Hooks.once("ready", () => {
     if (!game.user?.isGM) return;
-    const campaignId = game.settings.get(MODULE_ID, SETTINGS.DDB_CAMPAIGN_ID);
+    const campaignIds = parseDdbCampaignIds(game.settings.get(MODULE_ID, SETTINGS.DDB_CAMPAIGN_ID));
     const token = game.settings.get(MODULE_ID, SETTINGS.DDB_COBALT_TOKEN);
-    if (campaignId && token) {
+    if (campaignIds.length > 0 && token) {
       window.CustomRolls.ddb.connect();
     }
   });

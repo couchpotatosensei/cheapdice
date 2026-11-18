@@ -1,5 +1,6 @@
 import { MODULE_ID, SETTINGS, FLAGS } from "../src/constants.js";
 import { getButtonInfo, runHudButtonSlot } from "./token-hud.js";
+import { getActorSpellBonuses } from "./socket-handlers.js";
 import {
   getChatTextareaValue,
   writeToChatTextarea,
@@ -243,6 +244,7 @@ export function buildSpellConfigFromItem(item, actor) {
   let saveSuccess = "half";
   let damageDiceCount = 0;
   let damageDieSize = "d6";
+  let hasActivityCantripScaling = false;
   let damageType = "fire";
   let addAbilityModToValue = false;
   let flatDamageBonus = 0;
@@ -319,6 +321,13 @@ export function buildSpellConfigFromItem(item, actor) {
         if (typeof firstPart === "object" && (firstPart.number || firstPart.denomination || firstPart.formula)) {
           damageDiceCount = Number(firstPart.number) || 1;
           damageDieSize = firstPart.denomination ? `d${firstPart.denomination}` : "d6";
+          const rawScaleMode = firstPart.scaling?.mode;
+          const partScaleMode = (rawScaleMode instanceof Set
+            ? String(Array.from(rawScaleMode)[0] || "")
+            : (Array.isArray(rawScaleMode) ? String(rawScaleMode[0] || "") : String(rawScaleMode || ""))).toLowerCase();
+          if (partScaleMode === "whole" || Number(firstPart.scaling?.number) > 0) {
+            hasActivityCantripScaling = true;
+          }
           if (firstPart.types && firstPart.types.size > 0) {
             damageType = Array.from(firstPart.types)[0].toLowerCase();
           } else if (firstPart.types?.[0]) {
@@ -369,7 +378,8 @@ export function buildSpellConfigFromItem(item, actor) {
   }
 
   const isCantrip = Number(sys.level ?? 0) === 0;
-  let isCantripScale = isCantrip && sys.scaling?.mode === "cantrip";
+  const legacyScalingMode = String(sys.scaling?.mode ?? "").toLowerCase();
+  let isCantripScale = isCantrip && (legacyScalingMode === "cantrip" || hasActivityCantripScaling);
 
   let isMultiAttack = false;
   let attackCount = 1;
@@ -2269,9 +2279,10 @@ Click a numbered modifier badge to execute a roll.</div>
       const abilityMod = actor.system.abilities[cfg.spellAbility]?.mod || 0;
       const prof = actor.system.attributes.prof || 0;
       const atkMod = Number(cfg.attackModifier) || 0;
-      const totalAtk = abilityMod + prof + atkMod;
+      const { spellAttackBonus, spellSaveDC } = getActorSpellBonuses(actor, cfg.spellAbility);
+      const totalAtk = spellAttackBonus + atkMod;
       const atkSign = totalAtk >= 0 ? `+${totalAtk}` : `${totalAtk}`;
-      const spellDC = 8 + prof + abilityMod;
+      const spellDC = spellSaveDC;
 
       const isHealing = ["heal", "temp_hp", "max_hp"].includes(cfg.resolutionMethod);
       let effectiveFlat = Number(cfg.flatDamageBonus) || 0;
@@ -3425,9 +3436,10 @@ Click a numbered modifier badge to execute a roll.</div>
       const abilityMod = actor.system.abilities[cfg.spellAbility]?.mod || 0;
       const prof = actor.system.attributes.prof || 0;
       const atkMod = Number(cfg.attackModifier) || 0;
-      const totalAtk = abilityMod + prof + atkMod;
+      const { spellAttackBonus, spellSaveDC } = getActorSpellBonuses(actor, cfg.spellAbility);
+      const totalAtk = spellAttackBonus + atkMod;
       const atkSign = totalAtk >= 0 ? `+${totalAtk}` : `${totalAtk}`;
-      const spellDC = 8 + prof + abilityMod;
+      const spellDC = spellSaveDC;
 
       const isHealing = ["heal", "temp_hp", "max_hp"].includes(cfg.resolutionMethod);
       let effectiveFlat = Number(cfg.flatDamageBonus) || 0;
@@ -4200,12 +4212,10 @@ Click a numbered modifier badge to execute a roll.</div>
       const abilModDisplay = abilModVal !== null ? (abilModVal >= 0 ? `+${abilModVal}` : `${abilModVal}`) : "—";
       const abilFullDisplay = hasSpellcasting ? `${abilLabel} (${abilModDisplay})` : "—";
 
-      const rawAtk = sys.attributes?.spell?.attack;
-      const spellAtkVal = rawAtk !== undefined ? Number(rawAtk) : (hasSpellcasting ? (pb + (abilModVal ?? 0)) : null);
+      const spellBonuses = hasSpellcasting ? getActorSpellBonuses(actor, spellcastingAbility) : null;
+      const spellAtkVal = spellBonuses ? spellBonuses.spellAttackBonus : null;
       const spellAtkDisplay = spellAtkVal !== null ? (spellAtkVal >= 0 ? `+${spellAtkVal}` : `${spellAtkVal}`) : "—";
-
-      const rawDC = sys.attributes?.spell?.dc ?? sys.attributes?.spelldc;
-      const spellDCVal = rawDC !== undefined ? Number(rawDC) : (hasSpellcasting ? (8 + pb + (abilModVal ?? 0)) : null);
+      const spellDCVal = spellBonuses ? spellBonuses.spellSaveDC : null;
       const spellDCDisplay = spellDCVal !== null ? String(spellDCVal) : "—";
 
       return `
@@ -8178,12 +8188,12 @@ Click a numbered modifier badge to execute a roll.</div>
               damageDieSize = `d${match[2]}`;
             }
 
-            let weaponModifier = 0;
-            if (typeof sys.magicalBonus === "number" && sys.magicalBonus !== 0) {
-              weaponModifier = sys.magicalBonus;
-            } else if (typeof sys.attackBonus === "number" && sys.attackBonus !== 0) {
-              weaponModifier = sys.attackBonus;
-            }
+            const parseWeaponBonus = (val) => {
+              if (val === null || val === undefined || val === "") return 0;
+              const n = Number(String(val).trim());
+              return Number.isFinite(n) ? n : 0;
+            };
+            const weaponModifier = parseWeaponBonus(sys.magicalBonus) || parseWeaponBonus(sys.attackBonus);
 
             // Robust proficiency check across dnd5e versions (item.isProficient, sys.proficient, sys.prof?.hasProficiency)
             const isProf = Boolean(item.isProficient ?? sys.proficient ?? sys.prof?.hasProficiency ?? false);
@@ -9030,10 +9040,10 @@ Click a numbered modifier badge to execute a roll.</div>
           });
           const opts = keys.length
             ? keys.map((k) => {
-                const lvl = Number(spellMap[k]?.baseLevel) || 0;
-                const tag = lvl === 0 ? "C" : `L${lvl}`;
-                return `<option value="${foundry.utils.escapeHTML(k)}">[${tag}] ${foundry.utils.escapeHTML(k)}</option>`;
-              }).join("")
+              const lvl = Number(spellMap[k]?.baseLevel) || 0;
+              const tag = lvl === 0 ? "C" : `L${lvl}`;
+              return `<option value="${foundry.utils.escapeHTML(k)}">[${tag}] ${foundry.utils.escapeHTML(k)}</option>`;
+            }).join("")
             : `<option value="">(No Spells)</option>`;
 
           container.html(`
@@ -9595,52 +9605,283 @@ Click a numbered modifier badge to execute a roll.</div>
   // Dice Stuff User Guide Dialog
   window.CustomRolls.openDiceStuffGuide = function (actor) {
     const actorName = actor?.name || "your character";
+    const curTheme = localStorage.getItem("cheapdice_dice_stuff_theme") || "default";
     new Dialog({
       title: `Dice Stuff Guide (${actorName})`,
       content: `
-        <div class="dice-stuff-guide-container" style="max-height: 520px; overflow-y: auto; padding: 4px 8px; font-size: 0.88em; line-height: 1.45; color: #1e293b;">
-          <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
-            <h3 style="margin: 0 0 4px 0; font-size: 1.15em; color: #fff; border: none; font-weight: 700;">
+        <style>
+          .cheapdice-guide-dialog .window-content {
+            padding: 8px 10px;
+          }
+          .dice-stuff-guide-container {
+            max-height: 520px;
+            overflow-y: auto;
+            padding: 4px 8px;
+            font-size: 1.05em;
+            line-height: 1.45;
+            color: #1e293b;
+          }
+          .dice-stuff-guide-container .guide-hero {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: #fff;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+          }
+          .dice-stuff-guide-container .guide-hero h3 {
+            margin: 0 0 4px 0;
+            font-size: 1.15em;
+            color: #fff;
+            border: none;
+            font-weight: 700;
+          }
+          .dice-stuff-guide-container .guide-card {
+            margin-bottom: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px;
+            background: #f8fafc;
+          }
+          .dice-stuff-guide-container .guide-card:last-child {
+            margin-bottom: 6px;
+          }
+          .dice-stuff-guide-container .guide-card-title {
+            margin: 0 0 6px 0;
+            font-size: 0.95em;
+            color: #0f172a;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          }
+          .dice-stuff-guide-container .guide-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 4px;
+            font-size: 1em;
+          }
+          .dice-stuff-guide-container .guide-table tr.guide-table-row {
+            border-bottom: 1px solid #cbd5e1;
+          }
+          .dice-stuff-guide-container ul {
+            list-style-type: disc !important;
+            margin: 0;
+            padding-left: 18px;
+          }
+          .dice-stuff-guide-container ul ul {
+            list-style-type: circle !important;
+            margin-top: 4px;
+            padding-left: 18px;
+          }
+          .dice-stuff-guide-container li {
+            display: list-item !important;
+            margin-bottom: 3px;
+          }
+
+          /* --- Slate & Obsidian Theme Styling --- */
+          .cheapdice-theme-slate.cheapdice-guide-dialog {
+            background: #131722 !important;
+            border: 1px solid #334155 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .window-header {
+            background: #1e2536 !important;
+            border-bottom: 1px solid #334155 !important;
+            color: #f8fafc !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .window-content {
+            background: #131722 !important;
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .dice-stuff-guide-container {
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .guide-hero {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+            border: 1px solid #38bdf8 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .guide-card {
+            background: #1b212f !important;
+            border-color: #2e3b52 !important;
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .guide-card-title {
+            color: #f8fafc !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .guide-table tr.guide-table-row {
+            border-bottom-color: #2e3b52 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .dialog-buttons button {
+            background: #1b212f !important;
+            border: 1px solid #334155 !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-slate.cheapdice-guide-dialog .dialog-buttons button:hover {
+            border-color: #38bdf8 !important;
+            background: #252e42 !important;
+          }
+
+          /* --- Arcane Midnight Theme Styling --- */
+          .cheapdice-theme-arcane.cheapdice-guide-dialog {
+            background: #121216 !important;
+            border: 1px solid #78350f !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .window-header {
+            background: #1c1a21 !important;
+            border-bottom: 1px solid #78350f !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .window-content {
+            background: #121216 !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .dice-stuff-guide-container {
+            color: #d4cfc5 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .guide-hero {
+            background: linear-gradient(135deg, #451a03 0%, #1c1a21 100%) !important;
+            border: 1px solid #d97706 !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .guide-hero h3 {
+            color: #fbbf24 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .guide-card {
+            background: #1c1a21 !important;
+            border-color: #38312e !important;
+            color: #d4cfc5 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .guide-card-title {
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .guide-table tr.guide-table-row {
+            border-bottom-color: #38312e !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .dialog-buttons button {
+            background: #1c1a21 !important;
+            border: 1px solid #78350f !important;
+            color: #fef3c7 !important;
+          }
+          .cheapdice-theme-arcane.cheapdice-guide-dialog .dialog-buttons button:hover {
+            border-color: #fbbf24 !important;
+            background: #2b242c !important;
+          }
+
+          /* --- Tactical Glass Theme Styling --- */
+          .cheapdice-theme-glass.cheapdice-guide-dialog {
+            background: rgba(15, 23, 42, 0.9) !important;
+            border: 1px solid rgba(56, 189, 248, 0.4) !important;
+            backdrop-filter: blur(12px) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .window-header {
+            background: rgba(30, 41, 59, 0.75) !important;
+            border-bottom: 1px solid rgba(56, 189, 248, 0.3) !important;
+            color: #ffffff !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .window-content {
+            background: transparent !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .dice-stuff-guide-container {
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .guide-hero {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(30, 41, 59, 0.8) 100%) !important;
+            border: 1px solid rgba(56, 189, 248, 0.5) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .guide-card {
+            background: rgba(30, 41, 59, 0.7) !important;
+            border-color: rgba(255, 255, 255, 0.15) !important;
+            color: #cbd5e1 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .guide-card-title {
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .guide-table tr.guide-table-row {
+            border-bottom-color: rgba(255, 255, 255, 0.12) !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .dialog-buttons button {
+            background: rgba(30, 41, 59, 0.75) !important;
+            border: 1px solid rgba(56, 189, 248, 0.35) !important;
+            color: #f1f5f9 !important;
+          }
+          .cheapdice-theme-glass.cheapdice-guide-dialog .dialog-buttons button:hover {
+            border-color: rgba(56, 189, 248, 0.8) !important;
+            background: rgba(56, 189, 248, 0.25) !important;
+          }
+        </style>
+        <div class="dice-stuff-guide-container">
+          <div class="guide-hero">
+            <h3>
               <i class="fas fa-dice-d20" style="margin-right: 6px;"></i> This is Dice Stuff
             </h3>
-            <div style="font-size: 0.9em; opacity: 0.95;">Rather than a character sheet replacement, consider this a character sheet supplement that ideally serves as a one stop shop for rolling dice and other useful functions.</div>
+            <div style="font-size: 0.9em; opacity: 0.95;">Rather than a character sheet replacement, consider this a character sheet supplement that serves as a one stop shop for rolling dice and other useful functions.</div>
           </div>
 
-          <div style="margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
-            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
-              <i class="fas fa-sync-alt" style="color: #2563eb;"></i> Syncing with Character Sheet
+          <div class="guide-card">
+            <h4 class="guide-card-title">
+              <i class="fas fa-columns" style="color: #7c3aed;"></i> Window Layout &amp; Panes
             </h4>
-            <p style="margin: 0 0 6px 0;">Weapons, features, and prepared spells are automatically read from your character sheet.</p>
             <ul style="margin: 0; padding-left: 18px;">
-              <li><strong>Equipped Items:</strong> Weapons must be equipped on your character sheet to appear in the Weapons tab.</li>
-              <li><strong>Prepared Spells:</strong> Spells marked prepared (or cantrips / rituals) are pulled automatically.</li>
-              <li><strong>Sheet Changed?</strong> Click <i class="fas fa-sync-alt"></i> <strong>Refresh</strong> in the window header to instantly resynchronize with your sheet.</li>
+              <li><strong>Left Sidebar:</strong> Always-visible character vitals—HP, AC, Short/Long Rest, Initiative &amp; Concentration quick-rolls, Ability Scores &amp; Saves, and custom resource trackers (<em>Tracking Stuff</em>).</li>
+              <li><strong>Center Tabs:</strong> Switch between <strong>Skills &amp; Tools</strong>, <strong>Weapons</strong> (weapons &amp; custom attacks), and <strong>Spells</strong> (cantrips & prepared).</li>
+              <li><strong>Right Overview / Inspector:</strong> Context-sensitive panel for whatever is selected in the center pane—descriptions for Skills &amp; Tools, Attack &amp; Damage Overview (extra dice, bonuses, HUD assignment) for Weapons, or Spell Details, Upcasting &amp; Slot/Charge controls for Spells.</li>
             </ul>
           </div>
 
-          <div style="margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
-            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+          <div class="guide-card">
+            <h4 class="guide-card-title">
+              <i class="fas fa-arrow-rotate-right" style="color: #2563eb;"></i> Syncing with Character Sheet
+            </h4>
+            <p style="margin: 0 0 6px 0;">Weapons and prepared spells are NOT automatically read from your character sheet.</p>
+            <ul style="margin: 0; padding-left: 18px;">
+              <li><strong>Weapms:</strong> To appear in Dice Stuff, weapons from your Forge Character Sheet can be dragged and dropped into the Weapons Tab of Dice Stuff.</li>
+              <li><strong>Prepared Spells:</strong> Spells marked prepared (or cantrips) are pulled after clicking the <i class="fas fa-arrow-rotate-right"></i> <strong>Refresh</strong> button in the header.</li>
+              <li><strong>Sheet Changed?</strong> Click <i class="fas fa-arrow-rotate-right"></i> <strong>Refresh</strong> in the window header to instantly resynchronize with your sheet.</li>
+            </ul>
+          </div>
+
+          <!--
+          <div class="guide-card">
+            <h4 class="guide-card-title">
               <i class="fas fa-heart-pulse" style="color: #dc2626;"></i> Vitals, AC & Trackers
             </h4>
             <ul style="margin: 0; padding-left: 18px;">
               <li><strong>Hit Points:</strong> Click the HP bar or numbers to open the HP editor to apply damage, healing, or temp HP.</li>
               <li><strong>Armor Class:</strong> Displays current AC. Clicking opens the Armor Class configuration.</li>
               <li><strong>Spell Slots:</strong> Click circular slot pips to spend or restore available spell slots.</li>
-              <li><strong>D&amp;D Beyond Spell Slot Source:</strong> Toggle the Foundry / D&amp;D Beyond switch on the Spell Slots card to use D&amp;D Beyond as your source of truth. When active, Dice Stuff still rolls attack &amp; upcast damage math without deducting Foundry slots—track your slots directly on D&amp;D Beyond and click <em>Sync</em> anytime to pull your latest DDB slots.</li>
               <li><strong>Rests:</strong> Use <em>Short Rest</em> (spend Hit Dice) or <em>Long Rest</em> to reset HP and features cleanly.</li>
             </ul>
           </div>
+          -->
 
-          <div style="margin-bottom: 6px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #f8fafc;">
-            <h4 style="margin: 0 0 6px 0; font-size: 0.95em; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+          <div class="guide-card">
+            <h4 class="guide-card-title">
+              <i class="fa-brands fa-d-and-d-beyond" style="color: #e40712;"></i> D&amp;D Beyond Sync &amp; Bridge
+            </h4>
+            <ul style="margin: 0; padding-left: 18px;">
+              <li><strong>Character Link:</strong> If your character is in my D&D Beyond (DDB) Campaign and has been imported, your character is linked to the FoundryVTT (FVTT) game for some added functionality.</li>
+              <li><strong>Sync'd HP &amp; Spell Slots:</strong> Independently toggle <em>HP</em> (top of left sidebar) and <em>Spell Slots</em> (Spell Slots subtab) between <strong>Foundry</strong> and <strong>D&amp;D Beyond</strong>.
+                <ul>
+                  <li>When DDB is active, Dice Stuff's HP and Spell Slot tracker syncs from your DDB sheet (slight delay before Dice Stuff updates). You can click <em>Sync</em> anytime to pull your latest DDB values.</li>
+                  <li>When FVTT is active, Dice Stuff ignores your DDB Sheet and only syncs to FVTT's native character sheet.</li>
+                </ul>
+              </li>
+
+              <li><strong>DDB Rolls:</strong> Your rolls made on D&amp;D Beyond, either through their webapp or mobile app, appear directly in FoundryVTT chat similar to Beyond20 with other additional features.</li>
+            </ul>
+          </div>
+
+          <!--
+          <div class="guide-card">
+            <h4 class="guide-card-title">
               <i class="fas fa-mouse-pointer" style="color: #16a34a;"></i> Clicking & Rolling Shortcuts
             </h4>
-            <table style="width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 0.92em;">
-              <tr style="border-bottom: 1px solid #cbd5e1;">
+            <table class="guide-table">
+              <tr class="guide-table-row">
                 <td style="padding: 4px 6px; font-weight: 700; width: 35%;">Left-Click</td>
                 <td style="padding: 4px 6px;">Normal attack / damage roll or trigger action.</td>
               </tr>
-              <tr style="border-bottom: 1px solid #cbd5e1;">
+              <tr class="guide-table-row">
                 <td style="padding: 4px 6px; font-weight: 700;">Right-Click</td>
                 <td style="padding: 4px 6px;">Advantage / Disadvantage prompt or card options.</td>
               </tr>
@@ -9650,12 +9891,20 @@ Click a numbered modifier badge to execute a roll.</div>
               </tr>
             </table>
           </div>
+          -->
         </div>
       `,
       buttons: {
         close: { label: "Close" }
       },
-      default: "close"
+      default: "close",
+      render: (dlgHtml) => {
+        const dialogApp = dlgHtml.closest(".dialog");
+        dialogApp.addClass("cheapdice-guide-dialog");
+        if (curTheme && curTheme !== "default") {
+          dialogApp.addClass(`cheapdice-theme-${curTheme}`);
+        }
+      }
     }, { width: 440, height: "auto" }).render(true);
   };
 
@@ -9791,7 +10040,7 @@ Click a numbered modifier badge to execute a roll.</div>
             display: flex;
             flex-direction: column;
             gap: 8px;
-            font-size: 0.88em;
+            font-size: 1.05em;
           }
           .quickref-search-row {
             position: relative;
@@ -9881,7 +10130,7 @@ Click a numbered modifier badge to execute a roll.</div>
             border-left: 3px solid #2563eb;
             border-radius: 0 4px 4px 0;
             font-weight: 700;
-            font-size: 0.86em;
+            font-size: 1em;
             color: #1e293b;
             margin-bottom: 6px;
           }
@@ -9914,7 +10163,7 @@ Click a numbered modifier badge to execute a roll.</div>
           }
           .quickref-card-title {
             font-weight: 700;
-            font-size: 0.88em;
+            font-size: 0.95em;
             display: flex;
             align-items: center;
           }
@@ -9931,12 +10180,12 @@ Click a numbered modifier badge to execute a roll.</div>
             background: rgba(37, 99, 235, 0.08);
           }
           .quickref-desc {
-            font-size: 0.81em;
+            font-size: 1em;
             color: #475569;
-            line-height: 1.35;
+            line-height: 1.45;
           }
           .quickref-tag {
-            font-size: 0.74em;
+            font-size: 0.88em;
             font-weight: 600;
             color: #64748b;
             border-top: 1px dashed #e2e8f0;
