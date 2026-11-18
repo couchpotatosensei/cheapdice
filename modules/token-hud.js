@@ -575,6 +575,13 @@ export function initTokenHud() {
     const colMiddle = root.querySelector(".col.middle");
     if (!colLeft || !colRight || !colMiddle) return;
 
+    root.querySelectorAll(".gp-player-hud-item, .quick-hp-row").forEach((el) => el.remove());
+    const appendPlayerHudItem = (parent, el) => {
+      el.classList.add("gp-player-hud-item");
+      parent.appendChild(el);
+      return el;
+    };
+
     root.querySelector('.control-icon[data-action="target"]')?.remove();
 
     const d20Btn = makeButton(
@@ -585,7 +592,7 @@ export function initTokenHud() {
       },
       "32px"
     );
-    colLeft.appendChild(d20Btn);
+    appendPlayerHudItem(colLeft, d20Btn);
 
     const isRaised = Boolean(token.handRaised);
     const handBtn = makeButton(isRaised ? "Lower Hand" : "Raise Hand", "fas fa-hand-paper", async () => {
@@ -611,7 +618,7 @@ export function initTokenHud() {
       app.render();
     });
     if (isRaised) handBtn.classList.add("active");
-    colLeft.appendChild(handBtn);
+    appendPlayerHudItem(colLeft, handBtn);
 
     const measureBtn = makeButton("Measure Distance", "fas fa-ruler", (event) => {
       event.preventDefault();
@@ -647,7 +654,7 @@ export function initTokenHud() {
     if (ui.controls.tool?.name === "ruler") {
       measureBtn.classList.add("active");
     }
-    colLeft.appendChild(measureBtn);
+    appendPlayerHudItem(colLeft, measureBtn);
 
     // Spell Save DC for owned tokens
     const actorSystem = token.actor?.system;
@@ -803,16 +810,16 @@ export function initTokenHud() {
     leftFlyout.appendChild(makeButton("Hotbar Slot 3", "fas fa-dice-three", () => runHotbarSlot(3)));
 
     leftFlyoutWrapper.appendChild(leftFlyout);
-    colLeft.appendChild(leftFlyoutWrapper);
+    appendPlayerHudItem(colLeft, leftFlyoutWrapper);
 
     const b1 = getButtonInfo(token.actor, 1, 47);
     const b2 = getButtonInfo(token.actor, 2, 48);
     const b3 = getButtonInfo(token.actor, 3, 49);
     const b4 = getButtonInfo(token.actor, 4, 50);
 
-    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(token.actor, 1, 47, token)));
-    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(token.actor, 2, 48, token)));
-    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(token.actor, 3, 49, token)));
-    colRight.appendChild(makeButton(b4.title, b4.icon, () => runHudButtonSlot(token.actor, 4, 50, token)));
+    appendPlayerHudItem(colRight, makeButton(b1.title, b1.icon, () => runHudButtonSlot(token.actor, 1, 47, token)));
+    appendPlayerHudItem(colRight, makeButton(b2.title, b2.icon, () => runHudButtonSlot(token.actor, 2, 48, token)));
+    appendPlayerHudItem(colRight, makeButton(b3.title, b3.icon, () => runHudButtonSlot(token.actor, 3, 49, token)));
+    appendPlayerHudItem(colRight, makeButton(b4.title, b4.icon, () => runHudButtonSlot(token.actor, 4, 50, token)));
   });
 }
