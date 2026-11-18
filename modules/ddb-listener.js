@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { MODULE_ID, SETTINGS, FLAGS } from "../src/constants.js";
-import { getCardDispositionWrapper } from "./socket-handlers.js";
+import { getCardDispositionWrapper, injectD20IntoRoll, injectDiceIntoRoll } from "./socket-handlers.js";
 import { buildSpellConfigFromItem } from "./custom-rolls.js";
 
 const DDB_WS_BASE_URL = "wss://game-log-api-live.dndbeyond.com/v1";
@@ -1888,22 +1888,7 @@ export async function postDdbRollToFoundry(parsedRoll) {
       if (isSingleRoll) {
         // Single roll mode: Damage or Manual Dice Tray
         evaluatedRoll1 = await new Roll(parsedRoll.formula).evaluate();
-        let dieIndex = 0;
-        for (const term of evaluatedRoll1.terms || []) {
-          if (Array.isArray(term.results)) {
-            for (const res of term.results) {
-              if (parsedRoll.dice && parsedRoll.dice[dieIndex] !== undefined) {
-                const ddbDie = parsedRoll.dice[dieIndex];
-                res.result = Number(ddbDie.dieValue);
-                if (ddbDie.dropped !== undefined) {
-                  res.active = !ddbDie.dropped;
-                }
-                dieIndex++;
-              }
-            }
-          }
-        }
-        evaluatedRoll1._total = Number(parsedRoll.total);
+        injectDiceIntoRoll(evaluatedRoll1, parsedRoll.dice, Number(parsedRoll.total));
         finalRolls.push(evaluatedRoll1);
       } else {
         // D20 Test Mode (Attack, Check, Skill, Save, Initiative)
@@ -1917,24 +1902,12 @@ export async function postDdbRollToFoundry(parsedRoll) {
 
         // Primary roll (Box 1)
         evaluatedRoll1 = await new Roll(singleD20Formula).evaluate();
-        const d20Term1 = evaluatedRoll1.terms?.find(
-          (t) => t.faces === 20 || (typeof Die !== "undefined" && t instanceof Die)
-        );
-        if (d20Term1 && Array.isArray(d20Term1.results) && d20Term1.results.length > 0) {
-          d20Term1.results[0].result = d20_1;
-        }
-        evaluatedRoll1._total = total1;
+        injectD20IntoRoll(evaluatedRoll1, d20_1, total1);
         finalRolls.push(evaluatedRoll1);
 
         // Companion roll (Box 2: +/- Adv)
         evaluatedRoll2 = await new Roll(singleD20Formula).evaluate();
-        const d20Term2 = evaluatedRoll2.terms?.find(
-          (t) => t.faces === 20 || (typeof Die !== "undefined" && t instanceof Die)
-        );
-        if (d20Term2 && Array.isArray(d20Term2.results) && d20Term2.results.length > 0) {
-          d20Term2.results[0].result = d20_2;
-        }
-        evaluatedRoll2._total = total2;
+        injectD20IntoRoll(evaluatedRoll2, d20_2, total2);
         finalRolls.push(evaluatedRoll2);
       }
     }

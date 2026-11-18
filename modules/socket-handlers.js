@@ -14,6 +14,56 @@ function getSetting(key, fallback = true) {
   return fallback;
 }
 
+/**
+ * Injects an exact d20 face value into an evaluated Foundry Roll without mutating frozen result entries.
+ * @param {object} roll
+ * @param {number} d20Value
+ * @param {number|null} [totalOverride]
+ * @returns {number|null}
+ */
+export function injectD20IntoRoll(roll, d20Value, totalOverride = null) {
+  const inj = Number(d20Value);
+  if (!roll || !Number.isFinite(inj) || inj < 1 || inj > 20) return null;
+  const d20Term = roll.terms?.find((t) => t.faces === 20 || (typeof Die !== "undefined" && t instanceof Die)) || roll.dice?.[0];
+  if (!d20Term || !Array.isArray(d20Term.results) || d20Term.results.length === 0) return null;
+  const origVal = Number(d20Term.results[0]?.result ?? roll.total ?? 0);
+  d20Term.results = [{ result: inj, active: true }];
+  d20Term._evaluated = true;
+  roll._total = totalOverride !== null && Number.isFinite(Number(totalOverride))
+    ? Number(totalOverride)
+    : Number(roll.total ?? 0) + (inj - origVal);
+  roll._evaluated = true;
+  return inj;
+}
+
+/**
+ * Injects exact DDB die face values into an evaluated Foundry Roll's dice terms.
+ * @param {object} roll
+ * @param {Array<object|number>} ddbDice
+ * @param {number|null} [totalOverride]
+ */
+export function injectDiceIntoRoll(roll, ddbDice, totalOverride = null) {
+  if (!roll || !Array.isArray(ddbDice) || ddbDice.length === 0) return;
+  let dieIdx = 0;
+  for (const term of roll.terms || []) {
+    if (!Array.isArray(term.results)) continue;
+    term.results = term.results.map((res) => {
+      if (ddbDice[dieIdx] === undefined) return res;
+      const ddbDie = ddbDice[dieIdx++];
+      return {
+        ...res,
+        result: Number(ddbDie.dieValue ?? ddbDie),
+        active: ddbDie.dropped !== undefined ? !ddbDie.dropped : (res.active ?? true)
+      };
+    });
+    term._evaluated = true;
+  }
+  if (totalOverride !== null && Number.isFinite(Number(totalOverride))) {
+    roll._total = Number(totalOverride);
+  }
+  roll._evaluated = true;
+}
+
 // --- Helper: Chat Card Disposition & Player Border Outline Wrapper ---
 export function getCardDispositionWrapper(actor, token, userId, innerHtml) {
   if (typeof game === "undefined") return innerHtml;
@@ -301,13 +351,9 @@ function registerSocketHandlers() {
       let val1 = Number(d20Term1?.results?.[0]?.result ?? roll1.total);
       let rerollSummary1 = null;
 
-      const hasInjected1 = Number.isFinite(Number(config.injectedD20_1)) && Number(config.injectedD20_1) >= 1 && Number(config.injectedD20_1) <= 20;
-      if (hasInjected1 && d20Term1?.results?.[0]) {
-        const inj1 = Number(config.injectedD20_1);
-        const diff = inj1 - val1;
-        d20Term1.results[0].result = inj1;
-        val1 = inj1;
-        roll1._total = Number(roll1.total) + diff;
+      const injectedVal1 = injectD20IntoRoll(roll1, config.injectedD20_1);
+      if (injectedVal1 !== null) {
+        val1 = injectedVal1;
       } else if (isLucky && val1 <= luckyThreshold) {
         let reroll1 = await new Roll(`1d20 ${atkSuffix}`).evaluate();
         let rerolledTerm1 = reroll1.terms.find(t => t.faces === 20) || reroll1.dice[0];
@@ -334,12 +380,8 @@ function registerSocketHandlers() {
 
       const hasInjected2 = Number.isFinite(Number(config.injectedD20_2)) && Number(config.injectedD20_2) >= 1 && Number(config.injectedD20_2) <= 20;
       if (hasInjected2) {
-        const inj2 = Number(config.injectedD20_2);
         const injRoll2 = await new Roll("1d20").evaluate();
-        if (injRoll2.terms[0]?.results?.[0]) {
-          injRoll2.terms[0].results[0].result = inj2;
-        }
-        injRoll2._total = inj2;
+        const inj2 = injectD20IntoRoll(injRoll2, config.injectedD20_2, Number(config.injectedD20_2)) ?? Number(config.injectedD20_2);
         slot2D20 = { val: inj2, roll: injRoll2, rerollSummary: null };
         extraRolls.push(slot2D20.roll);
       } else if (isSuperAdv) {
@@ -1477,22 +1519,7 @@ function registerSocketHandlers() {
 
       const rollObj = await new Roll(healFormula).evaluate();
       if (Array.isArray(config.injectedDamageDice) && config.injectedDamageDice.length > 0) {
-        let dieIdx = 0;
-        for (const term of rollObj.terms || []) {
-          if (Array.isArray(term.results)) {
-            for (const res of term.results) {
-              if (config.injectedDamageDice[dieIdx] !== undefined) {
-                const ddbDie = config.injectedDamageDice[dieIdx];
-                res.result = Number(ddbDie.dieValue ?? ddbDie);
-                if (ddbDie.dropped !== undefined) res.active = !ddbDie.dropped;
-                dieIdx++;
-              }
-            }
-          }
-        }
-        if (Number.isFinite(Number(config.injectedDamageTotal))) {
-          rollObj._total = Number(config.injectedDamageTotal);
-        }
+        injectDiceIntoRoll(rollObj, config.injectedDamageDice, config.injectedDamageTotal ?? null);
       }
       const totalValue = rollObj.total;
       const rollRender = await rollObj.render();
@@ -1765,25 +1792,15 @@ function registerSocketHandlers() {
       for (let i = 1; i <= numAttacks; i++) {
         const atkRoll = await new Roll(attackFormula, actor.system).evaluate();
         if (i === 1 && Number.isFinite(Number(config.injectedD20_1))) {
-          const inj1 = Number(config.injectedD20_1);
-          const d20Term1 = atkRoll.terms.find(t => t.faces === 20) || atkRoll.dice[0];
-          if (inj1 >= 1 && inj1 <= 20 && d20Term1?.results?.[0]) {
-            const origVal = Number(d20Term1.results[0].result ?? atkRoll.total);
-            d20Term1.results[0].result = inj1;
-            atkRoll._total = Number(atkRoll.total) + (inj1 - origVal);
-          }
+          injectD20IntoRoll(atkRoll, config.injectedD20_1);
         }
 
         // Roll second d20 candidate reusing evaluated modifier terms from atkRoll (so 1d4+2 is only rolled once)
         let slot2D20Val = 0;
         let slot2D20Term = null;
         if (i === 1 && Number.isFinite(Number(config.injectedD20_2)) && Number(config.injectedD20_2) >= 1 && Number(config.injectedD20_2) <= 20) {
-          const inj2 = Number(config.injectedD20_2);
           const d20Roll = await new Roll("1d20").evaluate();
-          if (d20Roll.terms[0]?.results?.[0]) {
-            d20Roll.terms[0].results[0].result = inj2;
-          }
-          d20Roll._total = inj2;
+          const inj2 = injectD20IntoRoll(d20Roll, config.injectedD20_2, Number(config.injectedD20_2)) ?? Number(config.injectedD20_2);
           slot2D20Val = inj2;
           slot2D20Term = d20Roll.terms[0];
         } else if (superAdv) {
@@ -1974,22 +1991,7 @@ function registerSocketHandlers() {
 
     const damageRoll = await new Roll(fullDamageFormula).evaluate();
     if (Array.isArray(config.injectedDamageDice) && config.injectedDamageDice.length > 0) {
-      let dieIdx = 0;
-      for (const term of damageRoll.terms || []) {
-        if (Array.isArray(term.results)) {
-          for (const res of term.results) {
-            if (config.injectedDamageDice[dieIdx] !== undefined) {
-              const ddbDie = config.injectedDamageDice[dieIdx];
-              res.result = Number(ddbDie.dieValue ?? ddbDie);
-              if (ddbDie.dropped !== undefined) res.active = !ddbDie.dropped;
-              dieIdx++;
-            }
-          }
-        }
-      }
-      if (Number.isFinite(Number(config.injectedDamageTotal))) {
-        damageRoll._total = Number(config.injectedDamageTotal);
-      }
+      injectDiceIntoRoll(damageRoll, config.injectedDamageDice, config.injectedDamageTotal ?? null);
     }
     const normalDamageTotal = damageRoll.total;
     const damageRollHtml = await damageRoll.render();
