@@ -1823,6 +1823,9 @@ export async function postDdbRollToFoundry(parsedRoll) {
           resolvedCastLevel = await promptDdbAttackCastLevel(actor, hijackConfig, baseLevel);
         }
         hijackConfig.castLevel = resolvedCastLevel;
+        if (resolvedCastLevel > baseLevel) {
+          delete hijackConfig.effectiveAttacks;
+        }
         if (
           (parsedRoll.rollType === "damage" || parsedRoll.rollType === "heal")
           && resolvedCastLevel > baseLevel

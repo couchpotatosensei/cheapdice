@@ -1720,7 +1720,7 @@ function registerSocketHandlers() {
       const extraLvls = (baseLvl > 0 && slotLvl > baseLvl) ? (slotLvl - baseLvl) : 0;
       let numAttacks = 1;
       if (effIsMulti) {
-        if (Number(effectiveAttacks) > 0) {
+        if (Number(effectiveAttacks) > 0 && !(config.isDdbHijacked && extraLvls > 0 && effUpcastAtk > 0)) {
           numAttacks = Number(effectiveAttacks);
         } else if (effCantripAtkScale && baseLvl === 0) {
           const charLvl = actor.system.details?.level ?? 1;
