@@ -1723,7 +1723,9 @@ export async function postDdbRollToFoundry(parsedRoll) {
   const isAttackCrit = parsedRoll.rollType === "attack" && (Boolean(parsedRoll.isCrit) || d20_1 === 20 || d20_2 === 20);
 
   // Hijack DDB attack, spell, heal, and save-spell damage rolls into Dice Stuff's full execution engine if a matching config or quick macro exists
-  if ((parsedRoll.rollType === "attack" || parsedRoll.rollType === "spell" || parsedRoll.rollType === "damage" || parsedRoll.rollType === "heal") && actor && cleanAction && typeof globalThis !== "undefined" && globalThis.attackSocket) {
+  const activeSocket = (typeof game !== "undefined" && game.modules?.get?.(MODULE_ID)?.api?.socket)
+    || (typeof globalThis !== "undefined" ? globalThis.attackSocket : null);
+  if ((parsedRoll.rollType === "attack" || parsedRoll.rollType === "spell" || parsedRoll.rollType === "damage" || parsedRoll.rollType === "heal") && actor && cleanAction && activeSocket) {
     const quickMacroProfiles = (typeof window !== "undefined" && window.CustomRolls?.getProfileData?.(actor, "quickMacroProfiles"))
       || actor?.getFlag?.("world", "quickMacroProfiles")
       || {};
@@ -1872,7 +1874,7 @@ export async function postDdbRollToFoundry(parsedRoll) {
       }
 
       console.log(`[${MODULE_ID}] Hijacking DDB attack "${parsedRoll.actionName}" -> ${handlerName} (d20: ${d20_1}${hijackConfig.injectedD20_2 ? `, ${hijackConfig.injectedD20_2}` : ""})`);
-      await globalThis.attackSocket.executeAsGM(handlerName, hijackConfig, actor.id, rollUserId);
+      await activeSocket.executeAsGM(handlerName, hijackConfig, actor.id, rollUserId);
       return { hijacked: true, handler: handlerName, actorId: actor.id, actionName: parsedRoll.actionName };
     }
   }

@@ -132,7 +132,8 @@ export function getCardDispositionWrapper(actor, token, userId, innerHtml) {
 
 function registerSocketHandlers() {
   if (!getSetting("featureSocketHandlers")) return;
-  if (globalThis.attackSocket) return;
+  const ownMod = typeof game !== "undefined" ? game.modules?.get(MODULE_ID) : null;
+  if (ownMod?.api?.socket) return;
   let socket = null;
   if (typeof socketlib.registerModule === "function") {
     socket = socketlib.registerModule(MODULE_ID) || socketlib.registerModule("cheapdice");
@@ -147,7 +148,7 @@ function registerSocketHandlers() {
   globalThis.attackSocket = socket;
 
   // Expose socket on module public API
-  const mod = game.modules.get(MODULE_ID) || game.modules.get("cheapdice");
+  const mod = ownMod || (typeof game !== "undefined" ? game.modules?.get("cheapdice") : null);
   if (mod) {
     mod.api = mod.api || {};
     mod.api.socket = socket;
@@ -3417,7 +3418,7 @@ export function initSockets() {
   };
 
   Hooks.once("socketlib.ready", () => {
-    if (!globalThis.attackSocket) registerSocketHandlers();
+    if (!game.modules?.get(MODULE_ID)?.api?.socket) registerSocketHandlers();
   });
 
   if (game.ready) {
@@ -3425,7 +3426,7 @@ export function initSockets() {
   } else {
     Hooks.once("setup", runSocketInit);
     Hooks.once("ready", () => {
-      if (!globalThis.attackSocket) runSocketInit();
+      if (!game.modules?.get(MODULE_ID)?.api?.socket) runSocketInit();
     });
   }
 

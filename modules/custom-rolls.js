@@ -4265,11 +4265,11 @@ Click a numbered modifier badge to execute a roll.</div>
 
       const isAvailMode = spellSlotDisplayMode === "available";
       const isDdbSlotLinked = Boolean(actor?.getFlag?.(MODULE_ID, FLAGS.DDB_SPELL_SLOTS_ENABLED));
-      const ddbLogoSvg = `<svg viewBox="0 0 24 24" width="17" height="17" style="display:inline-block; vertical-align:middle;" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#e40712"/><text x="12" y="17" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-weight="900" font-size="16">&amp;</text></svg>`;
+      const ddbLogoIcon = `<i class="fa-brands fa-d-and-d-beyond" style="font-size: 20px; color: #e40712; line-height: 1; display: inline-block; vertical-align: middle;" aria-hidden="true"></i>`;
       const sourceSwitchHtml = `
         <div style="display: inline-flex; align-items: center; gap: 4px;" title="${isDdbSlotLinked ? 'Source: D&D Beyond (click to switch to Foundry)' : 'Source: Foundry Sheet (click to switch to D&D Beyond)'}">
           <span style="display: inline-flex; align-items: center; opacity: ${isDdbSlotLinked ? '0.35' : '1'}; filter: ${isDdbSlotLinked ? 'grayscale(1)' : 'none'}; transition: opacity 0.15s;" title="Foundry VTT Sheet">
-            <img src="icons/vtt.png" alt="Foundry" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" style="width: 17px; height: 17px; object-fit: contain;" />
+            <img src="icons/vtt.png" alt="Foundry" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" style="width: 20px; height: 20px; object-fit: contain;" />
             <i class="fas fa-fire" style="display: none; font-size: 1.05em; color: #d97706;"></i>
           </span>
           <label style="position: relative; display: inline-block; width: 26px; height: 14px; margin: 0; cursor: pointer;">
@@ -4278,7 +4278,7 @@ Click a numbered modifier badge to execute a roll.</div>
             <span style="position: absolute; top: 2px; left: ${isDdbSlotLinked ? '14px' : '2px'}; width: 10px; height: 10px; background: #fff; border-radius: 50%; transition: left 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.25);"></span>
           </label>
           <span style="display: inline-flex; align-items: center; opacity: ${isDdbSlotLinked ? '1' : '0.35'}; filter: ${isDdbSlotLinked ? 'none' : 'grayscale(1)'}; transition: opacity 0.15s;" title="D&amp;D Beyond Sheet">
-            ${ddbLogoSvg}
+            ${ddbLogoIcon}
           </span>
         </div>
       `;
@@ -4500,7 +4500,7 @@ Click a numbered modifier badge to execute a roll.</div>
     let compactTab = localStorage.getItem(COMPACT_TAB_STORAGE_KEY) || "abilities";
 
     const isDdbHpLinked = Boolean(actor?.getFlag?.(MODULE_ID, FLAGS.DDB_HP_ENABLED));
-    const ddbHpLogoSvg = `<svg viewBox="0 0 24 24" width="17" height="17" style="display:inline-block; vertical-align:middle;" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#e40712"/><text x="12" y="17" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-weight="900" font-size="16">&amp;</text></svg>`;
+    const ddbHpLogoIcon = `<i class="fa-brands fa-d-and-d-beyond" style="font-size: 20px; color: #e40712; line-height: 1; display: inline-block; vertical-align: middle;" aria-hidden="true"></i>`;
     const vitalsSourceHeaderHtml = `
       <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; gap: 4px;">
         <span style="font-weight: 700; font-size: 0.72em; color: #4b5d88; letter-spacing: 0.3px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;" title="${actor.name}">
@@ -4509,7 +4509,7 @@ Click a numbered modifier badge to execute a roll.</div>
         <div style="display: inline-flex; align-items: center; gap: 4px;">
           <div id="ddb-hp-source-wrap" style="display: inline-flex; align-items: center; gap: 4px;" title="${isDdbHpLinked ? 'HP Source: D&D Beyond (click to switch to Foundry)' : 'HP Source: Foundry Sheet (click to switch to D&D Beyond)'}">
             <span id="ddb-hp-fvtt-icon" style="display: inline-flex; align-items: center; opacity: ${isDdbHpLinked ? '0.35' : '1'}; filter: ${isDdbHpLinked ? 'grayscale(1)' : 'none'}; transition: opacity 0.15s;" title="Foundry VTT Sheet">
-              <img src="icons/vtt.png" alt="Foundry" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" style="width: 17px; height: 17px; object-fit: contain;" />
+              <img src="icons/vtt.png" alt="Foundry" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" style="width: 20px; height: 20px; object-fit: contain;" />
               <i class="fas fa-fire" style="display: none; font-size: 1.05em; color: #d97706;"></i>
             </span>
             <label style="position: relative; display: inline-block; width: 26px; height: 14px; margin: 0; cursor: pointer;">
@@ -4518,7 +4518,7 @@ Click a numbered modifier badge to execute a roll.</div>
               <span id="ddb-hp-switch-knob" style="position: absolute; top: 2px; left: ${isDdbHpLinked ? '14px' : '2px'}; width: 10px; height: 10px; background: #fff; border-radius: 50%; transition: left 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.25);"></span>
             </label>
             <span id="ddb-hp-ddb-icon" style="display: inline-flex; align-items: center; opacity: ${isDdbHpLinked ? '1' : '0.35'}; filter: ${isDdbHpLinked ? 'none' : 'grayscale(1)'}; transition: opacity 0.15s;" title="D&amp;D Beyond Sheet">
-              ${ddbHpLogoSvg}
+              ${ddbHpLogoIcon}
             </span>
           </div>
           <button type="button" id="btn-sync-ddb-hp" ${isDdbHpLinked ? '' : 'disabled'} title="${isDdbHpLinked ? 'Sync HP from D&D Beyond' : 'Switch to D&D Beyond to enable Sync'}" style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 19px; padding: 0; font-size: 0.72em; border-radius: 3px; border: 1px solid ${isDdbHpLinked ? '#e40712' : '#bcc5d3'}; background: ${isDdbHpLinked ? '#fff' : '#f1f5f9'}; color: ${isDdbHpLinked ? '#e40712' : '#94a3b8'}; cursor: ${isDdbHpLinked ? 'pointer' : 'not-allowed'}; opacity: ${isDdbHpLinked ? '1' : '0.45'}; line-height: 17px; flex-shrink: 0;">
@@ -6697,7 +6697,7 @@ Click a numbered modifier badge to execute a roll.</div>
         if (header.find(".dice-stuff-refresh-btn").length === 0) {
           refreshBtnElem = $(`
             <a class="header-button dice-stuff-refresh-btn" title="Refresh Dice Stuff" style="cursor: pointer; margin-right: 4px;">
-              <i class="fas fa-sync-alt"></i> <span class="refresh-label-text">Refresh</span>
+              <i class="fas fa-arrow-rotate-right"></i> <span class="refresh-label-text">Refresh</span>
             </a>
           `);
           refreshBtnElem[0].onclick = () => { };
