@@ -2,7 +2,11 @@
 // CHEAP DICE: CONSTANTS & ENUMS
 // =============================================================================
 
-export const MODULE_ID = "growingpotatoes";
+const _detectedModuleId = typeof import.meta?.url === "string"
+  ? (import.meta.url.match(/\/modules\/([^/]+)\//)?.[1] ?? null)
+  : null;
+
+export const MODULE_ID = _detectedModuleId || "cheapdice";
 
 export const FLAGS = Object.freeze({
   SHOW_AC: "showAC",
