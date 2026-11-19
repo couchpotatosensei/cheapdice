@@ -9,7 +9,10 @@ export const FLAGS = Object.freeze({
   HUD_ASSIGNED_SLOTS: "hudAssignedSlots",
   SPELL_CONFIGS: "spellConfigs",
   ATTACK_CONFIGS: "attackConfigs",
-  D20_PROFILES: "d20ProfilesV2"
+  D20_PROFILES: "d20ProfilesV2",
+  DDB_SPELL_SLOTS_ENABLED: "ddbSpellSlotsEnabled",
+  DDB_HP_ENABLED: "ddbHpEnabled",
+  DDB_CHARACTER_URL: "ddbCharacterUrl"
 });
 
 export const SETTINGS = Object.freeze({
@@ -27,6 +30,14 @@ export const SETTINGS = Object.freeze({
     CORE_SETTINGS_ENFORCER: "coreSettingsEnforcer",
     APPLY_CUSTOM_KEYBINDINGS: "applyCustomKeybindings",
     CHAT_CONTROLS: "featureChatControls",
-    DICE_TRAY: "featureDiceTrayCopycat"
-  })
+    DICE_TRAY: "featureDiceTrayCopycat",
+    DDB_LISTENER: "featureDdbListener"
+  }),
+  DDB_CAMPAIGN_ID: "ddbCampaignId",
+  DDB_USER_ID: "ddbUserId",
+  DDB_COBALT_TOKEN: "ddbCobaltToken",
+  DDB_COBALT_COOKIE: "ddbCobaltCookie",
+  DDB_PROXY_URL: "ddbProxyUrl",
+  DDB_AUTO_DAMAGE: "ddbAutoDamage",
+  DDB_REQUIRE_DDB_IMPORTER: "ddbRequireDdbImporter"
 });

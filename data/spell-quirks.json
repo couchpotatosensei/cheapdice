@@ -1,0 +1,75 @@
+{
+  "scorching ray": {
+    "isMultiAttack": true,
+    "attackCount": 3,
+    "upcastAttacks": 1,
+    "upcastMode": "extra_projectiles",
+    "projectileLabel": "Ray",
+    "ddbDicePerUnit": 2,
+    "executionMode": "custom",
+    "aliases": ["Scorching Ray (2024)", "Scorching Ray - Ray"]
+  },
+  "jim's magic missile": {
+    "isMultiAttack": true,
+    "attackCount": 3,
+    "upcastAttacks": 1,
+    "upcastMode": "extra_projectiles",
+    "projectileLabel": "Missile",
+    "ddbDicePerUnit": 2,
+    "executionMode": "custom"
+  },
+  "steel wind strike": {
+    "isMultiAttack": true,
+    "attackCount": 5,
+    "upcastAttacks": 0,
+    "upcastMode": "none",
+    "projectileLabel": "Strike",
+    "executionMode": "custom"
+  },
+  "eldritch blast": {
+    "isMultiAttack": true,
+    "attackCount": 1,
+    "cantripAttackScaling": true,
+    "isCantripScale": false,
+    "upcastMode": "cantrip_beams",
+    "projectileLabel": "Beam",
+    "ddbDicePerUnit": 1,
+    "executionMode": "custom"
+  },
+  "magic missile": {
+    "isMultiAttack": true,
+    "projectileCount": 3,
+    "upcastProjectiles": 1,
+    "upcastMode": "extra_projectiles",
+    "projectileLabel": "Dart",
+    "autoHit": true,
+    "ddbDicePerUnit": 1,
+    "executionMode": "custom"
+  },
+  "chaos bolt": {
+    "chaosJump": true,
+    "bounceOnDoubles": true,
+    "upcastMode": "extra_dice",
+    "executionMode": "custom"
+  },
+  "chromatic orb": {
+    "upcastMode": "extra_dice",
+    "damageTypeChoices": ["acid", "cold", "fire", "lightning", "poison", "thunder"],
+    "executionMode": "custom"
+  },
+  "toll the dead": {
+    "upcastMode": "extra_dice",
+    "conditionalDie": { "label": "Target Missing HP", "die": "d12" },
+    "executionMode": "custom"
+  },
+  "ice knife": {
+    "upcastMode": "extra_dice",
+    "executionMode": "custom",
+    "rider": {
+      "saveAbility": "dex",
+      "saveSuccess": "none",
+      "formula": "2d6",
+      "damageType": "cold"
+    }
+  }
+}

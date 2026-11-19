@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { buildSpellConfigFromItem, isSpellPrepared, syncSpellsWithSheet } from '../modules/custom-rolls.js';
 import { formatChatMessageWithMode, toggleChatMode, getActiveChatMode, setActiveChatMode, wrapChatLogProcessMessage, handleChatMessageHook } from '../modules/chat-controls.js';
 import {
@@ -147,6 +150,73 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(hwCfg.resolutionMethod, "heal");
     assert.equal(hwCfg.damageDiceCount, 1);
     assert.equal(hwCfg.damageDieSize, "d4");
+
+    // 4. Real dnd5e v3/v4/v5+ Heal activity (direct object without healing.parts)
+    const modernCureWounds = {
+      id: "spellCW",
+      name: "Cure Wounds",
+      type: "spell",
+      system: {
+        level: 1,
+        activities: new Map([
+          ["actCW", {
+            type: "heal",
+            healing: {
+              number: 2,
+              denomination: 8,
+              bonus: "@mod",
+              types: new Set(["healing"])
+            }
+          }]
+        ])
+      }
+    };
+    const cwCfg = buildSpellConfigFromItem(modernCureWounds, mockActor);
+    assert.equal(cwCfg.resolutionMethod, "heal");
+    assert.equal(cwCfg.damageDiceCount, 2);
+    assert.equal(cwCfg.damageDieSize, "d8");
+    assert.equal(cwCfg.addAbilityModToValue, true);
+  });
+
+  it('buildSpellConfigFromItem gates fixedSaveDC to item, feat, feature, and innate/atwill spells', () => {
+    const wandFireball = {
+      id: "wand_fb_1",
+      name: "Fireball",
+      type: "spell",
+      flags: { dnd5e: { cachedFor: ".Item.wand123.Activity.act1" } },
+      system: {
+        level: 3,
+        method: "innate",
+        activities: new Map([
+          ["act1", {
+            type: "save",
+            save: { ability: new Set(["dex"]), scaling: "half", dc: { calculation: "flat", formula: "15" } },
+            damage: { parts: [{ number: 8, denomination: 6, types: new Set(["fire"]) }] }
+          }]
+        ])
+      }
+    };
+    const wandCfg = buildSpellConfigFromItem(wandFireball, mockActor);
+    assert.equal(wandCfg.fixedSaveDC, 15, "Item-sourced spell with flat DC must preserve fixedSaveDC");
+
+    const normalPrepared = {
+      id: "prep_fb_1",
+      name: "Fireball",
+      type: "spell",
+      system: {
+        level: 3,
+        preparation: { mode: "prepared", prepared: true },
+        activities: new Map([
+          ["act1", {
+            type: "save",
+            save: { ability: new Set(["dex"]), scaling: "half", dc: { calculation: "flat", formula: "15" } },
+            damage: { parts: [{ number: 8, denomination: 6, types: new Set(["fire"]) }] }
+          }]
+        ])
+      }
+    };
+    const prepCfg = buildSpellConfigFromItem(normalPrepared, mockActor);
+    assert.equal(prepCfg.fixedSaveDC, null, "Normal prepared spell must ignore flat DC and use caster Spell Save DC");
   });
 
   it('isSpellPrepared recognizes cantrips, prepared spells, and wizard rituals', () => {
@@ -1155,6 +1225,28 @@ describe('UI Render Safety & Spell Parser Test Suite', () => {
     assert.equal(testPattern.test("`.other, #chat { display: block !important; }`"), true);
     assert.equal(testPattern.test("`#chat.active { display: flex !important; }`"), false);
     assert.equal(testPattern.test("`.chat-popout #chat { display: flex !important; }`"), false);
+  });
+
+  it("Syntax check: all module entry points (main.js, src/*.js, modules/*.js) parse cleanly", () => {
+    const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const filesToCheck = [path.join(rootDir, 'main.js')];
+
+    for (const dir of ['src', 'modules']) {
+      const fullDir = path.join(rootDir, dir);
+      if (!fs.existsSync(fullDir)) continue;
+      for (const entry of fs.readdirSync(fullDir)) {
+        if (entry.endsWith('.js') || entry.endsWith('.mjs')) {
+          filesToCheck.push(path.join(fullDir, entry));
+        }
+      }
+    }
+
+    for (const file of filesToCheck) {
+      assert.doesNotThrow(
+        () => execFileSync(process.execPath, ['--check', file], { stdio: 'pipe' }),
+        `Syntax error in ${path.relative(rootDir, file)}`
+      );
+    }
   });
 });
 

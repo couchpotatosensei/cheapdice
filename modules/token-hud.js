@@ -1,4 +1,5 @@
 import { renderTokenAcBadge } from "./token-ac.js";
+import { postStatCard } from "./stat-card.js";
 import { MODULE_ID, SETTINGS } from "../src/constants.js";
 
 function getSetting(key, fallback = true) {
@@ -11,7 +12,32 @@ function getSetting(key, fallback = true) {
   return fallback;
 }
 
-export function getButtonInfo(actor, btnNum, slotIdx) {
+function getPlayerOwner(actor) {
+  if (!actor || !game.users) return null;
+  const ownerLevel = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  return game.users.find(u => !u.isGM && (
+    actor.testUserPermission?.(u, "OWNER") ||
+    actor.ownership?.[u.id] === ownerLevel
+  )) || null;
+}
+
+export function getButtonInfo(actor, btnNum, slotIdx, { previewAsPlayer = false } = {}) {
+  // If DM is previewing Player View, check the token owner's hotbar slot
+  if (previewAsPlayer) {
+    const owner = getPlayerOwner(actor);
+    const ownerMacroId = owner?.hotbar?.[slotIdx];
+    if (ownerMacroId) {
+      const ownerMacro = game.macros?.get(ownerMacroId);
+      const macroSuffix = ownerMacro?.name ? ` (${ownerMacro.name})` : "";
+      return {
+        title: `Owner has this button assigned to a macro${macroSuffix}`,
+        icon: `fas fa-square-${btnNum}`,
+        name: ownerMacro?.name || `Hotbar ${slotIdx}`,
+        type: "Macro"
+      };
+    }
+  }
+
   // If not GM, prioritize player's hotbar slot macro
   if (!game.user?.isGM) {
     const macroId = game.user?.hotbar?.[slotIdx];
@@ -38,11 +64,21 @@ export function getButtonInfo(actor, btnNum, slotIdx) {
   return { title: `Slot ${btnNum}: No action assigned`, icon: `fas fa-square-${btnNum}`, name: `Slot ${btnNum}`, type: "Empty" };
 }
 
-export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = null) {
+export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = null, { previewAsPlayer = false } = {}) {
   if (!actor && token) actor = token.actor;
   if (!actor) return;
   if (!token) {
     token = actor.token?.object || canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id) || null;
+  }
+
+  // 0. DM previewing Player View: report if the player owner has a macro in this slot
+  if (previewAsPlayer) {
+    const owner = getPlayerOwner(actor);
+    const ownerMacroId = owner?.hotbar?.[slotIndex];
+    if (ownerMacroId) {
+      ui.notifications.info("Owner has this button assigned to a macro.");
+      return;
+    }
   }
 
   // 1. Priority for Non-GM: User's hotbar slot macro
@@ -88,7 +124,6 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     const rollConfig = foundry.utils.deepClone(config);
     const extras = (rollConfig.additionalDamageComponents || []).filter(c => c && c.formula);
     const hasGWM = Boolean(rollConfig.hasGWM);
-    const hasSavageAttacker = Boolean(rollConfig.hasSavageAttacker);
     const hasPiercer = Boolean(rollConfig.hasPiercer);
     const isVersatile = Boolean(rollConfig.isVersatile);
     const hasExtraAbility = Boolean(rollConfig.hasExtraAttackAbility && rollConfig.extraAttackAbility);
@@ -96,7 +131,7 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
     const hasSaveRider = Boolean(rollConfig.hasSaveRider);
 
     // If extra damage components, GWM, Versatile, or extra ability are present, prompt a quick toggle dialog
-    if (extras.length > 0 || hasGWM || hasSavageAttacker || hasPiercer || isVersatile || hasExtraAbility || hasExtraDamageAbility || hasSaveRider) {
+    if (extras.length > 0 || hasGWM || hasPiercer || isVersatile || hasExtraAbility || hasExtraDamageAbility || hasSaveRider) {
       let versatileHtml = "";
       if (isVersatile) {
         const vDie = rollConfig.versatileDie || "10";
@@ -114,16 +149,6 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
           <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #a34848; padding: 4px 6px; background: rgba(163,72,72,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
             <span>GWM / Sharpshooter (-5 / +10)</span>
             <input type="checkbox" id="hud-prompt-gwm" style="margin: 0;">
-          </label>
-        `;
-      }
-
-      let savageAttackerHtml = "";
-      if (hasSavageAttacker) {
-        savageAttackerHtml = `
-          <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: #8c3b2d; padding: 4px 6px; background: rgba(140,59,45,0.08); border-radius: 4px; cursor: pointer; margin-bottom: 6px;">
-            <span>Savage Attacker (Keep Highest)</span>
-            <input type="checkbox" id="hud-prompt-savage-attacker" style="margin: 0;">
           </label>
         `;
       }
@@ -209,7 +234,6 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
         <div style="font-family: inherit; padding: 4px 2px;">
           ${versatileHtml}
           ${gwmHtml}
-          ${savageAttackerHtml}
           ${piercerHtml}
           ${extraAbilityHtml}
           ${extraDamageAbilityHtml}
@@ -236,11 +260,6 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
                 rollConfig.attackCircumstanceModifier = (Number(rollConfig.attackCircumstanceModifier) || 0) - 5;
                 rollConfig.damageModifier = (Number(rollConfig.damageModifier) || 0) + 10;
                 rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [GWM/SS]`;
-              }
-
-              if (hasSavageAttacker && html.find("#hud-prompt-savage-attacker").is(":checked")) {
-                rollConfig.isSavageAttackerActive = true;
-                rollConfig.chatCardTitle = `${rollConfig.chatCardTitle || assignment.name} [Savage Attacker]`;
               }
 
               if (hasPiercer && html.find("#hud-prompt-piercer").is(":checked")) {
@@ -309,6 +328,32 @@ export async function runHudButtonSlot(actor, buttonNumber, slotIndex, token = n
 
 export function initTokenHud() {
   if (!getSetting("featureTokenHud")) return;
+  if (globalThis.__gpTokenHudInitialized) return;
+  globalThis.__gpTokenHudInitialized = true;
+
+  // Allow GM to Shift+Right-Click a token to preview the Player Token HUD
+  const TokenClass = foundry?.canvas?.placeables?.Token ?? globalThis.Token;
+  if (TokenClass?.prototype?._onClickRight && !TokenClass.prototype._onClickRight.__gpWrapped) {
+    const origOnClickRight = TokenClass.prototype._onClickRight;
+    TokenClass.prototype._onClickRight = function(event) {
+      const isShift = Boolean(
+        event?.shiftKey ||
+        event?.nativeEvent?.shiftKey ||
+        event?.data?.originalEvent?.shiftKey
+      );
+      if (game.user?.isGM && isShift) {
+        globalThis.__gpPlayerHudPreviewTokenId = this.id;
+      } else {
+        globalThis.__gpPlayerHudPreviewTokenId = null;
+      }
+      return origOnClickRight.call(this, event);
+    };
+    TokenClass.prototype._onClickRight.__gpWrapped = true;
+  }
+
+  Hooks.on("closeTokenHUD", () => {
+    globalThis.__gpPlayerHudPreviewTokenId = null;
+  });
 
   // 3. Token HUD adjustments
   Hooks.on("renderTokenHUD", (app, html, data) => {
@@ -318,6 +363,12 @@ export function initTokenHud() {
 
     const token = canvas.tokens.get(data?._id ?? app.object?.id);
     if (!token?.actor) return;
+
+    const isDmPlayerPreview = Boolean(
+      game.user?.isGM &&
+      globalThis.__gpPlayerHudPreviewTokenId &&
+      globalThis.__gpPlayerHudPreviewTokenId === token.id
+    );
 
     // Shared Button Factory helper
     const makeButton = (title, iconOrPath, onClick, imgSize = "28px") => {
@@ -341,6 +392,10 @@ export function initTokenHud() {
 
     // Helper: Hotbar Slot Runner
     const runHotbarSlot = (slotIndex) => {
+      if (isDmPlayerPreview) {
+        ui.notifications.info("This is assigned to Owner's hotbar slots 1-3.");
+        return;
+      }
       const macroId = game.user.hotbar[slotIndex];
       const macro = game.macros.get(macroId);
       if (macro) {
@@ -388,7 +443,7 @@ export function initTokenHud() {
     }
 
     // GM Specific Layout
-    if (game.user.isGM) {
+    if (game.user.isGM && !isDmPlayerPreview) {
       const colLeft = root.querySelector(".col.left") || root.querySelector(".left");
       const colRight = root.querySelector(".col.right") || root.querySelector(".right");
       if (!colRight) return;
@@ -516,42 +571,17 @@ export function initTokenHud() {
         );
         flyoutMenu.appendChild(d20Btn);
 
-        // Button 3: D20 Modifier Editor V2
-        const d20EditorV2Btn = makeButton(
-          "D20 Modifier Editor (V2)",
-          "fas fa-sliders",
+        // Button 3: Post Stat Card
+        const statCardBtn = makeButton(
+          "Post Stat Card",
+          "fas fa-id-card",
           (e) => {
             e.preventDefault();
             e.stopPropagation();
-            window.CustomRolls?.openD20PresetEditorV2();
+            postStatCard(token);
           }
         );
-        flyoutMenu.appendChild(d20EditorV2Btn);
-
-        // Button 4: Attacks
-        const attacksBtn = makeButton(
-          "Attacks",
-          "icons/logo-scifi.png",
-          (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            window.CustomRolls?.openActionDialog();
-          },
-          "32px"
-        );
-        flyoutMenu.appendChild(attacksBtn);
-
-        // Button 5: Action Editor
-        const editorBtn = makeButton(
-          "Action Editor",
-          "fas fa-pen-to-square",
-          (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            window.CustomRolls?.openActionEditor();
-          }
-        );
-        flyoutMenu.appendChild(editorBtn);
+        flyoutMenu.appendChild(statCardBtn);
 
         flyoutWrapper.appendChild(flyoutMenu);
         colRight.appendChild(flyoutWrapper);
@@ -592,6 +622,26 @@ export function initTokenHud() {
     const colMiddle = root.querySelector(".col.middle");
     if (!colLeft || !colRight || !colMiddle) return;
 
+    root.querySelectorAll([
+      ".gp-player-hud-item",
+      ".quick-hp-row",
+      '.control-icon[title="Dice Stuff"]',
+      '.control-icon[title="Raise Hand"]',
+      '.control-icon[title="Lower Hand"]',
+      '.control-icon[title="Measure Distance"]',
+      '.control-icon[title="Quick Hotbar"]',
+      '.control-icon[title="Quick Menu"]',
+      ".left-flyout-parent",
+      '.control-icon[title^="Hotbar "]',
+      '.control-icon[title^="HUD "]',
+      '.control-icon[title^="Slot "]'
+    ].join(", ")).forEach((el) => el.remove());
+    const appendPlayerHudItem = (parent, el) => {
+      el.classList.add("gp-player-hud-item");
+      parent.appendChild(el);
+      return el;
+    };
+
     root.querySelector('.control-icon[data-action="target"]')?.remove();
 
     const d20Btn = makeButton(
@@ -602,7 +652,7 @@ export function initTokenHud() {
       },
       "32px"
     );
-    colLeft.appendChild(d20Btn);
+    appendPlayerHudItem(colLeft, d20Btn);
 
     const isRaised = Boolean(token.handRaised);
     const handBtn = makeButton(isRaised ? "Lower Hand" : "Raise Hand", "fas fa-hand-paper", async () => {
@@ -628,7 +678,7 @@ export function initTokenHud() {
       app.render();
     });
     if (isRaised) handBtn.classList.add("active");
-    colLeft.appendChild(handBtn);
+    appendPlayerHudItem(colLeft, handBtn);
 
     const measureBtn = makeButton("Measure Distance", "fas fa-ruler", (event) => {
       event.preventDefault();
@@ -664,7 +714,7 @@ export function initTokenHud() {
     if (ui.controls.tool?.name === "ruler") {
       measureBtn.classList.add("active");
     }
-    colLeft.appendChild(measureBtn);
+    appendPlayerHudItem(colLeft, measureBtn);
 
     // Spell Save DC for owned tokens
     const actorSystem = token.actor?.system;
@@ -820,16 +870,17 @@ export function initTokenHud() {
     leftFlyout.appendChild(makeButton("Hotbar Slot 3", "fas fa-dice-three", () => runHotbarSlot(3)));
 
     leftFlyoutWrapper.appendChild(leftFlyout);
-    colLeft.appendChild(leftFlyoutWrapper);
+    appendPlayerHudItem(colLeft, leftFlyoutWrapper);
 
-    const b1 = getButtonInfo(token.actor, 1, 47);
-    const b2 = getButtonInfo(token.actor, 2, 48);
-    const b3 = getButtonInfo(token.actor, 3, 49);
-    const b4 = getButtonInfo(token.actor, 4, 50);
+    const previewOpts = { previewAsPlayer: isDmPlayerPreview };
+    const b1 = getButtonInfo(token.actor, 1, 47, previewOpts);
+    const b2 = getButtonInfo(token.actor, 2, 48, previewOpts);
+    const b3 = getButtonInfo(token.actor, 3, 49, previewOpts);
+    const b4 = getButtonInfo(token.actor, 4, 50, previewOpts);
 
-    colRight.appendChild(makeButton(b1.title, b1.icon, () => runHudButtonSlot(token.actor, 1, 47, token)));
-    colRight.appendChild(makeButton(b2.title, b2.icon, () => runHudButtonSlot(token.actor, 2, 48, token)));
-    colRight.appendChild(makeButton(b3.title, b3.icon, () => runHudButtonSlot(token.actor, 3, 49, token)));
-    colRight.appendChild(makeButton(b4.title, b4.icon, () => runHudButtonSlot(token.actor, 4, 50, token)));
+    appendPlayerHudItem(colRight, makeButton(b1.title, b1.icon, () => runHudButtonSlot(token.actor, 1, 47, token, previewOpts)));
+    appendPlayerHudItem(colRight, makeButton(b2.title, b2.icon, () => runHudButtonSlot(token.actor, 2, 48, token, previewOpts)));
+    appendPlayerHudItem(colRight, makeButton(b3.title, b3.icon, () => runHudButtonSlot(token.actor, 3, 49, token, previewOpts)));
+    appendPlayerHudItem(colRight, makeButton(b4.title, b4.icon, () => runHudButtonSlot(token.actor, 4, 50, token, previewOpts)));
   });
 }
