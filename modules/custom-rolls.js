@@ -128,6 +128,7 @@ export async function ensureStandardAttacks(actor, attacks = null) {
   }
 
   // 2. Improvised Weapon
+  const improvisedDmgMod = strMod !== 0 ? -strMod : 0;
   if (!currentAttacks["Improvised Weapon"]) {
     currentAttacks["Improvised Weapon"] = {
       macroName: "Improvised Weapon",
@@ -139,7 +140,7 @@ export async function ensureStandardAttacks(actor, attacks = null) {
       damageType: "bludgeoning",
       weaponModifier: 0,
       attackCircumstanceModifier: 0,
-      damageModifier: 0,
+      damageModifier: improvisedDmgMod,
       CRIT_THRESHOLD: 20,
       extraCriticalBonus: "",
       GWF_REROLL_THRESHOLD: 0,
@@ -150,25 +151,44 @@ export async function ensureStandardAttacks(actor, attacks = null) {
       additionalDamageComponents: []
     };
     modified = true;
+  } else if (!currentAttacks["Improvised Weapon"].gmModified) {
+    const imp = currentAttacks["Improvised Weapon"];
+    if (imp.isProficient !== hasTavernBrawler) {
+      imp.isProficient = hasTavernBrawler;
+      modified = true;
+    }
+    if (Number(imp.damageModifier || 0) !== improvisedDmgMod) {
+      imp.damageModifier = improvisedDmgMod;
+      modified = true;
+    }
   }
 
-  // 3. Off-Hand Attack
-  if (!currentAttacks["Off-Hand Attack"]) {
-    const offhandAbility = dexMod > strMod ? "dex" : "str";
-    const offhandAbilityMod = actor.system?.abilities?.[offhandAbility]?.mod ?? 0;
-    const offhandDmgMod = hasTWF ? 0 : (offhandAbilityMod > 0 ? -offhandAbilityMod : 0);
+  // 3. Light Attack (Two-Weapon Fighting)
+  if (currentAttacks["Off-Hand Attack"] && !currentAttacks["Light Attack"]) {
+    const migrated = foundry.utils.deepClone(currentAttacks["Off-Hand Attack"]);
+    if (!migrated.macroName || migrated.macroName === "Off-Hand Attack") migrated.macroName = "Light Attack";
+    if (!migrated.chatCardTitle || migrated.chatCardTitle === "Off-Hand Attack") migrated.chatCardTitle = "Light Attack";
+    currentAttacks["Light Attack"] = migrated;
+    delete currentAttacks["Off-Hand Attack"];
+    modified = true;
+  }
 
-    currentAttacks["Off-Hand Attack"] = {
-      macroName: "Off-Hand Attack",
-      chatCardTitle: "Off-Hand Attack",
-      abilityScore: offhandAbility,
+  if (!currentAttacks["Light Attack"]) {
+    const lightAbility = dexMod > strMod ? "dex" : "str";
+    const lightAbilityMod = actor.system?.abilities?.[lightAbility]?.mod ?? 0;
+    const lightDmgMod = hasTWF ? 0 : (lightAbilityMod > 0 ? -lightAbilityMod : 0);
+
+    currentAttacks["Light Attack"] = {
+      macroName: "Light Attack",
+      chatCardTitle: "Light Attack",
+      abilityScore: lightAbility,
       isProficient: true,
       damageDiceCount: 1,
       damageDieSize: "d6",
       damageType: "slashing",
       weaponModifier: 0,
       attackCircumstanceModifier: 0,
-      damageModifier: offhandDmgMod,
+      damageModifier: lightDmgMod,
       CRIT_THRESHOLD: 20,
       extraCriticalBonus: "",
       GWF_REROLL_THRESHOLD: 0,
@@ -191,6 +211,100 @@ export async function ensureStandardAttacks(actor, attacks = null) {
   }
 
   return currentAttacks;
+}
+
+/**
+ * Detects the source tag (SB, Pact, Item, Feat, Subclass, Class, Innate) and linked charge item ID for a spell item.
+ * @param {object} spItem
+ * @param {object} actor
+ * @returns {{ tag: string, isSlotCasting: boolean, chargeSourceItemId: string|null }}
+ */
+function detectSpellSourceMeta(spItem, actor) {
+  if (!spItem) return { tag: "SB", isSlotCasting: true, chargeSourceItemId: null };
+  const sys = spItem.system || {};
+  const flags = spItem.flags || {};
+  const dndFlags = flags.dnd5e || {};
+
+  const extractId = (ref) => {
+    if (!ref || typeof ref !== "string") return null;
+    if (actor?.items?.get?.(ref)) return ref;
+    const m = ref.match(/(?:^|\.)Item\.([^.]+)/);
+    if (m) return m[1];
+    const firstSeg = ref.split(".")[0];
+    return (firstSeg && actor?.items?.get?.(firstSeg)) ? firstSeg : null;
+  };
+
+  let sourceItem = null;
+  const rawRef = dndFlags.sourceItem || dndFlags.cachedFor || dndFlags.advancementOrigin || flags.magicitems?.sourceItem || sys.sourceItem;
+  const refId = extractId(rawRef);
+  if (refId && actor?.items?.get?.(refId)) {
+    sourceItem = actor.items.get(refId);
+  } else if (sys.activities) {
+    const acts = sys.activities instanceof Map ? Array.from(sys.activities.values()) : Object.values(sys.activities || {});
+    for (const act of acts) {
+      for (const t of (act.consumption?.targets || [])) {
+        if (t.type === "itemUses" && t.target) {
+          const tId = extractId(t.target);
+          if (tId && actor?.items?.get?.(tId)) {
+            sourceItem = actor.items.get(tId);
+            break;
+          }
+        }
+      }
+      if (sourceItem) break;
+    }
+  }
+
+  if (!sourceItem && spItem.type === "spell") {
+    const customSrc = sys.source?.custom || sys.source?.rules || "";
+    if (customSrc && actor?.items?.find) {
+      const match = actor.items.find(i => i.type !== "spell" && (i.name.toLowerCase() === customSrc.toLowerCase() || customSrc.toLowerCase().includes(i.name.toLowerCase())));
+      if (match) sourceItem = match;
+    }
+  }
+
+  const prepMode = sys.method || sys.preparation?.mode;
+  const isPreparedFlag = sys.prepared !== undefined ? Boolean(sys.prepared) : Boolean(sys.preparation?.prepared);
+  let tag = "SB";
+  let isSlotCasting = false;
+
+  if (sourceItem) {
+    if (["equipment", "weapon", "consumable", "loot", "container", "tool"].includes(sourceItem.type)) {
+      tag = "Item";
+    } else if (sourceItem.type === "feat") {
+      const featSub = String(sourceItem.system?.type?.value || "").toLowerCase();
+      if (featSub === "subclass") tag = "Subclass";
+      else if (featSub === "class") tag = "Class";
+      else if (featSub === "race" || featSub === "species") tag = "Innate";
+      else tag = "Feat";
+      if (["prepared", "always", "pact"].includes(prepMode) || isPreparedFlag) {
+        isSlotCasting = true;
+      }
+    } else if (sourceItem.type === "subclass") {
+      tag = "Subclass";
+      if (["prepared", "always", "pact"].includes(prepMode) || isPreparedFlag) isSlotCasting = true;
+    } else if (sourceItem.type === "class") {
+      tag = "Class";
+      if (["prepared", "always", "pact"].includes(prepMode) || isPreparedFlag) isSlotCasting = true;
+    } else if (sourceItem.type === "race" || sourceItem.type === "species") {
+      tag = "Innate";
+      if (["prepared", "always", "pact"].includes(prepMode) || isPreparedFlag) isSlotCasting = true;
+    }
+  } else if (prepMode === "pact") {
+    tag = "Pact";
+    isSlotCasting = true;
+  } else if (prepMode === "innate" || prepMode === "atwill") {
+    tag = "Innate";
+  } else {
+    tag = "SB";
+    isSlotCasting = true;
+  }
+
+  const spHasUses = Number(spItem.system?.uses?.max) > 0;
+  const srcHasUses = Number(sourceItem?.system?.uses?.max) > 0;
+  const chargeSourceItemId = srcHasUses ? sourceItem.id : (spHasUses ? spItem.id : (sourceItem ? sourceItem.id : null));
+
+  return { tag, isSlotCasting, chargeSourceItemId };
 }
 
 /**
@@ -242,7 +356,26 @@ export function buildSpellConfigFromItem(item, actor) {
   let resolutionMethod = "attack";
   let saveAbility = "dex";
   let saveSuccess = "half";
+  let fixedSaveDC = null;
   let damageDiceCount = 0;
+
+  const prepMode = sys.method || sys.preparation?.mode;
+  const isInnateOrAtWill = ["innate", "atwill"].includes(prepMode);
+  const dndFlags = item.flags?.dnd5e || {};
+  const hasSourceRef = Boolean(
+    dndFlags.sourceItem ||
+    dndFlags.cachedFor ||
+    dndFlags.advancementOrigin ||
+    item.flags?.magicitems?.sourceItem ||
+    sys.sourceItem ||
+    sys.source?.custom
+  );
+  let hasActivityItemSource = false;
+  if (sys.activities) {
+    const acts = sys.activities instanceof Map ? Array.from(sys.activities.values()) : Object.values(sys.activities || {});
+    hasActivityItemSource = acts.some(a => (a.consumption?.targets || []).some(t => t.type === "itemUses" && t.target));
+  }
+  const allowFlatDC = item.type !== "spell" || isInnateOrAtWill || hasSourceRef || hasActivityItemSource;
   let damageDieSize = "d6";
   let hasActivityCantripScaling = false;
   let damageType = "fire";
@@ -274,6 +407,10 @@ export function buildSpellConfigFromItem(item, actor) {
       }
       saveAbility = typeof rawSaveAbil === "string" && rawSaveAbil ? rawSaveAbil : "dex";
       saveSuccess = saveAct.save?.scaling === "half" ? "half" : "none";
+      if (allowFlatDC && saveAct.save?.dc?.calculation === "flat") {
+        const rawFlat = Number(saveAct.save.dc.formula ?? saveAct.save.dc.value);
+        if (Number.isFinite(rawFlat) && rawFlat > 0) fixedSaveDC = rawFlat;
+      }
     } else if (healAct) {
       resolutionMethod = "heal";
     } else if (attackAct || isAttackItem) {
@@ -354,6 +491,10 @@ export function buildSpellConfigFromItem(item, actor) {
       resolutionMethod = "save";
       saveAbility = sys.save?.ability || "dex";
       saveSuccess = sys.save?.scaling === "half" ? "half" : "none";
+      if (allowFlatDC && sys.save?.scaling === "flat") {
+        const rawFlat = Number(sys.save.dc);
+        if (Number.isFinite(rawFlat) && rawFlat > 0) fixedSaveDC = rawFlat;
+      }
     } else if (actionType === "heal") {
       resolutionMethod = "heal";
       damageType = "healing";
@@ -405,14 +546,21 @@ export function buildSpellConfigFromItem(item, actor) {
     upcastDiceFormula = sys.scaling.formula;
   }
 
+  const sourceMeta = detectSpellSourceMeta(item, actor);
+
   return {
     itemId: item.id,
     spellName: item.name,
     spellAbility: sheetSpellAbil,
+    sourceTags: [sourceMeta.tag],
+    hasSpellbookSource: sourceMeta.isSlotCasting,
+    chargeSourceItemId: sourceMeta.chargeSourceItemId,
+    chargeSourceItemIds: sourceMeta.chargeSourceItemId ? [sourceMeta.chargeSourceItemId] : [],
     baseLevel: Number(sys.level ?? 0),
     resolutionMethod,
     saveAbility,
     saveSuccess,
+    fixedSaveDC,
     isMultiAttack,
     attackCount,
     upcastAttacks,
@@ -478,6 +626,32 @@ export function isSpellPrepared(item, actor) {
   // 3. Actively prepared on the character sheet
   if (isPrep) return true;
 
+  // 3b. Item-, feat-, or feature-granted spells (e.g. Staff of Power / Additional Spells)
+  // that don't expose a "prepared" toggle on the sheet
+  const dndFlags = item.flags?.dnd5e || {};
+  const rawRef = dndFlags.sourceItem || dndFlags.cachedFor || dndFlags.advancementOrigin || item.flags?.magicitems?.sourceItem || sys.sourceItem;
+  if (rawRef && actor?.items) {
+    const extractId = (ref) => {
+      if (!ref || typeof ref !== "string") return null;
+      if (actor.items.get?.(ref)) return ref;
+      const m = ref.match(/(?:^|\.)Item\.([^.]+)/);
+      if (m) return m[1];
+      const firstSeg = ref.split(".")[0];
+      return (firstSeg && actor.items.get?.(firstSeg)) ? firstSeg : null;
+    };
+    const parentId = extractId(rawRef);
+    const parentItem = parentId ? actor.items.get(parentId) : null;
+    if (parentItem) {
+      const isEquip = ["equipment", "weapon", "consumable", "loot", "container", "tool"].includes(parentItem.type);
+      if (!isEquip) return true;
+      const isEquipped = parentItem.system?.equipped !== false;
+      const attune = parentItem.system?.attunement;
+      const needsAttune = attune === "required" || attune === 1;
+      const isAttuned = Boolean(parentItem.system?.attuned) || attune === 2;
+      if (isEquipped && (!needsAttune || isAttuned)) return true;
+    }
+  }
+
   // 4. Wizard Ritual Exception (2024 Rules / Ritual Caster / Book of Ancient Secrets):
   // Wizards can ritual cast any ritual spell from their spellbook even if unprepared.
   const isRitual = Boolean(
@@ -530,16 +704,54 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
   const sheetSpellNames = new Set(sheetSpells.map(s => s.name));
   const sheetSpellIds = new Set(sheetSpells.map(s => s.id));
 
+  // Group spells by exact name so identical spells (e.g. Spellbook + Staff) merge into one card with stacked source tags,
+  // while keeping distinct names like "[Legacy]" separate.
+  const TAG_ORDER = ["SB", "Pact", "Item", "Feat", "Subclass", "Class", "Innate"];
+  const groupedByName = new Map();
+  for (const spItem of sheetSpells) {
+    if (!groupedByName.has(spItem.name)) groupedByName.set(spItem.name, []);
+    groupedByName.get(spItem.name).push(spItem);
+  }
+
+  const buildMergedConfigForGroup = (itemsGroup) => {
+    const metas = itemsGroup.map(sp => ({ sp, meta: detectSpellSourceMeta(sp, actor) }));
+    // Prefer the slot-casting (SB/Pact) item as primary so caster DC/abilities apply when available
+    const primaryEntry = metas.find(m => m.meta.isSlotCasting) || metas[0];
+    const cfg = buildSpellConfigFromItem(primaryEntry.sp, actor);
+    if (!cfg) return null;
+
+    const tagSet = new Set(metas.map(m => m.meta.tag));
+    cfg.sourceTags = TAG_ORDER.filter(t => tagSet.has(t));
+    cfg.hasSpellbookSource = metas.some(m => m.meta.isSlotCasting);
+    const chargeIds = [];
+    const seenChargeIds = new Set();
+    for (const m of metas) {
+      if (!m.meta.isSlotCasting && m.meta.chargeSourceItemId && !seenChargeIds.has(m.meta.chargeSourceItemId)) {
+        seenChargeIds.add(m.meta.chargeSourceItemId);
+        chargeIds.push(m.meta.chargeSourceItemId);
+      }
+    }
+    for (const m of metas) {
+      if (m.meta.chargeSourceItemId && !seenChargeIds.has(m.meta.chargeSourceItemId)) {
+        seenChargeIds.add(m.meta.chargeSourceItemId);
+        chargeIds.push(m.meta.chargeSourceItemId);
+      }
+    }
+    cfg.chargeSourceItemIds = chargeIds;
+    cfg.chargeSourceItemId = chargeIds[0] || null;
+    return cfg;
+  };
+
   // Determine spells to add or update
   const toAdd = [];
   const toUpdate = [];
 
-  for (const spItem of sheetSpells) {
-    const existingKey = Object.keys(currentSpells).find(k => k === spItem.name || currentSpells[k]?.itemId === spItem.id);
+  for (const [spName, itemsGroup] of groupedByName.entries()) {
+    const existingKey = Object.keys(currentSpells).find(k => k === spName || itemsGroup.some(sp => currentSpells[k]?.itemId === sp.id));
     if (!existingKey) {
-      toAdd.push(spItem);
+      toAdd.push({ key: spName, item: itemsGroup[0], itemsGroup });
     } else {
-      toUpdate.push({ item: spItem, key: existingKey });
+      toUpdate.push({ key: existingKey, item: itemsGroup[0], itemsGroup });
     }
   }
 
@@ -555,8 +767,8 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
   if (toAdd.length === 0 && toRemove.length === 0) {
     // Refresh definitions for all existing sheet spells without altering custom favorites/HUD slots
     let updatedAny = false;
-    for (const { item: spItem, key } of toUpdate) {
-      const freshCfg = buildSpellConfigFromItem(spItem, actor);
+    for (const { key, itemsGroup } of toUpdate) {
+      const freshCfg = buildMergedConfigForGroup(itemsGroup);
       if (freshCfg) {
         // Preserve user state (favorites, custom assignments)
         freshCfg.isFavorite = currentSpells[key]?.isFavorite ?? false;
@@ -581,7 +793,7 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
             <i class="fas fa-plus-circle"></i> Spells to Add (${toAdd.length}):
           </div>
           <ul style="margin: 0; padding-left: 18px; font-size: 0.82em; color: #333;">
-            ${toAdd.map(s => `<li><strong>${s.name}</strong> <span style="color: #666;">(Level ${s.system.level ?? 0})</span></li>`).join("")}
+            ${toAdd.map(({ item: s, key }) => `<li><strong>${key}</strong> <span style="color: #666;">(Level ${s.system.level ?? 0})</span></li>`).join("")}
           </ul>
         </div>`
       : "";
@@ -638,16 +850,16 @@ export async function syncSpellsWithSheet(actor, { promptUser = true } = {}) {
   }
 
   // Apply additions
-  for (const spItem of toAdd) {
-    const cfg = buildSpellConfigFromItem(spItem, actor);
+  for (const { key, itemsGroup } of toAdd) {
+    const cfg = buildMergedConfigForGroup(itemsGroup);
     if (cfg) {
-      currentSpells[spItem.name] = cfg;
+      currentSpells[key] = cfg;
     }
   }
 
   // Also refresh definitions for existing spells while preserving favorite status
-  for (const { item: spItem, key } of toUpdate) {
-    const freshCfg = buildSpellConfigFromItem(spItem, actor);
+  for (const { key, itemsGroup } of toUpdate) {
+    const freshCfg = buildMergedConfigForGroup(itemsGroup);
     if (freshCfg) {
       freshCfg.isFavorite = currentSpells[key]?.isFavorite ?? false;
       currentSpells[key] = freshCfg;
@@ -2282,7 +2494,7 @@ Click a numbered modifier badge to execute a roll.</div>
       const { spellAttackBonus, spellSaveDC } = getActorSpellBonuses(actor, cfg.spellAbility);
       const totalAtk = spellAttackBonus + atkMod;
       const atkSign = totalAtk >= 0 ? `+${totalAtk}` : `${totalAtk}`;
-      const spellDC = spellSaveDC;
+      const spellDC = (Number(cfg.fixedSaveDC) > 0) ? Number(cfg.fixedSaveDC) : spellSaveDC;
 
       const isHealing = ["heal", "temp_hp", "max_hp"].includes(cfg.resolutionMethod);
       let effectiveFlat = Number(cfg.flatDamageBonus) || 0;
@@ -3295,7 +3507,7 @@ Click a numbered modifier badge to execute a roll.</div>
       currentMode = attackNames.length > 0 ? "weapon" : "d20";
     }
 
-    const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+    const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Light Attack"];
     const customAttackNames = attackNames.filter(k => !STANDARD_KEYS.includes(k));
     let selectedWeaponKey = customAttackNames[0] || attackNames[0] || null;
     let selectedSpellKey = (window.CustomRolls._selectedSpellKey && spellKeys.includes(window.CustomRolls._selectedSpellKey))
@@ -3338,10 +3550,105 @@ Click a numbered modifier badge to execute a roll.</div>
     }
 
     // --- Helper Calculations ---
+    function promptLightAttackOptions(baseConfig) {
+      const strMod = actor.system?.abilities?.str?.mod ?? 0;
+      const dexMod = actor.system?.abilities?.dex?.mod ?? 0;
+      const hasTWF = actor.items?.some(i => {
+        const n = (i.name || "").toLowerCase();
+        return n.includes("two-weapon fighting") || n.includes("two weapon fighting") || n.includes("twf");
+      }) ?? false;
+
+      let chosenAbility = (baseConfig.abilityScore === "str" || baseConfig.abilityScore === "dex")
+        ? baseConfig.abilityScore
+        : (dexMod > strMod ? "dex" : "str");
+      let chosenDie = String(baseConfig.damageDieSize || "").toLowerCase() === "d4" ? "d4" : "d6";
+
+      const fmtMod = (m) => (m >= 0 ? `+${m}` : `${m}`);
+
+      new Dialog({
+        title: `${actor.name}: Light Attack (TWF)`,
+        content: `
+          <div style="padding: 6px 4px; font-size: 0.85em;">
+            <div style="margin-bottom: 8px;">
+              <div style="font-weight: 700; color: #2b3a4a; margin-bottom: 4px;">Ability Score:</div>
+              <div style="display: flex; gap: 6px;">
+                <button type="button" class="light-opt-abil" data-abil="str" style="flex: 1; height: 30px; font-weight: 700; border-radius: 4px; cursor: pointer;">
+                  STR (${fmtMod(strMod)})
+                </button>
+                <button type="button" class="light-opt-abil" data-abil="dex" style="flex: 1; height: 30px; font-weight: 700; border-radius: 4px; cursor: pointer;">
+                  DEX (${fmtMod(dexMod)})
+                </button>
+              </div>
+            </div>
+            <div style="margin-bottom: 8px;">
+              <div style="font-weight: 700; color: #2b3a4a; margin-bottom: 4px;">Weapon Die:</div>
+              <div style="display: flex; gap: 6px;">
+                <button type="button" class="light-opt-die" data-die="d4" style="flex: 1; height: 30px; font-weight: 700; border-radius: 4px; cursor: pointer;">
+                  1d4
+                </button>
+                <button type="button" class="light-opt-die" data-die="d6" style="flex: 1; height: 30px; font-weight: 700; border-radius: 4px; cursor: pointer;">
+                  1d6
+                </button>
+              </div>
+            </div>
+            <div style="font-size: 0.78em; color: #64748b; text-align: center;">
+              ${hasTWF ? "Two-Weapon Fighting active: ability mod added to damage." : "No Two-Weapon Fighting style: positive ability mod not added to damage."}
+            </div>
+          </div>
+        `,
+        buttons: {
+          roll: {
+            icon: '<i class="fas fa-dice-d20"></i>',
+            label: "Roll Attack",
+            callback: async () => {
+              const cfg = foundry.utils.duplicate(baseConfig);
+              cfg.abilityScore = chosenAbility;
+              cfg.damageDieSize = chosenDie;
+              const abilMod = actor.system?.abilities?.[chosenAbility]?.mod ?? 0;
+              cfg.damageModifier = hasTWF ? 0 : (abilMod > 0 ? -abilMod : 0);
+              await globalThis.attackSocket.executeAsGM("runAttackRoll", cfg, actor.id, game.user.id);
+            }
+          },
+          cancel: { label: "Cancel" }
+        },
+        default: "roll",
+        render: (dlgHtml) => {
+          const syncButtons = () => {
+            dlgHtml.find(".light-opt-abil").each(function () {
+              const active = $(this).data("abil") === chosenAbility;
+              $(this).css({
+                background: active ? "#7289da" : "#f1f5f9",
+                color: active ? "#fff" : "#334155",
+                border: active ? "1px solid #5b6eae" : "1px solid #cbd5e1"
+              });
+            });
+            dlgHtml.find(".light-opt-die").each(function () {
+              const active = $(this).data("die") === chosenDie;
+              $(this).css({
+                background: active ? "#7289da" : "#f1f5f9",
+                color: active ? "#fff" : "#334155",
+                border: active ? "1px solid #5b6eae" : "1px solid #cbd5e1"
+              });
+            });
+          };
+          syncButtons();
+          dlgHtml.find(".light-opt-abil").on("click", function () {
+            chosenAbility = $(this).data("abil");
+            syncButtons();
+          });
+          dlgHtml.find(".light-opt-die").on("click", function () {
+            chosenDie = $(this).data("die");
+            syncButtons();
+          });
+        }
+      }, { width: 320 }).render(true);
+    }
+
     function getWeaponDetails(config) {
       if (!config) return { atkSign: "+0", dmgFormula: "1d6", dmgType: "SLASHING", tags: [], totalAtk: 0, dmgMod: 0, diceCount: 1, dieSize: "6" };
       const abilityMod = actor.system.abilities[config.abilityScore]?.mod || 0;
-      const prof = actor.system.attributes.prof || 0;
+      const isProf = config.isProficient !== undefined ? (String(config.isProficient) === "true" || config.isProficient === true) : true;
+      const prof = isProf ? (actor.system.attributes.prof || 0) : 0;
       const wepMod = Number(config.weaponModifier) || 0;
       const circMod = Number(config.attackCircumstanceModifier) || 0;
       const totalAtk = abilityMod + prof + wepMod + circMod;
@@ -3439,7 +3746,7 @@ Click a numbered modifier badge to execute a roll.</div>
       const { spellAttackBonus, spellSaveDC } = getActorSpellBonuses(actor, cfg.spellAbility);
       const totalAtk = spellAttackBonus + atkMod;
       const atkSign = totalAtk >= 0 ? `+${totalAtk}` : `${totalAtk}`;
-      const spellDC = spellSaveDC;
+      const spellDC = (Number(cfg.fixedSaveDC) > 0) ? Number(cfg.fixedSaveDC) : spellSaveDC;
 
       const isHealing = ["heal", "temp_hp", "max_hp"].includes(cfg.resolutionMethod);
       let effectiveFlat = Number(cfg.flatDamageBonus) || 0;
@@ -3484,17 +3791,29 @@ Click a numbered modifier badge to execute a roll.</div>
       return { actionVal, valFormula, typeLabel, tags };
     }
 
-    function getSpellItemSourceInfo(spell) {
+    function getSpellItemSourceInfo(spell, overrideItemId = null) {
       if (!spell || !actor) return null;
-      let it = (spell.itemId ? actor.items?.get(spell.itemId) : null)
+      let it = (overrideItemId ? actor.items?.get(overrideItemId) : null)
+        || (spell.chargeSourceItemId ? actor.items?.get(spell.chargeSourceItemId) : null)
+        || (spell.itemId ? actor.items?.get(spell.itemId) : null)
         || actor.items?.getName(spell.spellName);
       if (!it) return null;
 
-      // Check if this spell originates from a parent item (e.g. Staff of the Magi, Wand)
+      // Check if this spell originates from a parent item (e.g. Staff of the Magi, Wand, Feat, Subclass Feature)
+      const extractItemIdFromRef = (ref) => {
+        if (!ref || typeof ref !== "string") return null;
+        if (actor.items?.get(ref)) return ref;
+        const m = ref.match(/(?:^|\.)Item\.([^.]+)/);
+        if (m) return m[1];
+        const firstSeg = ref.split(".")[0];
+        return (firstSeg && actor.items?.get?.(firstSeg)) ? firstSeg : null;
+      };
+
       let sourceItem = null;
       const flags = it.flags || {};
       const dndFlags = flags.dnd5e || {};
-      const parentId = dndFlags.sourceItem || dndFlags.cachedFor || flags.magicitems?.sourceItem || it.system?.sourceItem;
+      const rawParentRef = dndFlags.sourceItem || dndFlags.cachedFor || dndFlags.advancementOrigin || flags.magicitems?.sourceItem || it.system?.sourceItem;
+      const parentId = extractItemIdFromRef(rawParentRef);
       if (parentId && actor.items?.get(parentId)) {
         sourceItem = actor.items.get(parentId);
       } else if (it.system?.activities) {
@@ -3503,9 +3822,12 @@ Click a numbered modifier badge to execute a roll.</div>
         for (const act of acts) {
           const targets = act.consumption?.targets || [];
           for (const target of targets) {
-            if (target.type === "itemUses" && target.target && actor.items?.get(target.target)) {
-              sourceItem = actor.items.get(target.target);
-              break;
+            if (target.type === "itemUses" && target.target) {
+              const targetId = extractItemIdFromRef(target.target);
+              if (targetId && actor.items?.get(targetId)) {
+                sourceItem = actor.items.get(targetId);
+                break;
+              }
             }
           }
           if (sourceItem) break;
@@ -3523,8 +3845,13 @@ Click a numbered modifier badge to execute a roll.</div>
         }
       }
 
-      // Target item holding the uses (either the parent staff/wand or the spell/feat itself)
-      const targetItem = sourceItem || it;
+      // Target item holding the uses (prefer whichever of parent item or spell itself actually has uses.max > 0)
+      const targetItem = (sourceItem && Number(sourceItem.system?.uses?.max) > 0)
+        ? sourceItem
+        : ((Number(it.system?.uses?.max) > 0) ? it : (sourceItem || it));
+      const displayName = (targetItem === it && sourceItem && sourceItem.id !== it.id)
+        ? `${it.name} (${sourceItem.name})`
+        : targetItem.name;
       const isNonSpellType = targetItem.type !== "spell";
       // Modern dnd5e 5.1+ uses sys.method, older uses sys.preparation.mode
       const prepMode = it.system?.method || it.system?.preparation?.mode;
@@ -3558,14 +3885,21 @@ Click a numbered modifier badge to execute a roll.</div>
       const curUses = targetItem.system?.uses?.spent !== undefined
         ? Math.max(0, maxUses - Number(targetItem.system.uses.spent))
         : Number(targetItem.system?.uses?.value ?? 0);
+      const spellDoc = spell.itemId ? actor.items?.get(spell.itemId) : null;
       const actorHasSpellSlots = Object.values(actor.system?.spells || {}).some(s => Number(s?.max) > 0);
       const isEquipmentItem = ["equipment", "weapon", "consumable", "loot", "container", "tool"].includes(targetItem.type);
-      const isPureItem = (Boolean(sourceItem) && isEquipmentItem) || (!actorHasSpellSlots && isNonSpellType);
+      const isPureItem = spell.hasSpellbookSource === true ? false : (
+        spell.hasSpellbookSource === false ||
+        (Boolean(sourceItem) && isEquipmentItem) ||
+        (!actorHasSpellSlots && (isNonSpellType || isInnateOrAtWill)) ||
+        (isNonSpellType && (!spellDoc || spellDoc.type !== "spell")) ||
+        (isInnateOrAtWill && !hasItemUses)
+      );
 
       return {
         item: targetItem,
         itemId: targetItem.id,
-        name: targetItem.name,
+        name: displayName,
         type: targetItem.type,
         prepMode,
         hasItemUses,
@@ -3577,9 +3911,35 @@ Click a numbered modifier badge to execute a roll.</div>
       };
     }
 
+    function getSpellItemSourceInfos(spell) {
+      if (!spell || !actor) return [];
+      const ids = Array.isArray(spell.chargeSourceItemIds) && spell.chargeSourceItemIds.length > 0
+        ? spell.chargeSourceItemIds
+        : (spell.chargeSourceItemId ? [spell.chargeSourceItemId] : []);
+      if (ids.length === 0) {
+        const single = getSpellItemSourceInfo(spell);
+        return single ? [single] : [];
+      }
+      const results = [];
+      const seen = new Set();
+      for (const id of ids) {
+        const info = getSpellItemSourceInfo(spell, id);
+        if (info && !seen.has(info.itemId)) {
+          seen.add(info.itemId);
+          results.push(info);
+        }
+      }
+      if (results.length === 0) {
+        const fallback = getSpellItemSourceInfo(spell);
+        if (fallback) results.push(fallback);
+      }
+      return results;
+    }
+
     function getUpcastOptionsHtml(spell) {
       const baseLevel = Number(spell?.baseLevel) || 0;
-      const srcInfo = getSpellItemSourceInfo(spell);
+      const srcInfos = getSpellItemSourceInfos(spell);
+      const srcInfo = srcInfos[0] || null;
 
       if (baseLevel === 0) {
         return `
@@ -3597,41 +3957,47 @@ Click a numbered modifier badge to execute a roll.</div>
       let chargeDeductChecked = false;
       let chargeDeductDisabled = false;
 
+      const chargeSourcesWithUses = srcInfos.filter(s => s.hasItemUses && s.maxUses > 0);
+      let firstAvailableChargeIdx = -1;
       if (srcInfo) {
-        const hasEnoughCharges = srcInfo.hasItemUses ? (srcInfo.curUses >= (srcInfo.chargeCost || 1)) : true;
-        if (!hasEnoughCharges && srcInfo.hasItemUses) {
-          chargeDeductDisabled = true;
-        }
-
         if (srcInfo.isPureItem) {
           // Pure item/feat without normal slot casting (e.g. Wand, Staff)
           slotDeductDisabled = true;
           slotDeductChecked = false;
-          chargeDeductChecked = srcInfo.hasItemUses && hasEnoughCharges;
-          resourceSelectorHtml = `
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: #eef4ff; border-radius: 3px; border: 1px solid #c8d8f4; margin-bottom: 5px; font-size: 0.8em;">
-              <span style="font-weight: 700; color: #3b5998;"><i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i> Source: ${srcInfo.name}</span>
-              <span style="font-weight: 700; color: ${hasEnoughCharges ? '#4b5d88' : '#c62828'}; font-family: monospace;">${srcInfo.label}</span>
-            </div>
-          `;
-        } else if (srcInfo.hasItemUses && srcInfo.maxUses > 0) {
-          // Dual-cast spell (e.g. Magic Initiate, Fey Touched: 1 free feat use OR standard spell slots)
-          const featHasCharges = srcInfo.curUses >= (srcInfo.chargeCost || 1);
-          chargeDeductChecked = featHasCharges;
-          slotDeductChecked = !isDdbSlotLinked && !featHasCharges;
+          if (chargeSourcesWithUses.length > 0) {
+            firstAvailableChargeIdx = chargeSourcesWithUses.findIndex(s => s.curUses >= (s.chargeCost || 1));
+            resourceSelectorHtml = chargeSourcesWithUses.map(s => {
+              const hasEnough = s.curUses >= (s.chargeCost || 1);
+              return `
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: #eef4ff; border-radius: 3px; border: 1px solid #c8d8f4; margin-bottom: 4px; font-size: 0.8em;">
+                  <span style="font-weight: 700; color: #3b5998;"><i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i> Source: ${s.name}</span>
+                  <span style="font-weight: 700; color: ${hasEnough ? '#4b5d88' : '#c62828'}; font-family: monospace;">${s.label}</span>
+                </div>
+              `;
+            }).join("");
+          } else {
+            resourceSelectorHtml = `
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: #eef4ff; border-radius: 3px; border: 1px solid #c8d8f4; margin-bottom: 5px; font-size: 0.8em;">
+                <span style="font-weight: 700; color: #3b5998;"><i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i> Source: ${srcInfo.name}</span>
+                <span style="font-weight: 700; color: #4b5d88; font-family: monospace;">${srcInfo.label}</span>
+              </div>
+            `;
+          }
+        } else if (chargeSourcesWithUses.length > 0) {
+          // Dual/multi-source spell (e.g. SB + Staff + Magic Initiate)
+          firstAvailableChargeIdx = chargeSourcesWithUses.findIndex(s => s.curUses >= (s.chargeCost || 1));
+          const anyHasCharges = firstAvailableChargeIdx !== -1;
+          slotDeductChecked = !isDdbSlotLinked && !anyHasCharges;
 
-          resourceSelectorHtml = `
-            <div style="display: flex; gap: 4px; margin-bottom: 5px; border-bottom: 1px dashed #d2d7df; padding-bottom: 5px;">
-              <label style="flex: 1; display: flex; align-items: center; gap: 4px; font-size: 0.78em; font-weight: 700; color: ${featHasCharges ? '#3b5998' : '#888'}; cursor: ${featHasCharges ? 'pointer' : 'not-allowed'}; opacity: ${featHasCharges ? '1' : '0.5'}; background: #fff; padding: 2px 4px; border-radius: 3px; border: 1px solid #c8d8f4;">
-                <input type="radio" name="spellCastResourceMode" value="charge" ${featHasCharges ? 'checked' : ''} ${!featHasCharges ? 'disabled' : ''} style="margin: 0;" />
-                Free/Feat (${srcInfo.curUses}/${srcInfo.maxUses})
-              </label>
-              <label style="flex: 1; display: flex; align-items: center; gap: 4px; font-size: 0.78em; font-weight: 700; color: #4b5d88; cursor: pointer; background: #fff; padding: 2px 4px; border-radius: 3px; border: 1px solid #d2d7df;">
-                <input type="radio" name="spellCastResourceMode" value="slot" ${!featHasCharges ? 'checked' : ''} style="margin: 0;" />
-                Spell Slot
-              </label>
-            </div>
-          `;
+          resourceSelectorHtml = chargeSourcesWithUses.map(s => {
+            const hasEnough = s.curUses >= (s.chargeCost || 1);
+            return `
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: #eef4ff; border-radius: 3px; border: 1px solid #c8d8f4; margin-bottom: 4px; font-size: 0.8em;">
+                <span style="font-weight: 700; color: #3b5998;"><i class="fas fa-wand-magic-sparkles" style="margin-right: 4px;"></i> Source: ${s.name}</span>
+                <span style="font-weight: 700; color: ${hasEnough ? '#4b5d88' : '#c62828'}; font-family: monospace;">${s.label}</span>
+              </div>
+            `;
+          }).join("");
         }
       }
 
@@ -3656,29 +4022,55 @@ Click a numbered modifier badge to execute a roll.</div>
               <span style="font-weight: 600; color: #4b5d88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${isDdbSlotLinked ? 'Deduct slot (Managed on DDB)' : 'Deduct slot from sheet'}</span>
               ${isDdbSlotLinked ? `<i class="fas fa-circle-info" data-tooltip="Slot deduction is disabled in Dice Stuff so sheets don't desync. Cast freely for rolls &amp; upcast math, and tick the slot on D&amp;D Beyond." style="color: #64748b; font-size: 0.9em; margin-left: 2px; cursor: help; pointer-events: auto;" title="Slot deduction is disabled in Dice Stuff so sheets don't desync. Cast freely for rolls &amp; upcast math, and tick the slot on D&amp;D Beyond."></i>` : ''}
             </label>
-            <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;" title="Spell slot cost">
-              <input type="number" min="1" max="1" value="1" disabled style="width: 32px; height: 18px; line-height: 16px; text-align: center; font-size: 0.82em; font-weight: 700; border: 1px solid #ccc; border-radius: 2px; padding: 0; background: #fafbfc; color: #1e293b; margin: 0; opacity: 0.85;" />
-              <span style="font-size: 0.72em; color: #666; font-weight: 600;">slot</span>
-            </div>
           </div>
-          ${srcInfo && srcInfo.hasItemUses ? (
-          srcInfo.chargeCost > 0 ? `
-              <div id="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed; font-size: 0.8em; opacity: ${chargeDeductDisabled ? '0.5' : '1'};">
-                <label style="display: flex; align-items: center; gap: 4px; cursor: ${chargeDeductDisabled ? 'not-allowed' : 'pointer'}; flex: 1; min-width: 0;" title="${chargeDeductDisabled ? 'No charges remaining on item' : 'Deduct charge/use from item on character sheet'}">
-                  <input type="checkbox" id="deductChargeToggle" data-item-id="${srcInfo.itemId}" ${chargeDeductChecked ? 'checked' : ''} ${chargeDeductDisabled ? 'disabled' : ''} style="margin: 0;" />
-                  <span style="font-weight: 600; color: ${chargeDeductDisabled ? '#888' : '#3b5998'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Deduct charge from ${srcInfo.name}${chargeDeductDisabled ? ' (0 charges left)' : ''}</span>
-                </label>
+          ${(() => {
+            if (chargeSourcesWithUses.length === 0) return "";
+            if (chargeSourcesWithUses.length === 1) {
+              const s = chargeSourcesWithUses[0];
+              const disabled = s.curUses < (s.chargeCost || 1);
+              const checked = !disabled && firstAvailableChargeIdx === 0;
+              return s.chargeCost > 0 ? `
+                <div id="charge-deduct-row" class="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed; font-size: 0.8em; opacity: ${disabled ? '0.5' : '1'};">
+                  <label style="display: flex; align-items: center; gap: 4px; cursor: ${disabled ? 'not-allowed' : 'pointer'}; flex: 1; min-width: 0;" title="${disabled ? 'No charges remaining on item' : 'Deduct charge/use from item on character sheet'}">
+                    <input type="checkbox" id="deductChargeToggle" class="deduct-charge-toggle" data-item-id="${s.itemId}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} style="margin: 0;" />
+                    <span style="font-weight: 600; color: ${disabled ? '#888' : '#3b5998'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Deduct charge from ${s.name}${disabled ? ' (0 charges left)' : ''}</span>
+                  </label>
+                  <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;" title="Number of charges to expend for this cast">
+                    <input type="number" id="deductChargeCostInput" class="deduct-charge-cost-input" min="1" max="${s.maxUses}" value="${s.chargeCost}" ${disabled ? 'disabled' : ''} style="width: 32px; height: 18px; line-height: 16px; text-align: center; font-size: 0.82em; font-weight: 700; border: 1px solid #ccc; border-radius: 2px; padding: 0; background: #fafbfc; color: #1e293b; margin: 0;" />
+                    <span style="font-size: 0.72em; color: #666; font-weight: 600;">charges</span>
+                  </div>
+                </div>
+              ` : `
+                <div style="font-size: 0.75em; color: #2e6b35; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 3px; padding: 2px 6px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                  <i class="fas fa-check-circle"></i> Cast at will via ${s.name} (0 charge cost)
+                </div>
+              `;
+            }
+
+            const defaultIdx = firstAvailableChargeIdx !== -1 ? firstAvailableChargeIdx : 0;
+            const defSrc = chargeSourcesWithUses[defaultIdx];
+            const defDisabled = defSrc.curUses < (defSrc.chargeCost || 1);
+            const defChecked = !defDisabled && firstAvailableChargeIdx !== -1;
+            const optionsHtml = chargeSourcesWithUses.map((s, idx) =>
+              `<option value="${s.itemId}" data-cur="${s.curUses}" data-max="${s.maxUses}" data-cost="${s.chargeCost || 1}" ${idx === defaultIdx ? 'selected' : ''}>${s.name} (${s.curUses}/${s.maxUses})</option>`
+            ).join("");
+
+            return `
+              <div id="charge-deduct-row" class="charge-deduct-row" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 2px 4px; background: #fff; border-radius: 3px; border: 1px solid #e0e6ed; font-size: 0.8em; opacity: ${defDisabled ? '0.5' : '1'};">
+                <div style="display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0;">
+                  <input type="checkbox" id="deductChargeToggle" class="deduct-charge-toggle" data-item-id="${defSrc.itemId}" ${defChecked ? 'checked' : ''} ${defDisabled ? 'disabled' : ''} style="margin: 0; flex-shrink: 0; cursor: ${defDisabled ? 'not-allowed' : 'pointer'};" />
+                  <span style="font-weight: 600; color: #3b5998; white-space: nowrap; flex-shrink: 0;">Deduct from</span>
+                  <select id="deductChargeSourceSelect" style="flex: 1; min-width: 0; height: 20px; font-size: 0.92em; font-weight: 600; color: #3b5998; border: 1px solid #c8d8f4; border-radius: 3px; padding: 0 2px; background: #f8faff;">
+                    ${optionsHtml}
+                  </select>
+                </div>
                 <div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;" title="Number of charges to expend for this cast">
-                  <input type="number" id="deductChargeCostInput" min="1" max="${srcInfo.maxUses}" value="${srcInfo.chargeCost}" ${chargeDeductDisabled ? 'disabled' : ''} style="width: 32px; height: 18px; line-height: 16px; text-align: center; font-size: 0.82em; font-weight: 700; border: 1px solid #ccc; border-radius: 2px; padding: 0; background: #fafbfc; color: #1e293b; margin: 0;" />
+                  <input type="number" id="deductChargeCostInput" class="deduct-charge-cost-input" min="1" max="${defSrc.maxUses}" value="${defSrc.chargeCost || 1}" ${defDisabled ? 'disabled' : ''} style="width: 32px; height: 18px; line-height: 16px; text-align: center; font-size: 0.82em; font-weight: 700; border: 1px solid #ccc; border-radius: 2px; padding: 0; background: #fafbfc; color: #1e293b; margin: 0;" />
                   <span style="font-size: 0.72em; color: #666; font-weight: 600;">charges</span>
                 </div>
               </div>
-            ` : `
-              <div style="font-size: 0.75em; color: #2e6b35; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 3px; padding: 2px 6px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-                <i class="fas fa-check-circle"></i> Cast at will via ${srcInfo.name} (0 charge cost)
-              </div>
-            `
-        ) : ''}
+            `;
+          })()}
         </div>
       </div>
     `;
@@ -3686,7 +4078,7 @@ Click a numbered modifier badge to execute a roll.</div>
     }
 
     function renderCustomWeaponCards() {
-      const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+      const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Light Attack"];
       const customNames = attackNames.filter(k => !STANDARD_KEYS.includes(k));
       const assignedSlots = window.CustomRolls?.getProfileData?.(actor, "hudAssignedSlots")
         || actor.getFlag("world", "hudAssignedSlots")
@@ -3739,7 +4131,7 @@ Click a numbered modifier badge to execute a roll.</div>
     }
 
     function renderWeaponCards() {
-      const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+      const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Light Attack"];
       const standardNames = STANDARD_KEYS.filter(k => attacks[k]);
 
       let standardRowHtml = "";
@@ -3753,7 +4145,7 @@ Click a numbered modifier badge to execute a roll.</div>
             shortTitle = "Unarmed";
           } else if (name === "Improvised Weapon") {
             shortTitle = "Improvised";
-          } else if (name === "Off-Hand Attack") {
+          } else if (name === "Light Attack") {
             shortTitle = "Light/TWF";
           }
 
@@ -3878,7 +4270,20 @@ Click a numbered modifier badge to execute a roll.</div>
         const isSel = key === selectedSpellKey;
         const d = getSpellDetails(sp, sp.baseLevel);
         const lvlLabel = Number(sp.baseLevel) === 0 ? "Cantrip" : `Lvl ${sp.baseLevel}`;
-        const tagsHtml = d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
+        const SOURCE_BADGE_STYLES = {
+          SB: { icon: "fa-book", bg: "rgba(59, 89, 152, 0.12)", border: "rgba(59, 89, 152, 0.35)", color: "#3b5998", title: "Spellbook / Class Spellcasting" },
+          Pact: { icon: "fa-moon", bg: "rgba(107, 63, 148, 0.12)", border: "rgba(107, 63, 148, 0.35)", color: "#5e35b1", title: "Pact Magic" },
+          Item: { icon: "fa-wand-magic-sparkles", bg: "rgba(217, 119, 6, 0.12)", border: "rgba(217, 119, 6, 0.35)", color: "#b45309", title: "Magic Item / Equipment" },
+          Feat: { icon: "fa-star-of-life", bg: "rgba(13, 148, 136, 0.12)", border: "rgba(13, 148, 136, 0.35)", color: "#0f766e", title: "Feat" },
+          Subclass: { icon: "fa-shield-halved", bg: "rgba(22, 163, 74, 0.12)", border: "rgba(22, 163, 74, 0.35)", color: "#15803d", title: "Subclass Feature" },
+          Class: { icon: "fa-scroll", bg: "rgba(71, 85, 105, 0.12)", border: "rgba(71, 85, 105, 0.35)", color: "#334155", title: "Class Feature" },
+          Innate: { icon: "fa-dna", bg: "rgba(190, 24, 93, 0.12)", border: "rgba(190, 24, 93, 0.35)", color: "#be185d", title: "Innate / Species / At-Will" }
+        };
+        const sourceBadgesHtml = (Array.isArray(sp.sourceTags) ? sp.sourceTags : []).map(st => {
+          const s = SOURCE_BADGE_STYLES[st] || SOURCE_BADGE_STYLES.SB;
+          return `<span title="${s.title}" style="background: ${s.bg}; border: 1px solid ${s.border}; border-radius: 3px; padding: 1px 4px; font-size: 0.68em; font-weight: 700; color: ${s.color}; display: inline-flex; align-items: center; gap: 3px;"><i class="fas ${s.icon}" style="font-size: 0.9em;"></i>${st}</span>`;
+        }).join(" ");
+        const tagsHtml = sourceBadgesHtml + (sourceBadgesHtml && d.tags.length > 0 ? " " : "") + d.tags.map(t => `<span style="background: rgba(114, 137, 218, 0.15); border: 1px solid rgba(114, 137, 218, 0.3); border-radius: 2px; padding: 1px 4px; font-size: 0.7em; color: #4b5d88;">${t}</span>`).join(" ");
 
         const assignedSlot = Object.entries(assignedSlots).find(([sNum, data]) => data?.category === "spells" && data?.name === key)?.[0];
         const hudBadge = assignedSlot
@@ -3928,7 +4333,7 @@ Click a numbered modifier badge to execute a roll.</div>
             </span>
             ${rightSideHtml}
           </div>
-          ${d.tags.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
+          ${(d.tags.length > 0 || sourceBadgesHtml) ? `<div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">${tagsHtml}</div>` : ""}
         </div>
       `;
       };
@@ -4566,7 +4971,7 @@ Click a numbered modifier badge to execute a roll.</div>
           <!-- Top Row: Portrait + HP Stats & Progress Bar + AC Shield Card -->
           <div style="display: flex; gap: 8px; align-items: stretch; width: 100%;">
             <!-- Full-Size Portrait (58x58px) -->
-            <img src="${portraitSrc}" alt="${actor.name}" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;" />
+            <img id="dice-stuff-actor-portrait" src="${portraitSrc}" alt="${actor.name}" title="Double-click to open character sheet" style="width: 58px; min-width: 58px; max-width: 58px; height: 58px; border-radius: 6px; border: 1px solid #aeb7c4; object-fit: cover; object-position: top; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0; cursor: pointer;" />
 
             <!-- HP Column with Visual Bar (Fills Center Space) -->
             <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 1px 0;">
@@ -6955,6 +7360,13 @@ Click a numbered modifier badge to execute a roll.</div>
           }, { width: 260 }).render(true);
         });
 
+        // Double-click portrait to open character sheet
+        html.find("#dice-stuff-actor-portrait").on("dblclick", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          actor?.sheet?.render(true);
+        });
+
         // HP Settings Cog Button Handler (Opens native dnd5e HitPointsConfig dialog)
         html.find("#dice-stuff-hp-config-btn").on("click", async (e) => {
           e.preventDefault();
@@ -7318,6 +7730,8 @@ Click a numbered modifier badge to execute a roll.</div>
                 });
               }
             }, { width: 320 }).render(true);
+          } else if (selectedWeaponKey === "Light Attack" || selectedWeaponKey === "Off-Hand Attack") {
+            promptLightAttackOptions(config);
           } else {
             await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
           }
@@ -7349,14 +7763,18 @@ Click a numbered modifier badge to execute a roll.</div>
           }
 
           // Handle Item / Feat charge deduction
-          const chargeToggle = html.find("#deductChargeToggle");
-          if (chargeToggle.length > 0 && chargeToggle.is(":checked")) {
+          const chargeToggle = html.find(".deduct-charge-toggle:checked, #deductChargeToggle:checked").first();
+          if (chargeToggle.length > 0) {
             const chargeItemId = chargeToggle.attr("data-item-id") || chargeToggle.data("item-id") || rawConfig.itemId;
             const chargeItem = chargeItemId ? actor.items.get(chargeItemId) : null;
-            const costVal = Number(html.find("#deductChargeCostInput").val());
+            const costInput = chargeToggle.closest(".charge-deduct-row").find(".deduct-charge-cost-input");
+            const costVal = Number((costInput.length ? costInput : html.find("#deductChargeCostInput")).val());
             const chargeCost = !isNaN(costVal) && costVal > 0 ? costVal : 1;
             if (chargeItem && Number(chargeItem.system?.uses?.max) > 0) {
-              const currentUses = Number(chargeItem.system.uses.value) || 0;
+              const maxUses = Number(chargeItem.system.uses.max) || 0;
+              const currentUses = chargeItem.system.uses.spent !== undefined
+                ? Math.max(0, maxUses - (Number(chargeItem.system.uses.spent) || 0))
+                : (Number(chargeItem.system.uses.value) || 0);
               if (currentUses < chargeCost) {
                 const proceed = await Dialog.confirm({
                   title: "Insufficient Charges Remaining",
@@ -7590,60 +8008,36 @@ Click a numbered modifier badge to execute a roll.</div>
           html.find("#inspector-spell").html(getSelectedSpellInspectorHtml());
         });
 
-        // Dual-cast Spell Resource Mode Radio Switcher (Charge vs Slot)
-        html.on("change", "input[name='spellCastResourceMode']", function () {
-          const mode = $(this).val();
-          const slotToggle = html.find("#deductSlotToggle");
-          const chargeToggle = html.find("#deductChargeToggle");
-          const isDdbSlotLinked = Boolean(actor?.getFlag?.(MODULE_ID, FLAGS.DDB_SPELL_SLOTS_ENABLED));
-          if (mode === "charge") {
-            slotToggle.prop("checked", false).prop("disabled", true);
-            slotToggle.closest("label").css({ opacity: "0.6", cursor: "not-allowed" });
-            chargeToggle.prop("checked", true);
-          } else {
-            if (isDdbSlotLinked) {
-              slotToggle.prop("checked", false).prop("disabled", true);
-              slotToggle.closest("label").css({ opacity: "0.55", cursor: "not-allowed" });
-            } else {
-              slotToggle.prop("disabled", false).prop("checked", true);
-              slotToggle.closest("label").css({ opacity: "1", cursor: "pointer" });
-            }
-            chargeToggle.prop("checked", false);
+        // Sync charge source dropdown selection with #deductChargeToggle and #deductChargeCostInput
+        html.on("change", "#deductChargeSourceSelect", function () {
+          const opt = $(this).find("option:selected");
+          const itemId = opt.val();
+          const cur = Number(opt.data("cur")) || 0;
+          const max = Number(opt.data("max")) || 1;
+          const cost = Number(opt.data("cost")) || 1;
+          const disabled = cur < cost;
+          const toggle = html.find("#deductChargeToggle");
+          const costInput = html.find("#deductChargeCostInput");
+          const row = html.find("#charge-deduct-row");
+          toggle.attr("data-item-id", itemId).data("item-id", itemId);
+          toggle.prop("disabled", disabled).css("cursor", disabled ? "not-allowed" : "pointer");
+          if (disabled) toggle.prop("checked", false);
+          costInput.attr("max", max).val(cost).prop("disabled", disabled);
+          row.css("opacity", disabled ? "0.5" : "1");
+        });
+
+        // Mutual-exclusion guard: checking any deduct charge unchecks other charge toggles and deduct slot
+        html.on("change", ".deduct-charge-toggle, #deductChargeToggle", function () {
+          if ($(this).is(":checked")) {
+            html.find(".deduct-charge-toggle, #deductChargeToggle").not(this).prop("checked", false);
+            html.find("#deductSlotToggle").prop("checked", false);
           }
         });
 
-        // Dedicated uncheck/check handler for charge toggle to keep slot/charge mutually exclusive
-        html.on("change", "#deductChargeToggle", function () {
-          const isChecked = $(this).is(":checked");
-          const slotToggle = html.find("#deductSlotToggle");
-          const radioSlot = html.find("input[name='spellCastResourceMode'][value='slot']");
-          const radioCharge = html.find("input[name='spellCastResourceMode'][value='charge']");
-          const isDdbSlotLinked = Boolean(actor?.getFlag?.(MODULE_ID, FLAGS.DDB_SPELL_SLOTS_ENABLED));
-          if (!isChecked) {
-            if (isDdbSlotLinked) {
-              slotToggle.prop("checked", false).prop("disabled", true);
-              slotToggle.closest("label").css({ opacity: "0.55", cursor: "not-allowed" });
-            } else {
-              slotToggle.prop("disabled", false).prop("checked", true);
-              slotToggle.closest("label").css({ opacity: "1", cursor: "pointer" });
-            }
-            if (radioSlot.length) radioSlot.prop("checked", true);
-          } else {
-            // When checking deduct charge, ensure slot deduction is unchecked and grayed out
-            slotToggle.prop("checked", false).prop("disabled", true);
-            slotToggle.closest("label").css({ opacity: "0.6", cursor: "not-allowed" });
-            if (radioCharge.length) radioCharge.prop("checked", true);
-          }
-        });
-
-        // Allow clicking slot toggle to switch mode to slot and uncheck/gray out charge
+        // Mutual-exclusion guard: checking deduct slot unchecks all deduct charge toggles
         html.on("change", "#deductSlotToggle", function () {
-          const isChecked = $(this).is(":checked");
-          const chargeToggle = html.find("#deductChargeToggle");
-          const radioSlot = html.find("input[name='spellCastResourceMode'][value='slot']");
-          if (isChecked) {
-            chargeToggle.prop("checked", false);
-            if (radioSlot.length) radioSlot.prop("checked", true);
+          if ($(this).is(":checked")) {
+            html.find(".deduct-charge-toggle, #deductChargeToggle").prop("checked", false);
           }
         });
 
@@ -7944,6 +8338,8 @@ Click a numbered modifier badge to execute a roll.</div>
                 }
               }, { width: 300 }).render(true);
             });
+          } else if (key === "Light Attack" || key === "Off-Hand Attack") {
+            promptLightAttackOptions(config);
           } else {
             await globalThis.attackSocket.executeAsGM("runAttackRoll", config, actor.id, game.user.id);
           }
@@ -7977,6 +8373,10 @@ Click a numbered modifier badge to execute a roll.</div>
                 config.deductChargeCost = srcInfo.chargeCost;
               }
             }
+          } else if (srcInfo && srcInfo.hasItemUses && srcInfo.chargeCost > 0 && srcInfo.curUses >= srcInfo.chargeCost) {
+            config.skipSlotDeduction = true;
+            config.deductChargeItemId = srcInfo.itemId;
+            config.deductChargeCost = srcInfo.chargeCost;
           } else {
             const slotKey = `spell${castLvl}`;
             const currentSlotVal = Number(actor.system.spells?.[slotKey]?.value) || 0;
@@ -8369,7 +8769,7 @@ Click a numbered modifier badge to execute a roll.</div>
             const relY = e.clientY - rect.top;
             const insertBefore = relY < rect.height / 2;
 
-            const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+            const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Light Attack"];
             const curCustom = attackNames.filter(k => !STANDARD_KEYS.includes(k));
             const fromIdx = curCustom.indexOf(draggedKey);
             const toIdx = curCustom.indexOf(targetKey);
@@ -8420,7 +8820,7 @@ Click a numbered modifier badge to execute a roll.</div>
             const draggedKey = e.originalEvent.dataTransfer.getData("text/plain");
             if (!draggedKey || !attacks[draggedKey]) return;
 
-            const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Off-Hand Attack"];
+            const STANDARD_KEYS = ["Unarmed Strike", "Improvised Weapon", "Light Attack"];
             if (STANDARD_KEYS.includes(draggedKey)) {
               return ui.notifications.warn(`"${draggedKey}" is a standard attack and cannot be removed.`);
             }
@@ -9948,7 +10348,7 @@ Click a numbered modifier badge to execute a roll.</div>
         icon: "fa-bolt",
         color: "#d97706",
         items: [
-          { name: "Off-Hand Attack", desc: "Attack with a different light melee weapon after attacking with a light weapon in your main hand (no ability mod to damage unless negative).", tag: "No stat mod to damage" },
+          { name: "Light Attack (TWF)", desc: "Bonus action attack with a different light melee weapon after attacking with a light weapon (no ability mod to damage unless negative, or with Two-Weapon Fighting style).", tag: "No stat mod to damage" },
           { name: "Cast a Bonus Action Spell", desc: "If you cast a bonus action spell, you cannot cast another spell this turn except a cantrip with a casting time of 1 action.", tag: "Action = Cantrip only" },
           { name: "Class Features", desc: "Features specified as bonus actions (e.g., Cunning Action, Second Wind, Rage, Bardic Inspiration).", tag: "Class / Feat specific" }
         ]

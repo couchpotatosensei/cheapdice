@@ -1379,7 +1379,7 @@ function registerSocketHandlers() {
     const abilityMod = actor.system.abilities?.[effSpellAbil]?.mod ?? 0;
     const prof = actor.system.attributes?.prof ?? 0;
     const { spellAttackBonus, spellSaveDC } = getActorSpellBonuses(actor, effSpellAbil);
-    const baseDC = spellSaveDC;
+    const baseDC = (Number(config?.fixedSaveDC) > 0) ? Number(config.fixedSaveDC) : spellSaveDC;
     const cleanExtraMod = (extraAttackModifier || "").trim();
     let dcBonus = 0;
     if (resolutionMethod === "save" && cleanExtraMod) {
