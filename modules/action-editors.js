@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { MODULE_ID } from "../src/constants.js";
+import { buildQuirkJsonSnippet } from "./spell-adapter.js";
 
 function getSetting(key, fallback = true) {
   if (game.settings.settings.has(`${MODULE_ID}.${key}`)) {
@@ -3362,8 +3363,111 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
             <input type="checkbox" name="superAdv" ${s.superAdv ? 'checked' : ''} style="margin: 0;" />
           </label>
         </div>
+
+        <details style="border-top: 1px solid #eee; padding-top: 6px; font-size: 0.8em;">
+          <summary style="cursor: pointer; font-weight: 600; color: #555;">Advanced / Quirk Overrides</summary>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px;">
+            <label style="display: flex; flex-direction: column; gap: 2px;">
+              <span>Upcast Mode</span>
+              <select name="upcastMode" style="font-size: 0.95em;">
+                <option value="" ${!s.upcastMode ? 'selected' : ''}>Default</option>
+                <option value="extra_projectiles" ${s.upcastMode === 'extra_projectiles' ? 'selected' : ''}>Extra Projectiles</option>
+                <option value="extra_dice" ${s.upcastMode === 'extra_dice' ? 'selected' : ''}>Extra Dice</option>
+                <option value="cantrip_beams" ${s.upcastMode === 'cantrip_beams' ? 'selected' : ''}>Cantrip Beams</option>
+                <option value="none" ${s.upcastMode === 'none' ? 'selected' : ''}>None</option>
+              </select>
+            </label>
+            <label style="display: flex; flex-direction: column; gap: 2px;">
+              <span>Execution Mode</span>
+              <select name="executionMode" style="font-size: 0.95em;">
+                <option value="custom" ${s.executionMode !== 'delegate' ? 'selected' : ''}>Custom Card</option>
+                <option value="delegate" ${s.executionMode === 'delegate' ? 'selected' : ''}>Delegate to dnd5e</option>
+              </select>
+            </label>
+            <label style="display: flex; flex-direction: column; gap: 2px;">
+              <span>Projectile Label</span>
+              <input type="text" name="projectileLabel" value="${s.projectileLabel || ''}" placeholder="Ray / Beam / Dart" />
+            </label>
+            <label style="display: flex; flex-direction: column; gap: 2px;">
+              <span>DDB Dice / Unit</span>
+              <input type="number" name="ddbDicePerUnit" value="${s.ddbDicePerUnit ?? ''}" placeholder="e.g. 2" min="0" />
+            </label>
+          </div>
+          <label style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+            <span>Auto-Hit (Skip d20 Attack)</span>
+            <input type="checkbox" name="autoHit" ${s.autoHit ? 'checked' : ''} style="margin: 0;" />
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 2px; margin-top: 6px;">
+            <span>Aliases (comma-separated)</span>
+            <input type="text" name="aliases" value="${Array.isArray(s.aliases) ? s.aliases.join(', ') : ''}" placeholder="e.g. Scorching Ray (2024)" />
+          </label>
+        </details>
       </form>
     `;
+
+      const collectSpellData = (html) => {
+        const getVal = (n) => html.find(`[name="${n}"]`).val();
+        const getCheck = (n) => html.find(`[name="${n}"]`).is(':checked');
+
+        const newSpellName = getVal("spellName")?.trim() || name;
+        const rawDdbDice = getVal("ddbDicePerUnit")?.trim();
+        const parsedDdbDice = rawDdbDice ? Number(rawDdbDice) : null;
+        const rawAliases = String(getVal("aliases") || "")
+          .split(",")
+          .map(a => a.trim())
+          .filter(Boolean);
+
+        return {
+          newSpellName,
+          spellData: {
+            spellName: newSpellName,
+            spellAbility: getVal("spellAbility"),
+            baseLevel: Number(getVal("baseLevel")) || 0,
+            resolutionMethod: getVal("resolutionMethod") || "attack",
+            saveAbility: getVal("saveAbility") || "dex",
+            saveSuccess: getVal("saveSuccess") || "half",
+            isMultiAttack: getCheck("isMultiAttack"),
+            attackCount: Number(getVal("attackCount")) || 1,
+            upcastAttacks: Number(getVal("upcastAttacks")) || 0,
+            cantripAttackScaling: getCheck("cantripAttackScaling"),
+            projectileCount: Number(getVal("projectileCount")) || 3,
+            upcastProjectiles: Number(getVal("upcastProjectiles")) || 1,
+            addAbilityModToValue: getCheck("addAbilityModToValue"),
+            castingTime: getVal("castingTime")?.trim() || "1 Action",
+            range: getVal("range")?.trim() || "Touch",
+            duration: getVal("duration")?.trim() || "Instantaneous",
+            concentration: getCheck("concentration"),
+            targetType: getVal("targetType") || "creature",
+            areaShape: getVal("areaShape") || "cone",
+            areaSize: getVal("areaSize")?.trim() || "",
+            summary: getVal("summary")?.trim() || "",
+            damageDiceCount: Number(getVal("damageDiceCount")) || 0,
+            damageDieSize: getVal("damageDieSize"),
+            extraDiceFormula: getVal("extraDiceFormula")?.trim() || "",
+            upcastDiceFormula: getVal("upcastDiceFormula")?.trim() || "",
+            damageMode: getVal("damageMode"),
+            damageType: getVal("damageType") || "fire",
+            flatDamageBonus: Number(getVal("flatDamageBonus")) || 0,
+            explodeCondition: getVal("explodeCondition")?.trim() || "",
+            chaosJump: getCheck("chaosJump"),
+            upcastMode: getVal("upcastMode") || "",
+            projectileLabel: getVal("projectileLabel")?.trim() || "",
+            autoHit: getCheck("autoHit"),
+            ddbDicePerUnit: Number.isFinite(parsedDdbDice) && parsedDdbDice > 0 ? parsedDdbDice : null,
+            executionMode: getVal("executionMode") || "custom",
+            aliases: rawAliases,
+            ...(s.damageTypeChoices ? { damageTypeChoices: s.damageTypeChoices } : {}),
+            ...(s.conditionalDie ? { conditionalDie: s.conditionalDie } : {}),
+            ...(s.rider ? { rider: s.rider } : {}),
+            ...(s.bounceOnDoubles !== undefined ? { bounceOnDoubles: s.bounceOnDoubles } : {}),
+            CRIT_THRESHOLD: Number(getVal("CRIT_THRESHOLD")) || 20,
+            attackModifier: Number(getVal("attackModifier")) || 0,
+            isCantripScale: getCheck("isCantripScale"),
+            superAdv: getCheck("superAdv"),
+            components: s.components || { v: true, s: true, m: false, costly: false, description: "" }
+          }
+        };
+      };
 
       new Dialog({
         title: `Edit Spell: ${name}`,
@@ -3373,47 +3477,7 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
             icon: '<i class="fas fa-save"></i>',
             label: "Save Changes",
             callback: async (html) => {
-              const getVal = (n) => html.find(`[name="${n}"]`).val();
-              const getCheck = (n) => html.find(`[name="${n}"]`).is(':checked');
-
-              const newSpellName = getVal("spellName")?.trim() || name;
-              const spellData = {
-                spellName: newSpellName,
-                spellAbility: getVal("spellAbility"),
-                baseLevel: Number(getVal("baseLevel")) || 0,
-                resolutionMethod: getVal("resolutionMethod") || "attack",
-                saveAbility: getVal("saveAbility") || "dex",
-                saveSuccess: getVal("saveSuccess") || "half",
-                isMultiAttack: getCheck("isMultiAttack"),
-                attackCount: Number(getVal("attackCount")) || 1,
-                upcastAttacks: Number(getVal("upcastAttacks")) || 0,
-                cantripAttackScaling: getCheck("cantripAttackScaling"),
-                projectileCount: Number(getVal("projectileCount")) || 3,
-                upcastProjectiles: Number(getVal("upcastProjectiles")) || 1,
-                addAbilityModToValue: getCheck("addAbilityModToValue"),
-                castingTime: getVal("castingTime")?.trim() || "1 Action",
-                range: getVal("range")?.trim() || "Touch",
-                duration: getVal("duration")?.trim() || "Instantaneous",
-                concentration: getCheck("concentration"),
-                targetType: getVal("targetType") || "creature",
-                areaShape: getVal("areaShape") || "cone",
-                areaSize: getVal("areaSize")?.trim() || "",
-                summary: getVal("summary")?.trim() || "",
-                damageDiceCount: Number(getVal("damageDiceCount")) || 0,
-                damageDieSize: getVal("damageDieSize"),
-                extraDiceFormula: getVal("extraDiceFormula")?.trim() || "",
-                upcastDiceFormula: getVal("upcastDiceFormula")?.trim() || "",
-                damageMode: getVal("damageMode"),
-                damageType: getVal("damageType") || "fire",
-                flatDamageBonus: Number(getVal("flatDamageBonus")) || 0,
-                explodeCondition: getVal("explodeCondition")?.trim() || "",
-                chaosJump: getCheck("chaosJump"),
-                CRIT_THRESHOLD: Number(getVal("CRIT_THRESHOLD")) || 20,
-                attackModifier: Number(getVal("attackModifier")) || 0,
-                isCantripScale: getCheck("isCantripScale"),
-                superAdv: getCheck("superAdv"),
-                components: s.components || { v: true, s: true, m: false, costly: false, description: "" }
-              };
+              const { newSpellName, spellData } = collectSpellData(html);
 
               if (newSpellName !== name) {
                 delete spells[name];
@@ -3424,6 +3488,21 @@ await globalThis.attackSocket.executeAsGM("${handlerName}", config, actor.id, ga
               await actor.setFlag("world", "spellConfigs", spells);
               ui.notifications.info(`Updated "${newSpellName}" in Persistent Storage.`);
               renderUnifiedManager();
+            }
+          },
+          copyQuirk: {
+            icon: '<i class="fas fa-copy"></i>',
+            label: "Copy as Quirk JSON",
+            callback: async (html) => {
+              const { newSpellName, spellData } = collectSpellData(html);
+              const jsonText = buildQuirkJsonSnippet(newSpellName, spellData);
+              try {
+                await navigator.clipboard.writeText(jsonText);
+                ui.notifications.info(`Copied Quirk JSON for "${newSpellName}" to clipboard.`);
+              } catch {
+                console.log(`[Quirk JSON] ${newSpellName}:\n${jsonText}`);
+                ui.notifications.warn("Clipboard blocked; Quirk JSON logged to console (F12).");
+              }
             }
           },
           cancel: { label: "Cancel" }

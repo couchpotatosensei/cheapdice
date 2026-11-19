@@ -1,6 +1,11 @@
 import { MODULE_ID, SETTINGS, FLAGS } from "../src/constants.js";
 import { getButtonInfo, runHudButtonSlot } from "./token-hud.js";
 import { getActorSpellBonuses } from "./socket-handlers.js";
+import { normalizeSpell, getSpellQuirk, loadSpellQuirks } from "./spell-adapter.js";
+
+if (typeof window !== "undefined") {
+  loadSpellQuirks();
+}
 import {
   getChatTextareaValue,
   writeToChatTextarea,
@@ -314,209 +319,45 @@ function detectSpellSourceMeta(spItem, actor) {
  * @returns {object} The configured spell object
  */
 export function buildSpellConfigFromItem(item, actor) {
-  if (!item || item.type !== "spell") return null;
+  const norm = normalizeSpell(item, actor);
+  if (!norm) return null;
 
   const sys = item.system || {};
-  const sheetSpellAbil = sys.ability || actor.system?.attributes?.spellcasting || "int";
-
-  const act = sys.activation;
-  const castStr = act?.cost ? `${act.cost} ${act.type || 'Action'}` : "1 Action";
-
-  const rng = sys.range;
-  const rangeStr = rng?.value ? `${rng.value} ${rng.units || 'ft'}` : (rng?.units || "Touch");
-
-  const dur = sys.duration;
-  const durStr = dur?.value ? `${dur.value} ${dur.units || ''}` : (dur?.units || "Instantaneous");
-
-  const isConc = Boolean(sys.properties?.has?.("concentration") || sys.components?.concentration);
-
-  const comps = sys.properties || sys.components || {};
-  const hasV = Boolean(comps.has ? comps.has("vocal") : comps.vocal);
-  const hasS = Boolean(comps.has ? comps.has("somatic") : comps.somatic);
-  const hasM = Boolean(comps.has ? comps.has("material") : comps.material);
-  const isCostly = Boolean(sys.materials?.cost || sys.materials?.consumed);
-  const matDesc = sys.materials?.value || "";
-
-  let targetType = "creature";
-  let areaShape = "cone";
-  let areaSize = "";
-  const targetUnits = sys.target?.units;
-  const tType = sys.target?.type;
-  if (["cone", "cube", "line", "sphere", "cylinder", "radius"].includes(tType) || ["cone", "cube", "line", "sphere"].includes(targetUnits)) {
-    targetType = "area";
-    areaShape = (tType === "cylinder" || tType === "radius") ? "sphere" : (tType || "cone");
-    areaSize = sys.target?.value ? `${sys.target.value} ft` : "";
-  } else if (tType === "self" || rangeStr.toLowerCase() === "self") {
-    targetType = "self";
-  }
-
   const rawDesc = sys.description?.value || "";
-  const cleanSummary = rawDesc.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
 
-  let resolutionMethod = "attack";
+  // Preserve activity priority: save > heal > attack > other
+  const saveAct = norm.actions.find(a => a.kind === "save");
+  const healAct = norm.actions.find(a => a.kind === "roll" && (a.subtype === "heal" || a.subtype === "temphp"));
+  const attackAct = norm.actions.find(a => a.kind === "attack");
+  const damageAct = norm.actions.find(a => a.kind === "roll" && a.subtype === "damage");
+
+  let resolutionMethod = "other";
   let saveAbility = "dex";
   let saveSuccess = "half";
   let fixedSaveDC = null;
-  let damageDiceCount = 0;
 
-  const prepMode = sys.method || sys.preparation?.mode;
-  const isInnateOrAtWill = ["innate", "atwill"].includes(prepMode);
-  const dndFlags = item.flags?.dnd5e || {};
-  const hasSourceRef = Boolean(
-    dndFlags.sourceItem ||
-    dndFlags.cachedFor ||
-    dndFlags.advancementOrigin ||
-    item.flags?.magicitems?.sourceItem ||
-    sys.sourceItem ||
-    sys.source?.custom
-  );
-  let hasActivityItemSource = false;
-  if (sys.activities) {
-    const acts = sys.activities instanceof Map ? Array.from(sys.activities.values()) : Object.values(sys.activities || {});
-    hasActivityItemSource = acts.some(a => (a.consumption?.targets || []).some(t => t.type === "itemUses" && t.target));
+  if (saveAct) {
+    resolutionMethod = "save";
+    saveAbility = saveAct.saveAbility || "dex";
+    saveSuccess = saveAct.saveSuccess || "none";
+    fixedSaveDC = saveAct.dc ?? null;
+  } else if (healAct) {
+    resolutionMethod = healAct.subtype === "temphp" ? "temp_hp" : "heal";
+  } else if (attackAct || item.hasAttack || ["msak", "rsak", "mwak", "rwak"].includes(sys.actionType)) {
+    resolutionMethod = "attack";
   }
-  const allowFlatDC = item.type !== "spell" || isInnateOrAtWill || hasSourceRef || hasActivityItemSource;
-  let damageDieSize = "d6";
-  let hasActivityCantripScaling = false;
-  let damageType = "fire";
-  let addAbilityModToValue = false;
-  let flatDamageBonus = 0;
 
-  // Check modern dnd5e Activities (v3 / v4) or item attack flags
-  const isAttackItem = Boolean(
-    item.hasAttack ||
-    ["msak", "rsak", "mwak", "rwak"].includes(sys.actionType)
+  const primaryDmgAct = damageAct || saveAct || attackAct || healAct;
+  const firstPart = primaryDmgAct?.parts?.[0] || null;
+
+  const damageDiceCount = firstPart?.count || 0;
+  const damageDieSize = firstPart?.die || (primaryDmgAct === healAct ? "d8" : "d6");
+  const damageType = firstPart?.types?.[0] || (primaryDmgAct === healAct ? "healing" : "fire");
+  const addAbilityModToValue = Boolean(firstPart?.addMod);
+  const flatDamageBonus = Number(firstPart?.flatBonus) || 0;
+  const hasActivityCantripScaling = Boolean(
+    firstPart && (firstPart.scalingMode === "whole" || firstPart.scalingNumber > 0)
   );
-
-  if (sys.activities && (sys.activities.size > 0 || (typeof sys.activities.values === "function" && Array.from(sys.activities.values()).length > 0))) {
-    const activities = Array.from(sys.activities.values());
-    const saveAct = activities.find(a => a.type === "save" || a.save);
-    const healAct = activities.find(a => a.type === "heal" || a.healing);
-    const attackAct = activities.find(a => a.type === "attack" || a.attack);
-    const damageAct = activities.find(a => a.type === "damage" || (a.damage?.parts && a.damage.parts.length > 0));
-
-    if (saveAct) {
-      resolutionMethod = "save";
-      let rawSaveAbil = saveAct.save?.ability;
-      if (rawSaveAbil instanceof Set) {
-        rawSaveAbil = Array.from(rawSaveAbil)[0];
-      } else if (Array.isArray(rawSaveAbil)) {
-        rawSaveAbil = rawSaveAbil[0];
-      } else if (typeof rawSaveAbil === "object" && rawSaveAbil?.first) {
-        rawSaveAbil = rawSaveAbil.first();
-      }
-      saveAbility = typeof rawSaveAbil === "string" && rawSaveAbil ? rawSaveAbil : "dex";
-      saveSuccess = saveAct.save?.scaling === "half" ? "half" : "none";
-      if (allowFlatDC && saveAct.save?.dc?.calculation === "flat") {
-        const rawFlat = Number(saveAct.save.dc.formula ?? saveAct.save.dc.value);
-        if (Number.isFinite(rawFlat) && rawFlat > 0) fixedSaveDC = rawFlat;
-      }
-    } else if (healAct) {
-      resolutionMethod = "heal";
-    } else if (attackAct || isAttackItem) {
-      resolutionMethod = "attack";
-    } else if (damageAct) {
-      resolutionMethod = "other";
-    } else {
-      resolutionMethod = "other";
-    }
-
-    // Parse damage / healing from activities
-    const primaryDmgAct = damageAct || saveAct || attackAct || healAct;
-    const healObj = healAct?.healing;
-    if (primaryDmgAct === healAct && healObj && !Array.isArray(healObj.parts)) {
-      const rawTypes = healObj.types instanceof Set
-        ? Array.from(healObj.types)
-        : (Array.isArray(healObj.types) ? healObj.types : (healObj.type ? [healObj.type] : []));
-      const healType = String(rawTypes[0] || "healing").toLowerCase();
-      damageType = healType;
-      if (healType === "temphp") resolutionMethod = "temp_hp";
-
-      if (healObj.custom?.enabled && healObj.custom?.formula) {
-        const cForm = String(healObj.custom.formula);
-        if (/@mod/i.test(cForm)) addAbilityModToValue = true;
-        const diceMatch = cForm.match(/(\d*)d(\d+)/i);
-        if (diceMatch) {
-          damageDiceCount = parseInt(diceMatch[1]) || 1;
-          damageDieSize = `d${diceMatch[2]}`;
-        }
-      } else {
-        damageDiceCount = Number(healObj.number) || 0;
-        damageDieSize = healObj.denomination ? `d${healObj.denomination}` : "d8";
-        const bonusStr = String(healObj.bonus ?? "");
-        if (/@mod/i.test(bonusStr)) {
-          addAbilityModToValue = true;
-        } else {
-          const parsedBonus = Number(bonusStr);
-          if (Number.isFinite(parsedBonus) && parsedBonus !== 0) flatDamageBonus = parsedBonus;
-        }
-      }
-    } else {
-      const parts = primaryDmgAct?.damage?.parts || primaryDmgAct?.healing?.parts || [];
-      if (parts.length > 0) {
-        const firstPart = parts[0];
-        if (typeof firstPart === "object" && (firstPart.number || firstPart.denomination || firstPart.formula)) {
-          damageDiceCount = Number(firstPart.number) || 1;
-          damageDieSize = firstPart.denomination ? `d${firstPart.denomination}` : "d6";
-          const rawScaleMode = firstPart.scaling?.mode;
-          const partScaleMode = (rawScaleMode instanceof Set
-            ? String(Array.from(rawScaleMode)[0] || "")
-            : (Array.isArray(rawScaleMode) ? String(rawScaleMode[0] || "") : String(rawScaleMode || ""))).toLowerCase();
-          if (partScaleMode === "whole" || Number(firstPart.scaling?.number) > 0) {
-            hasActivityCantripScaling = true;
-          }
-          if (firstPart.types && firstPart.types.size > 0) {
-            damageType = Array.from(firstPart.types)[0].toLowerCase();
-          } else if (firstPart.types?.[0]) {
-            damageType = String(firstPart.types[0]).toLowerCase();
-          } else if (primaryDmgAct === healAct) {
-            damageType = "healing";
-          }
-        } else if (Array.isArray(firstPart)) {
-          const formula = firstPart[0] || "";
-          if (/@mod/i.test(String(formula))) addAbilityModToValue = true;
-          damageType = (firstPart[1] || (primaryDmgAct === healAct ? "healing" : "fire")).toLowerCase();
-          const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
-          if (diceMatch) {
-            damageDiceCount = parseInt(diceMatch[1]) || 1;
-            damageDieSize = `d${diceMatch[2]}`;
-          }
-        }
-      }
-    }
-  } else {
-    // Legacy actionType / damage.parts fallback
-    const actionType = sys.actionType;
-    if (actionType === "save") {
-      resolutionMethod = "save";
-      saveAbility = sys.save?.ability || "dex";
-      saveSuccess = sys.save?.scaling === "half" ? "half" : "none";
-      if (allowFlatDC && sys.save?.scaling === "flat") {
-        const rawFlat = Number(sys.save.dc);
-        if (Number.isFinite(rawFlat) && rawFlat > 0) fixedSaveDC = rawFlat;
-      }
-    } else if (actionType === "heal") {
-      resolutionMethod = "heal";
-      damageType = "healing";
-    } else if (actionType === "rsak" || actionType === "msak" || item.hasAttack) {
-      resolutionMethod = "attack";
-    } else if (actionType === "util" || !actionType) {
-      resolutionMethod = "other";
-    }
-
-    const parts = sys.damage?.parts || [];
-    if (parts.length > 0) {
-      const firstPart = parts[0];
-      const formula = firstPart[0] || "";
-      if (/@mod/i.test(String(formula))) addAbilityModToValue = true;
-      damageType = (firstPart[1] || (actionType === "heal" ? "healing" : "fire")).toLowerCase();
-      const diceMatch = String(formula).match(/(\d*)d(\d+)/i);
-      if (diceMatch) {
-        damageDiceCount = parseInt(diceMatch[1]) || 1;
-        damageDieSize = `d${diceMatch[2]}`;
-      }
-    }
-  }
 
   const isCantrip = Number(sys.level ?? 0) === 0;
   const legacyScalingMode = String(sys.scaling?.mode ?? "").toLowerCase();
@@ -526,19 +367,35 @@ export function buildSpellConfigFromItem(item, actor) {
   let attackCount = 1;
   let upcastAttacks = 0;
   let cantripAttackScaling = false;
-  const normSpellName = String(item.name || "").toLowerCase().replace(/\s*\([^)]*\)/g, "").trim();
-  if (normSpellName === "scorching ray" || normSpellName === "jim's magic missile") {
-    isMultiAttack = true;
-    attackCount = 3;
-    upcastAttacks = 1;
-  } else if (normSpellName === "steel wind strike") {
-    isMultiAttack = true;
-    attackCount = 5;
-  } else if (normSpellName === "eldritch blast") {
-    isMultiAttack = true;
-    attackCount = 1;
-    cantripAttackScaling = true;
-    isCantripScale = false;
+  let projectileCount = 3;
+  let upcastProjectiles = 1;
+  let chaosJump = false;
+
+  const quirk = getSpellQuirk(item.name);
+  if (quirk) {
+    if (quirk.isMultiAttack !== undefined) isMultiAttack = Boolean(quirk.isMultiAttack);
+    if (quirk.attackCount !== undefined) attackCount = Number(quirk.attackCount) || 1;
+    if (quirk.upcastAttacks !== undefined) upcastAttacks = Number(quirk.upcastAttacks) || 0;
+    if (quirk.cantripAttackScaling !== undefined) cantripAttackScaling = Boolean(quirk.cantripAttackScaling);
+    if (quirk.isCantripScale !== undefined) isCantripScale = Boolean(quirk.isCantripScale);
+    if (quirk.projectileCount !== undefined) projectileCount = Number(quirk.projectileCount) || 3;
+    if (quirk.upcastProjectiles !== undefined) upcastProjectiles = Number(quirk.upcastProjectiles) || 1;
+    if (quirk.chaosJump !== undefined) chaosJump = Boolean(quirk.chaosJump);
+  } else {
+    const normSpellName = String(item.name || "").toLowerCase().replace(/\s*\([^)]*\)/g, "").trim();
+    if (normSpellName === "scorching ray" || normSpellName === "jim's magic missile") {
+      isMultiAttack = true;
+      attackCount = 3;
+      upcastAttacks = 1;
+    } else if (normSpellName === "steel wind strike") {
+      isMultiAttack = true;
+      attackCount = 5;
+    } else if (normSpellName === "eldritch blast") {
+      isMultiAttack = true;
+      attackCount = 1;
+      cantripAttackScaling = true;
+      isCantripScale = false;
+    }
   }
 
   let upcastDiceFormula = "";
@@ -551,12 +408,12 @@ export function buildSpellConfigFromItem(item, actor) {
   return {
     itemId: item.id,
     spellName: item.name,
-    spellAbility: sheetSpellAbil,
+    spellAbility: norm.spellcastingAbility,
     sourceTags: [sourceMeta.tag],
     hasSpellbookSource: sourceMeta.isSlotCasting,
     chargeSourceItemId: sourceMeta.chargeSourceItemId,
     chargeSourceItemIds: sourceMeta.chargeSourceItemId ? [sourceMeta.chargeSourceItemId] : [],
-    baseLevel: Number(sys.level ?? 0),
+    baseLevel: norm.level,
     resolutionMethod,
     saveAbility,
     saveSuccess,
@@ -565,18 +422,18 @@ export function buildSpellConfigFromItem(item, actor) {
     attackCount,
     upcastAttacks,
     cantripAttackScaling,
-    projectileCount: 3,
-    upcastProjectiles: 1,
+    projectileCount,
+    upcastProjectiles,
     addAbilityModToValue,
-    castingTime: castStr,
-    range: rangeStr,
-    duration: durStr,
-    concentration: isConc,
-    targetType,
-    areaShape,
-    areaSize,
+    castingTime: norm.castingTime.label,
+    range: norm.range.label,
+    duration: norm.duration.label,
+    concentration: norm.components.concentration,
+    targetType: norm.target.type,
+    areaShape: norm.target.shape,
+    areaSize: norm.target.size,
     description: rawDesc,
-    summary: cleanSummary,
+    summary: norm.summary,
     damageDiceCount,
     damageDieSize,
     extraDiceFormula: "",
@@ -585,17 +442,26 @@ export function buildSpellConfigFromItem(item, actor) {
     damageType,
     flatDamageBonus,
     explodeCondition: "",
-    chaosJump: false,
+    chaosJump,
+    upcastMode: quirk?.upcastMode || "",
+    projectileLabel: quirk?.projectileLabel || "",
+    autoHit: Boolean(quirk?.autoHit),
+    ddbDicePerUnit: quirk?.ddbDicePerUnit ?? null,
+    executionMode: quirk?.executionMode || "custom",
+    aliases: quirk?.aliases || [],
+    ...(quirk?.damageTypeChoices ? { damageTypeChoices: quirk.damageTypeChoices } : {}),
+    ...(quirk?.conditionalDie ? { conditionalDie: quirk.conditionalDie } : {}),
+    ...(quirk?.rider ? { rider: quirk.rider } : {}),
     CRIT_THRESHOLD: 20,
     attackModifier: 0,
     isCantripScale,
     superAdv: false,
     components: {
-      v: hasV,
-      s: hasS,
-      m: hasM,
-      costly: isCostly,
-      description: matDesc
+      v: norm.components.vocal,
+      s: norm.components.somatic,
+      m: norm.components.material,
+      costly: norm.components.costly,
+      description: norm.components.materialDesc
     }
   };
 }
@@ -8551,6 +8417,7 @@ Click a numbered modifier badge to execute a roll.</div>
         function bindWeaponDragAndDrop() {
           const list = html.find("#custom-weapons-list");
           const trashZone = html.find("#weapon-trash-zone");
+          let draggingWeaponKey = null;
 
           list.find(".custom-weapon-card").off("dragstart dragend dragover dragleave drop");
           list.off("dragover dragleave drop");
@@ -8678,7 +8545,7 @@ Click a numbered modifier badge to execute a roll.</div>
           // Container-level drop listener for dropping an item from the character sheet
           list.on("dragover", function (e) {
             e.preventDefault();
-            e.originalEvent.dataTransfer.dropEffect = "copy";
+            e.originalEvent.dataTransfer.dropEffect = draggingWeaponKey ? "move" : "copy";
           });
 
           list.on("drop", async function (e) {
@@ -8712,13 +8579,15 @@ Click a numbered modifier badge to execute a roll.</div>
           });
 
           list.find(".custom-weapon-card").on("dragstart", function (e) {
-            e.originalEvent.dataTransfer.setData("text/plain", $(this).data("key"));
+            draggingWeaponKey = $(this).data("key");
+            e.originalEvent.dataTransfer.setData("text/plain", draggingWeaponKey);
             e.originalEvent.dataTransfer.effectAllowed = "move";
             $(this).css("opacity", "0.4");
             trashZone.css("display", "flex");
           });
 
           list.find(".custom-weapon-card").on("dragend", function () {
+            draggingWeaponKey = null;
             $(this).css("opacity", "1");
             list.find(".custom-weapon-card").css({ "border-top": "", "border-bottom": "" });
             trashZone.css("display", "none");
@@ -8726,6 +8595,7 @@ Click a numbered modifier badge to execute a roll.</div>
 
           list.find(".custom-weapon-card").on("dragover", function (e) {
             e.preventDefault();
+            e.stopPropagation();
             e.originalEvent.dataTransfer.dropEffect = "move";
             const rect = this.getBoundingClientRect();
             const relY = e.clientY - rect.top;
